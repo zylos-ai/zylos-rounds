@@ -3,52 +3,48 @@
  * Post-install hook for zylos-standup
  *
  * Called by zylos after configure hook and CLI installation.
- * CLI handles: download, npm install, manifest, registration.
- * zylos/agent handles: config collection, configure hook, this hook, service start.
- *
- * This hook handles component-specific setup:
- * - Create subdirectories
- * - Create default config.json when no configure hook values were provided
- * - Verify required config fields if needed
+ * - Creates data subdirectories
+ * - Generates the admin password on first install (printed ONCE below,
+ *   only the scrypt hash is stored in config.json)
  */
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { hashPassword } from '../src/lib/auth.js';
 
 const HOME = process.env.HOME;
 const DATA_DIR = path.join(HOME, 'zylos/components/standup');
 
-// Minimal initial config - full defaults are in src/lib/config.js
-const INITIAL_CONFIG = {
-  enabled: true
-};
-
 console.log('[post-install] Running standup-specific setup...\n');
 
-// 1. Create subdirectories
 console.log('Creating subdirectories...');
 fs.mkdirSync(path.join(DATA_DIR, 'logs'), { recursive: true });
-// Add more subdirectories as needed
-// fs.mkdirSync(path.join(DATA_DIR, 'media'), { recursive: true });
+fs.mkdirSync(path.join(DATA_DIR, 'data'), { recursive: true });
 console.log('  - logs/');
+console.log('  - data/');
 
-// 2. Create default config if not exists
 const configPath = path.join(DATA_DIR, 'config.json');
-if (!fs.existsSync(configPath)) {
-  console.log('\nCreating default config.json...');
-  fs.writeFileSync(configPath, JSON.stringify(INITIAL_CONFIG, null, 2));
-  console.log('  - config.json created');
-} else {
-  console.log('\nConfig already exists, skipping.');
+let config;
+try {
+  config = fs.existsSync(configPath)
+    ? JSON.parse(fs.readFileSync(configPath, 'utf8'))
+    : { enabled: true };
+} catch {
+  config = { enabled: true };
 }
 
-// 3. Verify required config fields (customize as needed)
-// Example: Check for required API key in config.json
-// const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-// if (!cfg.api_key) {
-//   console.log('\n[!] api_key not found in config.json');
-// }
-
-// Note: PM2 service is started by Claude after this hook completes.
+if (!config.auth?.password) {
+  const password = crypto.randomBytes(24).toString('base64url');
+  config.auth = { ...(config.auth || {}), enabled: true, password: hashPassword(password) };
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
+  console.log('\nGenerated admin password (config had none).');
+  console.log('=========================================================');
+  console.log(`  Admin password: ${password}`);
+  console.log('  (shown only once — store it now; only a hash is saved)');
+  console.log('=========================================================');
+} else {
+  console.log('\nConfig already has a password, skipping generation.');
+}
 
 console.log('\n[post-install] Complete!');

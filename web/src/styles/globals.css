@@ -1,0 +1,145 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design tokens — ported from the approved voice-standup MVP palette.
+   Light and dark are the same variable names with different values
+   (Tailwind darkMode: 'media' / prefers-color-scheme). */
+:root {
+  --bg: #f8f8fa;
+  --panel: #ffffff;
+  --text: #181a20;
+  --muted: #5f6673;
+  --faint: #9298a3;
+  --line: #ededf0;
+  --line-strong: #e3e4e8;
+  --hover: #f4f4f6;
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+  --accent-soft: #eef0fe;
+  --accent-line: #e0e2fb;
+  --success: #0d9668;
+  --success-soft: rgba(16, 185, 129, 0.12);
+  --success-line: rgba(16, 185, 129, 0.22);
+  --danger: #dc2626;
+  --danger-hover: #b91c1c;
+  --danger-soft: rgba(220, 38, 38, 0.08);
+  --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-sm: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b0c10;
+    --panel: #111219;
+    --text: #e8eaf0;
+    --muted: #9298a4;
+    --faint: #646a76;
+    --line: #1d1f27;
+    --line-strong: #262933;
+    --hover: #181a22;
+    --accent: #7c7ff2;
+    --accent-hover: #9698f5;
+    --accent-soft: #191b2b;
+    --accent-line: #2a2d45;
+    --success: #34d399;
+    --success-soft: rgba(16, 185, 129, 0.14);
+    --success-line: rgba(16, 185, 129, 0.3);
+    --danger: #ef4444;
+    --danger-hover: #f87171;
+    --danger-soft: rgba(239, 68, 68, 0.12);
+  }
+}
+
+/* The talk page uses a pure-white canvas in light mode (MVP parity). */
+body.page-talk {
+  --bg: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  body.page-talk {
+    --bg: #0b0c10;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    height: 100%;
+  }
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+    margin: 0;
+    min-height: 100%;
+  }
+  svg {
+    display: block;
+  }
+}
+
+/* ---- talk page orb (call button) — ported from MVP talk.html ---- */
+.orb {
+  position: relative;
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+  border: 0;
+  cursor: pointer;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 28px color-mix(in srgb, var(--accent) 38%, transparent);
+  transition: background 0.2s, transform 0.15s;
+}
+.orb:hover {
+  background: var(--accent-hover);
+}
+.orb::before,
+.orb::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  opacity: 0;
+  pointer-events: none;
+}
+.orb.listening::before {
+  animation: orb-ring 2.2s ease-out infinite;
+}
+.orb.listening::after {
+  animation: orb-ring 2.2s ease-out 1.1s infinite;
+}
+.orb.speaking {
+  animation: orb-breathe 1.5s ease-in-out infinite;
+}
+.orb.done {
+  background: var(--success);
+  box-shadow: 0 6px 28px var(--success-soft);
+  cursor: default;
+}
+.orb:disabled {
+  cursor: default;
+}
+@keyframes orb-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1.55);
+    opacity: 0;
+  }
+}
+@keyframes orb-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.045);
+  }
+}
