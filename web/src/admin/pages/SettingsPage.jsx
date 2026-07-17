@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { KeyRound, AudioLines, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { KeyRound, AudioLines, Loader2, CheckCircle2, XCircle, Volume2, Square } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -31,6 +31,38 @@ export default function SettingsPage() {
   const [modelBusy, setModelBusy] = useState(false);
   const [modelMsg, setModelMsg] = useState(null);
   const msgTimer = useRef(null);
+
+  // voice preview
+  const [previewing, setPreviewing] = useState(false);
+  const audioRef = useRef(null);
+
+  const stopPreview = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    setPreviewing(false);
+  }, []);
+
+  const onPreview = useCallback(() => {
+    if (previewing) return stopPreview();
+    const audio = new Audio(`api/settings/voice-sample/${voice}`);
+    audioRef.current = audio;
+    setPreviewing(true);
+    audio.onended = () => { audioRef.current = null; setPreviewing(false); };
+    audio.onerror = () => {
+      audioRef.current = null;
+      setPreviewing(false);
+      flash(setModelMsg, { ok: false, text: '试听音频加载失败' });
+    };
+    audio.play().catch(() => {
+      audioRef.current = null;
+      setPreviewing(false);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewing, voice, stopPreview]);
+
+  useEffect(() => () => stopPreview(), [stopPreview]);
 
   const load = useCallback(async () => {
     setLoadError('');
@@ -229,7 +261,7 @@ export default function SettingsPage() {
               <span className="text-sm font-medium text-muted-foreground">音色</span>
               <select
                 value={voice}
-                onChange={(e) => setVoice(e.target.value)}
+                onChange={(e) => { stopPreview(); setVoice(e.target.value); }}
                 className="h-11 min-w-[160px] rounded-md border border-input bg-transparent px-3 text-base text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {settings.voice_options.map((v) => (
@@ -237,6 +269,16 @@ export default function SettingsPage() {
                 ))}
               </select>
             </label>
+            <Button
+              type="button"
+              variant="outline"
+              className={cn('h-11 px-4 text-[0.95rem]', previewing && 'text-primary')}
+              onClick={onPreview}
+              title={previewing ? '停止试听' : `试听 ${voice}`}
+            >
+              {previewing ? <Square strokeWidth={1.75} /> : <Volume2 strokeWidth={1.75} />}
+              {previewing ? '停止' : '试听'}
+            </Button>
             <Button type="submit" className="h-11 px-6 text-[0.95rem]" disabled={modelBusy}>
               {modelBusy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
               保存

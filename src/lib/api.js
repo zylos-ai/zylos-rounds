@@ -4,8 +4,13 @@
  */
 
 import crypto from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { sendJson, readJsonBody, browserOrigin, todayLocal } from './http-util.js';
 import { MODEL_OPTIONS, VOICE_OPTIONS } from './settings.js';
+
+const SAMPLES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'assets', 'voice-samples');
 
 const parseList = v => {
   try {
@@ -84,8 +89,30 @@ export class Api {
       return sendJson(res, 200, await this.settings.testConnection()), true;
     }
 
+    m = p.match(/^\/api\/settings\/voice-sample\/([a-z]+)$/);
+    if (m && req.method === 'GET') return this.voiceSample(res, m[1]), true;
+
     sendJson(res, 404, { error: 'not_found' });
     return true;
+  }
+
+  // Pre-generated wav samples (scripts/generate-voice-samples.mjs); the
+  // VOICE_OPTIONS check doubles as path sanitization for the file read.
+  voiceSample(res, voice) {
+    if (!VOICE_OPTIONS.includes(voice)) return sendJson(res, 404, { error: 'not_found' });
+    const file = path.join(SAMPLES_DIR, `${voice}.wav`);
+    let data;
+    try {
+      data = readFileSync(file);
+    } catch {
+      return sendJson(res, 404, { error: 'sample_missing' });
+    }
+    res.writeHead(200, {
+      'Content-Type': 'audio/wav',
+      'Content-Length': data.length,
+      'Cache-Control': 'private, max-age=86400',
+    });
+    res.end(data);
   }
 
   // The key itself is write-only: GET exposes only whether/where one is set.

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-07-18
+
+### Added
+- Voice preview (试听) button next to the voice dropdown on the settings
+  page: plays a short pre-generated Chinese sample of the selected voice,
+  toggles to a stop button while playing
+- Bundled wav samples for all 10 voices (`assets/voice-samples/`), served
+  via the session-protected `GET /api/settings/voice-sample/:voice` route
+- `scripts/generate-voice-samples.mjs`: regenerates samples through the
+  Realtime API (marin/cedar are realtime-only voices, so the TTS endpoint
+  cannot produce them); skips voices whose sample file already exists
+
 ## [0.2.0] - 2026-07-17
 
 ### Added
