@@ -15,8 +15,38 @@ export const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
 // Default configuration
 export const DEFAULT_CONFIG = {
   enabled: true,
-  settings: {}
+  port: 3478,
+  model: 'gpt-realtime-2.1',
+  voice: 'marin',
+  transcriptionModel: 'gpt-realtime-whisper',
+  maxConcurrent: 4,
+  maxSessionMs: 10 * 60 * 1000,
+  timeZone: 'Asia/Shanghai',
+  auth: {
+    enabled: true,
+    password: '', // scrypt hash; plaintext is auto-migrated to a hash on first start
+  },
 };
+
+/**
+ * Read OPENAI_API_KEY and proxy settings from ~/zylos/.env (shared workspace
+ * secrets — never duplicated into config.json) with process.env taking precedence.
+ */
+export function loadEnvSecrets() {
+  const out = {};
+  try {
+    const file = path.join(HOME, 'zylos/.env');
+    for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
+      if (m) out[m[1]] = m[2].replace(/^["']|["']$/g, '');
+    }
+  } catch { /* no .env — rely on process.env */ }
+  const env = { ...out, ...process.env };
+  return {
+    openaiApiKey: env.OPENAI_API_KEY || '',
+    proxy: env.HTTPS_PROXY || env.HTTP_PROXY || null,
+  };
+}
 
 let config = null;
 let configWatcher = null;
@@ -29,7 +59,12 @@ export function loadConfig() {
   try {
     if (fs.existsSync(CONFIG_PATH)) {
       const content = fs.readFileSync(CONFIG_PATH, 'utf8');
-      config = { ...DEFAULT_CONFIG, ...JSON.parse(content) };
+      const parsed = JSON.parse(content);
+      config = {
+        ...DEFAULT_CONFIG,
+        ...parsed,
+        auth: { ...DEFAULT_CONFIG.auth, ...(parsed.auth || {}) },
+      };
     } else {
       console.warn(`[standup] Config file not found: ${CONFIG_PATH}`);
       config = { ...DEFAULT_CONFIG };
