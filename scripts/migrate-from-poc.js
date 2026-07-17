@@ -57,10 +57,8 @@ try {
       mSkipped++;
       continue;
     }
-    if (!dryRun) {
-      dst.prepare('INSERT INTO members(id,name,token,active,created_at) VALUES(?,?,?,?,?)')
-        .run(m.id, m.name, m.token, m.active, m.created_at);
-    }
+    dst.prepare('INSERT INTO members(id,name,token,active,created_at) VALUES(?,?,?,?,?)')
+      .run(m.id, m.name, m.token, m.active, m.created_at);
     mAdded++;
   }
   for (const r of reports) {
@@ -70,13 +68,11 @@ try {
       rSkipped++;
       continue;
     }
-    if (!dryRun) {
-      dst.prepare(`INSERT INTO reports(member_id,report_date,status,yesterday,today,blockers,topics,
-          raw_json,transcript,duration_s,model,created_at,updated_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(r.member_id, r.report_date, r.status, r.yesterday, r.today, r.blockers, r.topics,
-          r.raw_json, r.transcript, r.duration_s, r.model, r.created_at, r.updated_at);
-    }
+    dst.prepare(`INSERT INTO reports(member_id,report_date,status,yesterday,today,blockers,topics,
+        raw_json,transcript,duration_s,model,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(r.member_id, r.report_date, r.status, r.yesterday, r.today, r.blockers, r.topics,
+        r.raw_json, r.transcript, r.duration_s, r.model, r.created_at, r.updated_at);
     rAdded++;
   }
   dst.exec(dryRun ? 'ROLLBACK' : 'COMMIT');

@@ -81,6 +81,14 @@ export class Store {
     return this.db.prepare('SELECT * FROM members WHERE id=?').get(id);
   }
 
+  getInactiveMemberByName(name) {
+    return this.db.prepare('SELECT * FROM members WHERE name=? AND active=0').get(name);
+  }
+
+  reactivateMember(id, token) {
+    return this.db.prepare('UPDATE members SET active=1, token=? WHERE id=? AND active=0').run(token, id);
+  }
+
   deactivateMember(id) {
     return this.db.prepare('UPDATE members SET active=0 WHERE id=? AND active=1').run(id);
   }

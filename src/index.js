@@ -37,7 +37,7 @@ if (!env.openaiApiKey) {
 
 const store = new Store(path.join(DATA_DIR, 'data', 'standup.db'));
 const auth = new AuthGate(config, store, CONFIG_PATH);
-const api = new Api(store, auth);
+const api = new Api(store, auth, getConfig);
 const statics = new Static(path.join(__dirname, 'public'));
 const relay = new Relay(store, getConfig, env);
 

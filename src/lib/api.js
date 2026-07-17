@@ -24,9 +24,10 @@ function memberLink(req, token) {
 }
 
 export class Api {
-  constructor(store, auth) {
+  constructor(store, auth, getConfig) {
     this.store = store;
     this.auth = auth;
+    this.getConfig = getConfig;
   }
 
   /**
@@ -74,9 +75,10 @@ export class Api {
 
   listMembers(req, res) {
     const members = this.store.listActiveMembers();
-    const done = new Set(this.store.submittedMemberIds(todayLocal()));
+    const date = todayLocal(this.getConfig().timeZone);
+    const done = new Set(this.store.submittedMemberIds(date));
     sendJson(res, 200, {
-      date: todayLocal(),
+      date,
       members: members.map(mb => ({
         id: mb.id,
         name: mb.name,
@@ -107,8 +109,19 @@ export class Api {
         link: memberLink(req, token),
       });
     } catch (err) {
-      if (String(err.message).includes('UNIQUE')) return sendJson(res, 409, { error: 'duplicate_name' });
-      throw err;
+      if (!String(err.message).includes('UNIQUE')) throw err;
+      const inactive = this.store.getInactiveMemberByName(name);
+      if (!inactive) return sendJson(res, 409, { error: 'duplicate_name' });
+      this.store.reactivateMember(inactive.id, token);
+      const date = todayLocal(this.getConfig().timeZone);
+      const done = new Set(this.store.submittedMemberIds(date));
+      sendJson(res, 201, {
+        id: inactive.id,
+        name,
+        active: true,
+        reported_today: done.has(inactive.id),
+        link: memberLink(req, token),
+      });
     }
   }
 

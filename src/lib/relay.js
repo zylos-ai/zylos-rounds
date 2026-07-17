@@ -94,6 +94,7 @@ export class Relay {
     const cfg = this.getConfig();
     const model = cfg.model ?? 'gpt-realtime-2.1';
     const maxSessionMs = cfg.maxSessionMs ?? 10 * 60 * 1000;
+    const reportDate = todayLocal(cfg.timeZone);
     this.active++;
     const startedAt = Date.now();
     const transcript = [];
@@ -118,7 +119,7 @@ export class Relay {
       self.active = Math.max(0, self.active - 1);
       const dur = Math.round((Date.now() - startedAt) / 1000);
       if (transcript.length) {
-        store.appendTranscript(member.id, todayLocal(), transcript.join('\n'), dur, model, saved);
+        store.appendTranscript(member.id, reportDate, transcript.join('\n'), dur, model, saved);
       }
       console.log(`[standup] session end ${member.name} (${reason}, ${dur}s, saved=${saved})`);
     }
@@ -142,6 +143,7 @@ export class Relay {
         return;
       }
       if (ev.type === 'app.end') {
+        safeSend(upstream, { type: 'response.cancel' });
         safeSend(upstream, { type: 'response.create', response: { instructions: '对方要结束对话了。如果还没提交小结，现在立刻调用 submit_standup_summary，然后简短道别。' } });
         return;
       }
@@ -170,7 +172,7 @@ export class Relay {
           if (fc) {
             try {
               const args = JSON.parse(fc.arguments);
-              this.store.upsertSummary(member.id, todayLocal(), args, fc.arguments, model);
+              this.store.upsertSummary(member.id, reportDate, args, fc.arguments, model);
               saved = true;
               safeSend(client, { type: 'app.saved', summary: args });
               safeSend(upstream, { type: 'conversation.item.create', item: { type: 'function_call_output', call_id: fc.call_id, output: '{"ok":true,"message":"已保存"}' } });
@@ -186,6 +188,7 @@ export class Relay {
           break;
         case 'error':
           console.error('[standup] api error', JSON.stringify(ev.error));
+          safeSend(client, { type: 'app.error', message: ev.error?.message || '上游错误' });
           break;
       }
       safeSend(client, ev); // forward everything to the client

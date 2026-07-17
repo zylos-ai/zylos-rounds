@@ -169,6 +169,9 @@ export class TalkEngine {
         case 'response.done':
           this.on.responseDone();
           break;
+        case 'error':
+          this.on.error(ev.error?.message || '服务出错');
+          break;
         case 'app.saved':
           this.done = true;
           this.on.saved(ev.summary);

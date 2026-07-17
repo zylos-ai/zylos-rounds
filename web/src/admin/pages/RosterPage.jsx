@@ -21,6 +21,7 @@ import { api } from '../api';
 
 export default function RosterPage() {
   const [members, setMembers] = useState(null);
+  const [reportDate, setReportDate] = useState('');
   const [loadError, setLoadError] = useState('');
   const [name, setName] = useState('');
   const [addError, setAddError] = useState('');
@@ -33,6 +34,7 @@ export default function RosterPage() {
     try {
       const data = await api('api/members');
       setMembers(data.members || []);
+      if (data.date) setReportDate(data.date);
     } catch (err) {
       if (err.status !== 401) setLoadError('加载失败，请刷新重试');
     }
@@ -104,7 +106,7 @@ export default function RosterPage() {
   return (
     <>
       <h1 className="mb-1 flex items-center gap-2 text-xl font-semibold">成员管理</h1>
-      <p className="mb-5 text-sm text-muted-foreground">今天 {today()} · 每位成员通过自己的专属链接和 Luna 语音汇报</p>
+      <p className="mb-5 text-sm text-muted-foreground">今天 {reportDate || today()} · 每位成员通过自己的专属链接和 Luna 语音汇报</p>
 
       {/* stat chips */}
       <div className="mb-4 flex flex-wrap gap-2.5">
@@ -192,7 +194,7 @@ export default function RosterPage() {
                             <AlertDialogHeader>
                               <AlertDialogTitle>移除成员「{m.name}」？</AlertDialogTitle>
                               <AlertDialogDescription>
-                                历史日报会保留，专属链接立即失效。之后可以重新添加同名成员。
+                                历史日报会保留，专属链接立即失效。之后可以重新添加同名成员（历史记录会关联回来）。
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>

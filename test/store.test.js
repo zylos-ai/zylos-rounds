@@ -63,6 +63,27 @@ test('transcript append accumulates and never downgrades submitted status', () =
   s.close();
 });
 
+test('deactivate then reactivate with same name preserves history', () => {
+  const s = tmpStore();
+  const info = s.addMember('孙七', 'tokS');
+  const id = Number(info.lastInsertRowid);
+  s.upsertSummary(id, '2026-07-17', { yesterday: ['old'], today: [], blockers: [], topics_for_meeting: [] }, '{}', 'm');
+  s.deactivateMember(id);
+  assert.equal(s.listActiveMembers().length, 0);
+  assert.throws(() => s.addMember('孙七', 'tokNew'), /UNIQUE/);
+  const inactive = s.getInactiveMemberByName('孙七');
+  assert.ok(inactive);
+  assert.equal(inactive.id, id);
+  s.reactivateMember(id, 'tokNew');
+  assert.equal(s.listActiveMembers().length, 1);
+  assert.equal(s.getMemberByToken('tokNew').id, id);
+  assert.equal(s.getMemberByToken('tokS'), undefined);
+  const rows = s.dayReports('2026-07-17');
+  assert.equal(rows.length, 1);
+  assert.deepEqual(JSON.parse(rows[0].yesterday), ['old']);
+  s.close();
+});
+
 test('history aggregates submitted counts and topic counts', () => {
   const s = tmpStore();
   const a = Number(s.addMember('A', 't1').lastInsertRowid);

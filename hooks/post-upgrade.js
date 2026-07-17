@@ -35,13 +35,19 @@ if (fs.existsSync(configPath)) {
       migrations.push('Added enabled field');
     }
 
-    // Add more migrations as needed for future versions
-    // Migration N: Example
-    // if (config.newField === undefined) {
-    //   config.newField = 'default';
-    //   migrated = true;
-    //   migrations.push('Added newField');
-    // }
+    // Migration 2: Ensure auth password exists (fail-closed)
+    if (!config.auth?.password) {
+      const crypto = await import('node:crypto');
+      const { hashPassword } = await import('../src/lib/auth.js');
+      const password = crypto.randomBytes(24).toString('base64url');
+      config.auth = { ...(config.auth || {}), enabled: true, password: hashPassword(password) };
+      migrated = true;
+      migrations.push('Generated missing admin password');
+      console.log('=========================================================');
+      console.log(`  Admin password: ${password}`);
+      console.log('  (shown only once — store it now; only a hash is saved)');
+      console.log('=========================================================');
+    }
 
     // Save if migrated
     if (migrated) {

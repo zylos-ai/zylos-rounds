@@ -64,7 +64,11 @@ export class AuthGate {
   }
 
   get enabled() {
-    return Boolean(this.config.auth?.enabled) && Boolean(this.config.auth?.password);
+    return Boolean(this.config.auth?.enabled);
+  }
+
+  get configured() {
+    return this.enabled && Boolean(this.config.auth?.password);
   }
 
   /** If config.json carries a plaintext password (fresh install), hash it in place. */
@@ -91,6 +95,7 @@ export class AuthGate {
 
   isAuthenticated(req) {
     if (!this.enabled) return true;
+    if (!this.configured) return false;
     const token = this.sessionToken(req);
     if (!token) return false;
     const session = this.store.getSession(sha256(token));
@@ -144,6 +149,7 @@ export class AuthGate {
   async handleLogin(req, res) {
     if (req.method !== 'POST') return sendJson(res, 405, { error: 'method_not_allowed' });
     if (!this.enabled) return sendJson(res, 204, {});
+    if (!this.configured) return sendJson(res, 503, { error: 'auth_not_configured' });
     const ip = getClientIp(req);
     let body;
     try {

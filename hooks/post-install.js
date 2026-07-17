@@ -25,23 +25,26 @@ console.log('  - logs/');
 console.log('  - data/');
 
 const configPath = path.join(DATA_DIR, 'config.json');
-if (!fs.existsSync(configPath)) {
+let config;
+try {
+  config = fs.existsSync(configPath)
+    ? JSON.parse(fs.readFileSync(configPath, 'utf8'))
+    : { enabled: true };
+} catch {
+  config = { enabled: true };
+}
+
+if (!config.auth?.password) {
   const password = crypto.randomBytes(24).toString('base64url');
-  const config = {
-    enabled: true,
-    auth: {
-      enabled: true,
-      password: hashPassword(password),
-    },
-  };
+  config.auth = { ...(config.auth || {}), enabled: true, password: hashPassword(password) };
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
-  console.log('\nCreated config.json with a generated admin password.');
+  console.log('\nGenerated admin password (config had none).');
   console.log('=========================================================');
   console.log(`  Admin password: ${password}`);
   console.log('  (shown only once — store it now; only a hash is saved)');
   console.log('=========================================================');
 } else {
-  console.log('\nConfig already exists, skipping password generation.');
+  console.log('\nConfig already has a password, skipping generation.');
 }
 
 console.log('\n[post-install] Complete!');

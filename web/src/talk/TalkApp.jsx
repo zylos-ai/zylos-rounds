@@ -139,8 +139,10 @@ export default function TalkApp() {
     }
   }, [appendAiDelta, say]);
 
+  const [submitting, setSubmitting] = useState(false);
   const endCall = useCallback(() => {
     if (engineRef.current && !doneRef.current) {
+      setSubmitting(true);
       engineRef.current.end();
       say('正在生成小结…');
     }
@@ -213,9 +215,9 @@ export default function TalkApp() {
         </div>
 
         {inCall && (
-          <Button variant="secondary" className="mt-2.5" onClick={endCall}>
-            <Check strokeWidth={1.75} />
-            结束并提交
+          <Button variant="secondary" className="mt-2.5" onClick={endCall} disabled={submitting}>
+            {submitting ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : <Check strokeWidth={1.75} />}
+            {submitting ? '正在生成小结…' : '结束并提交'}
           </Button>
         )}
       </div>

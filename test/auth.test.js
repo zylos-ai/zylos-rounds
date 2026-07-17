@@ -100,3 +100,14 @@ test('auth disabled means everything is authenticated', () => {
   auth.stop();
   store.close();
 });
+
+test('enabled=true with no password rejects all requests (fail-closed)', () => {
+  const { store } = setup();
+  const config = { auth: { enabled: true } };
+  const auth = new AuthGate(config, store, '/dev/null');
+  assert.equal(auth.enabled, true);
+  assert.equal(auth.configured, false);
+  assert.ok(!auth.isAuthenticated(mockReq({})));
+  auth.stop();
+  store.close();
+});
