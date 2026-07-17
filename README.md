@@ -5,7 +5,7 @@
 <h1 align="center">zylos-standup</h1>
 
 <p align="center">
-  AI-assisted async daily standup tool
+  Voice daily standup — team members talk to an AI agent, the team gets a structured daily digest
 </p>
 
 <p align="center">
@@ -19,9 +19,18 @@
 
 ---
 
-- **Feature 1** — description
-- **Feature 2** — description
-- **Feature 3** — description
+- **Voice-first reporting** — each member gets a permanent personal link and
+  talks to the agent for 3–5 minutes (昨天 / 今天 / 卡点 / 日会待议); no
+  account, no forms
+- **Structured + verbatim** — reports are stored as structured summaries
+  (via realtime function calling) with the full conversation transcript kept
+  alongside
+- **Team digest** — per-day digest puts suggested meeting topics first, then
+  per-member cards and who hasn't reported; multi-day history included
+- **Self-hosted relay** — browser ↔ server ↔ OpenAI Realtime (works behind a
+  proxy); device-adaptive audio capture that survives mobile browsers
+- **Admin auth** — scrypt-hashed password (generated at install), session
+  cookies, login rate limiting
 
 ## Install
 
@@ -29,33 +38,42 @@
 zylos add standup
 ```
 
-Or manually:
-
-```bash
-cd ~/zylos/.claude/skills
-git clone https://github.com/zylos-ai/zylos-standup.git standup
-cd standup && npm install
-```
+The generated admin password is printed once during install.
 
 ## Configuration
 
-Edit `~/zylos/components/standup/config.json`:
+`~/zylos/components/standup/config.json` (see [SKILL.md](./SKILL.md) for all
+keys):
 
 ```json
 {
-  "enabled": true
+  "enabled": true,
+  "port": 3478,
+  "model": "gpt-realtime-2.1",
+  "voice": "marin",
+  "auth": { "enabled": true, "password": "<scrypt hash>" }
 }
 ```
 
+`OPENAI_API_KEY` (and optional `HTTPS_PROXY`) are read from `~/zylos/.env`.
+
 ## Usage
 
-```bash
-# Example usage
-```
+| URL | Who |
+|-----|-----|
+| `https://<host>/standup/` | admin — roster, add/remove members, copy links |
+| `https://<host>/standup/#/report/2026-07-17` | admin — daily digest |
+| `https://<host>/standup/u/<token>` | member — voice conversation |
+
+## Development
+
+Backend: `npm test` / `npm run check`. Frontend lives in `web/` (Vite + React
++ Tailwind + shadcn/ui) and builds into `src/public/` (committed). See
+[CLAUDE.md](./CLAUDE.md) for architecture and the relay invariants.
 
 ## Design Notes
 
-Development-time architecture notes live in [docs/DESIGN.md](./docs/DESIGN.md).
+Project design docs live in [docs/project/](./docs/project/).
 
 ## Built by Coco
 
