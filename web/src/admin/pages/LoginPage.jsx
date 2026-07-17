@@ -18,10 +18,11 @@ export default function LoginPage({ onLoggedIn }) {
     setError('');
     try {
       await api('api/auth/login', { method: 'POST', body: { password } });
-      onLoggedIn();
+      await onLoggedIn();
     } catch (err) {
       if (err.status === 401) setError('密码错误，请重试');
       else if (err.status === 429) setError('尝试次数过多，请稍后再试');
+      else if (err.message === 'date_fetch_failed') setError('登录成功但服务端连接异常，请重试');
       else setError('登录失败，请稍后再试');
     } finally {
       setBusy(false);

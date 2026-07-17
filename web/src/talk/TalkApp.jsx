@@ -99,7 +99,7 @@ export default function TalkApp() {
           setPhase('listening');
           say('Luna 正在跟你打招呼…');
         },
-        error: (msg) => say(msg, true),
+        error: (msg) => { setSubmitting(false); say(msg, true); },
         speechStarted: () => {
           if (doneRef.current) return;
           setPhase('listening');

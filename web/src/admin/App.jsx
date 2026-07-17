@@ -30,12 +30,16 @@ export default function App() {
   }, []);
 
   const onLoggedIn = useCallback(async () => {
-    try {
-      const r = await api('api/auth/me');
-      if (r?.date) setReportDate(r.date);
-    } catch { /* date stays at whatever the initial check set */ }
-    setAuthed(true);
-    navigate('#/');
+    for (let i = 0; i < 2; i++) {
+      try {
+        const r = await api('api/auth/me');
+        if (r?.date) setReportDate(r.date);
+        setAuthed(true);
+        navigate('#/');
+        return;
+      } catch { /* retry once */ }
+    }
+    throw new Error('date_fetch_failed');
   }, []);
 
   const onLogout = useCallback(async () => {
