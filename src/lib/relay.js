@@ -187,9 +187,13 @@ export class Relay {
           console.error('[standup] asr failed', JSON.stringify(ev.error || ev));
           break;
         case 'error':
+          // app.end fires response.cancel unconditionally; when no response is
+          // active the API answers with this benign error — swallow it, or the
+          // client re-enables the submit button mid-wrap-up.
+          if (ev.error?.code === 'response_cancel_not_active') return;
           console.error('[standup] api error', JSON.stringify(ev.error));
           safeSend(client, { type: 'app.error', message: ev.error?.message || '上游错误' });
-          break;
+          return; // already delivered as app.error — don't forward the raw event too
       }
       safeSend(client, ev); // forward everything to the client
     });
