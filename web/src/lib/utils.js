@@ -5,9 +5,9 @@ export function cn(...inputs) {
   return twMerge(clsx(inputs));
 }
 
-/** Today in the report timezone (matches backend Asia/Shanghai windowing). */
+/** Today in the browser's local timezone (fallback only — prefer server-provided date). */
 export function today() {
-  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
+  return new Date().toLocaleDateString('sv-SE');
 }
 
 /** Clipboard copy with a fallback for non-secure contexts. */

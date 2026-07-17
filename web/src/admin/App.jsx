@@ -29,9 +29,12 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const onLoggedIn = useCallback(() => {
+  const onLoggedIn = useCallback(async () => {
+    try {
+      const r = await api('api/auth/me');
+      if (r?.date) setReportDate(r.date);
+    } catch { /* date stays at whatever the initial check set */ }
     setAuthed(true);
-    api('api/auth/me').then((r) => { if (r?.date) setReportDate(r.date); }).catch(() => {});
     navigate('#/');
   }, []);
 
