@@ -50,6 +50,29 @@ const MIGRATIONS = [
       ALTER TABLE members ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0;
     `,
   },
+  {
+    // The agent's "brain": editable background containers, per-member notes,
+    // and a searchable team knowledge base. All maintained by Luna / the coco
+    // avatar (management API) or a human (admin UI); composed into the agent's
+    // instructions or pulled on demand via realtime tools.
+    version: 3,
+    sql: `
+      CREATE TABLE IF NOT EXISTS agent_context (
+        key TEXT PRIMARY KEY,
+        value TEXT,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+      );
+      ALTER TABLE members ADD COLUMN context TEXT;
+      CREATE TABLE IF NOT EXISTS knowledge (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        tags TEXT,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+      );
+    `,
+  },
 ];
 
 export class Store {
@@ -91,7 +114,86 @@ export class Store {
     this.db.prepare('DELETE FROM settings WHERE key=?').run(key);
   }
 
+  // ---- agent context (background + probing guidance containers) ----
+  getContext(key) {
+    return this.db.prepare('SELECT value FROM agent_context WHERE key=?').get(key)?.value ?? null;
+  }
+
+  setContext(key, value) {
+    this.db.prepare(`
+      INSERT INTO agent_context(key,value) VALUES(?,?)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now','localtime')
+    `).run(key, value);
+  }
+
+  /** All context keys with their updated_at — for the management/admin surface. */
+  allContext() {
+    return this.db.prepare('SELECT key, value, updated_at FROM agent_context').all();
+  }
+
+  // ---- knowledge base (on-demand retrieval via search_team_knowledge) ----
+  listKnowledge() {
+    return this.db.prepare('SELECT * FROM knowledge ORDER BY updated_at DESC, id DESC').all();
+  }
+
+  getKnowledge(id) {
+    return this.db.prepare('SELECT * FROM knowledge WHERE id=?').get(id);
+  }
+
+  addKnowledge(title, content, tags) {
+    return this.db.prepare('INSERT INTO knowledge(title,content,tags) VALUES(?,?,?)').run(title, content, tags ?? null);
+  }
+
+  updateKnowledge(id, title, content, tags) {
+    return this.db.prepare(`
+      UPDATE knowledge SET title=?, content=?, tags=?, updated_at=datetime('now','localtime') WHERE id=?
+    `).run(title, content, tags ?? null, id);
+  }
+
+  deleteKnowledge(id) {
+    return this.db.prepare('DELETE FROM knowledge WHERE id=?').run(id);
+  }
+
+  /**
+   * Keyword search over title/content/tags. Each whitespace-separated term must
+   * match somewhere (AND semantics); ranking is by how many terms hit the title.
+   * Deterministic string matching — no LLM in the retrieval path.
+   */
+  searchKnowledge(query, limit = 3) {
+    const terms = String(query || '').trim().toLowerCase().split(/\s+/).filter(Boolean).slice(0, 8);
+    if (!terms.length) return [];
+    const rows = this.db.prepare('SELECT * FROM knowledge').all();
+    const scored = [];
+    for (const r of rows) {
+      const hay = `${r.title}\n${r.content}\n${r.tags || ''}`.toLowerCase();
+      const title = r.title.toLowerCase();
+      if (!terms.every(t => hay.includes(t))) continue;
+      const score = terms.reduce((s, t) => s + (title.includes(t) ? 2 : 1), 0);
+      scored.push({ ...r, _score: score });
+    }
+    scored.sort((a, b) => b._score - a._score);
+    return scored.slice(0, limit);
+  }
+
   // ---- members ----
+  setMemberContext(id, context) {
+    return this.db.prepare('UPDATE members SET context=? WHERE id=?').run(context ?? null, id);
+  }
+
+  /**
+   * A member's own recent submitted reports (most recent first, excluding a
+   * given date — usually today). Powers the recall_member_history tool so the
+   * agent can follow up on what the member said in previous standups.
+   */
+  recallMemberHistory(memberId, excludeDate, limit = 5) {
+    return this.db.prepare(`
+      SELECT report_date, yesterday, today, blockers, topics
+      FROM reports
+      WHERE member_id=? AND status='submitted' AND report_date <> ?
+      ORDER BY report_date DESC LIMIT ?
+    `).all(memberId, excludeDate, limit);
+  }
+
   getMemberByToken(token) {
     return this.db.prepare('SELECT * FROM members WHERE token=? AND active=1').get(token);
   }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Users, UserCheck, Clock, Copy, Check, ExternalLink, RefreshCw, Trash2, Loader2, FlaskConical } from 'lucide-react';
+import { Users, UserCheck, Clock, Copy, Check, ExternalLink, RefreshCw, Trash2, Loader2, FlaskConical, NotebookPen } from 'lucide-react';
 import { cn, copyText, today } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -179,6 +179,12 @@ export default function RosterPage() {
                     </TableCell>
                     <TableCell className="py-4">
                       <div className="flex items-center justify-end gap-0.5">
+                        <MemberContextButton
+                          member={m}
+                          onSaved={(context) =>
+                            setMembers((ms) => ms.map((x) => (x.id === m.id ? { ...x, context } : x)))
+                          }
+                        />
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button variant="ghost" size="icon" title="重置链接" aria-label={`重置 ${m.name} 的链接`}>
@@ -288,6 +294,74 @@ export default function RosterPage() {
         </Card>
       ) : null}
     </>
+  );
+}
+
+// Per-member background/probing note — injected as 【关于 X】 into that
+// member's standup instructions. A filled icon marks members that have one.
+function MemberContextButton({ member, onSaved }) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(member.context || '');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const has = Boolean((member.context || '').trim());
+
+  const onOpenChange = (next) => {
+    if (next) { setValue(member.context || ''); setErr(''); }
+    setOpen(next);
+  };
+
+  const save = async () => {
+    if (busy) return;
+    setBusy(true);
+    setErr('');
+    try {
+      const r = await api(`api/members/${member.id}/context`, { method: 'PUT', body: { context: value } });
+      onSaved(r.context || '');
+      setOpen(false);
+    } catch (e) {
+      if (e.status !== 401) setErr('保存失败，请重试');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <Button
+        variant="ghost"
+        size="icon"
+        title={has ? '编辑背景/关注点' : '添加背景/关注点'}
+        aria-label={`${member.name} 的背景`}
+        className={cn(has && 'text-primary')}
+        onClick={() => onOpenChange(true)}
+      >
+        <NotebookPen strokeWidth={1.75} />
+      </Button>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>「{member.name}」的背景 / 关注点</AlertDialogTitle>
+          <AlertDialogDescription>
+            这位同事的角色、当前项目、需要重点追问的点。会在他的语音汇报里注入给助手，帮助更有针对性地追问。
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <textarea
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="例如：前端负责人，正在做发布系统；重点关注上线节奏和回归测试覆盖。"
+          rows={5}
+          className="w-full rounded-md border border-input bg-transparent px-3 py-2.5 text-[0.95rem] leading-relaxed text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring placeholder:text-faint resize-y"
+        />
+        {err ? <p className="-mt-1 text-sm text-destructive">{err}</p> : null}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={busy}>取消</AlertDialogCancel>
+          <Button className="h-[34px] px-4" disabled={busy} onClick={save}>
+            {busy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
+            保存
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

@@ -11,12 +11,13 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
-import { getConfig, watchConfig, loadEnvSecrets, DATA_DIR, CONFIG_PATH } from './lib/config.js';
+import { getConfig, saveConfig, watchConfig, loadEnvSecrets, DATA_DIR, CONFIG_PATH } from './lib/config.js';
 import { Store } from './lib/store.js';
 import { AuthGate } from './lib/auth.js';
 import { Api } from './lib/api.js';
 import { Relay } from './lib/relay.js';
 import { Settings } from './lib/settings.js';
+import { AgentContext } from './lib/context.js';
 import { Static } from './lib/static.js';
 import { sendText, sendJson } from './lib/http-util.js';
 
@@ -43,10 +44,27 @@ if (!settings.resolveKey()) {
 // Built-in try-it member: full talk flow, excluded from all rosters/digests.
 store.ensureTestMember('体验成员', crypto.randomBytes(8).toString('base64url'));
 
+// The agent's maintainable brain (background + probing + knowledge). Seed the
+// default probing guidance once so the mechanism is useful out of the box.
+const context = new AgentContext(store);
+context.seedDefaults();
+
+// Bearer token for the management API (context/knowledge maintenance by Luna /
+// the coco avatar). Minted once and persisted into the component config.
+if (!config.serviceToken) {
+  config.serviceToken = crypto.randomBytes(24).toString('base64url');
+  try {
+    saveConfig(config);
+    console.log('[standup] minted management API service token (config.serviceToken)');
+  } catch (err) {
+    console.error(`[standup] failed to persist service token: ${err.message}`);
+  }
+}
+
 const auth = new AuthGate(config, store, CONFIG_PATH);
-const api = new Api(store, auth, getConfig, settings);
+const api = new Api(store, auth, getConfig, settings, context);
 const statics = new Static(path.join(__dirname, 'public'));
-const relay = new Relay(store, getConfig, env, settings);
+const relay = new Relay(store, getConfig, env, settings, context);
 
 watchConfig(() => console.log('[standup] Config reloaded'));
 

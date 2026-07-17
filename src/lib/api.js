@@ -26,11 +26,28 @@ function newToken() {
 }
 
 export class Api {
-  constructor(store, auth, getConfig, settings) {
+  constructor(store, auth, getConfig, settings, context) {
     this.store = store;
     this.auth = auth;
     this.getConfig = getConfig;
     this.settings = settings;
+    this.context = context;
+  }
+
+  // Management surface (context/knowledge) is reachable by a human admin
+  // (session cookie) OR by Luna / the coco avatar (Bearer service token) — the
+  // latter is how the brain gets tuned programmatically from a conversation.
+  isManager(req) {
+    if (this.auth.isAuthenticated(req)) return true;
+    const m = /^Bearer\s+(.+)$/i.exec(req.headers.authorization || '');
+    const tok = m && m[1].trim();
+    const svc = this.getConfig().serviceToken;
+    if (!tok || !svc || tok.length !== svc.length) return false;
+    try {
+      return crypto.timingSafeEqual(Buffer.from(tok), Buffer.from(svc));
+    } catch {
+      return false;
+    }
   }
 
   // publicOrigin covers TLS-terminating proxies that forward plain http
@@ -63,6 +80,35 @@ export class Api {
     }
 
     if (!p.startsWith('/api/')) return false;
+
+    // ---- management surface: admin session OR bearer service token ----
+    if (p === '/api/context' || p === '/api/context/members' || p === '/api/knowledge' ||
+        /^\/api\/knowledge\/\d+$/.test(p) || /^\/api\/members\/\d+\/context$/.test(p)) {
+      if (!this.isManager(req)) return sendJson(res, 401, { error: 'unauthorized' }), true;
+
+      if (p === '/api/context' && req.method === 'GET') return this.getContext(res), true;
+      if (p === '/api/context' && req.method === 'PUT') return await this.putContext(req, res), true;
+
+      // id/name/context only (no talk links) — lets Luna / the avatar target
+      // per-member context without the session-only roster.
+      if (p === '/api/context/members' && req.method === 'GET') {
+        return sendJson(res, 200, {
+          members: this.store.listActiveMembers().map(mb => ({ id: mb.id, name: mb.name, context: mb.context || '' })),
+        }), true;
+      }
+
+      if (p === '/api/knowledge' && req.method === 'GET') return this.listKnowledge(res), true;
+      if (p === '/api/knowledge' && req.method === 'POST') return await this.addKnowledge(req, res), true;
+
+      let km = p.match(/^\/api\/knowledge\/(\d+)$/);
+      if (km && req.method === 'PUT') return await this.updateKnowledge(req, res, Number(km[1])), true;
+      if (km && req.method === 'DELETE') return this.deleteKnowledge(res, Number(km[1])), true;
+
+      const cm = p.match(/^\/api\/members\/(\d+)\/context$/);
+      if (cm && req.method === 'PUT') return await this.putMemberContext(req, res, Number(cm[1])), true;
+
+      return sendJson(res, 404, { error: 'not_found' }), true;
+    }
 
     // everything else under /api/ requires an admin session
     if (!this.auth.isAuthenticated(req)) {
@@ -151,6 +197,93 @@ export class Api {
     return this.getSettings(res);
   }
 
+  // ---- agent context containers (background + probing guidance) ----
+  getContext(res) {
+    sendJson(res, 200, {
+      team_background: this.store.getContext('team_background') || '',
+      probing_guidance: this.store.getContext('probing_guidance') || '',
+    });
+  }
+
+  async putContext(req, res) {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      return sendJson(res, 400, { error: 'bad_request' });
+    }
+    for (const key of ['team_background', 'probing_guidance']) {
+      if (body[key] === undefined) continue;
+      const v = String(body[key]);
+      if (v.length > 20000) return sendJson(res, 400, { error: 'too_long' });
+      this.store.setContext(key, v);
+    }
+    return this.getContext(res);
+  }
+
+  async putMemberContext(req, res, id) {
+    const member = this.store.getMemberById(id);
+    if (!member) return sendJson(res, 404, { error: 'not_found' });
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      return sendJson(res, 400, { error: 'bad_request' });
+    }
+    const v = body.context === undefined || body.context === null ? '' : String(body.context);
+    if (v.length > 8000) return sendJson(res, 400, { error: 'too_long' });
+    this.store.setMemberContext(id, v || null);
+    sendJson(res, 200, { id, context: v });
+  }
+
+  // ---- team knowledge base ----
+  listKnowledge(res) {
+    sendJson(res, 200, {
+      knowledge: this.store.listKnowledge().map(k => ({
+        id: k.id, title: k.title, content: k.content, tags: k.tags || '', updated_at: k.updated_at,
+      })),
+    });
+  }
+
+  async addKnowledge(req, res) {
+    const b = await this.readKnowledgeBody(req, res);
+    if (!b) return;
+    const info = this.store.addKnowledge(b.title, b.content, b.tags);
+    sendJson(res, 201, { id: Number(info.lastInsertRowid), ...b });
+  }
+
+  async updateKnowledge(req, res, id) {
+    if (!this.store.getKnowledge(id)) return sendJson(res, 404, { error: 'not_found' });
+    const b = await this.readKnowledgeBody(req, res);
+    if (!b) return;
+    this.store.updateKnowledge(id, b.title, b.content, b.tags);
+    sendJson(res, 200, { id, ...b });
+  }
+
+  deleteKnowledge(res, id) {
+    const info = this.store.deleteKnowledge(id);
+    if (!info.changes) return sendJson(res, 404, { error: 'not_found' });
+    sendJson(res, 204, {});
+  }
+
+  // Shared parse/validate for knowledge create+update. Returns null (and sends
+  // the error response) on invalid input.
+  async readKnowledgeBody(req, res) {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      return sendJson(res, 400, { error: 'bad_request' }), null;
+    }
+    const title = String(body.title || '').trim();
+    const content = String(body.content || '').trim();
+    const tags = body.tags === undefined || body.tags === null ? '' : String(body.tags).trim();
+    if (!title || title.length > 200) return sendJson(res, 400, { error: 'invalid_title' }), null;
+    if (!content || content.length > 20000) return sendJson(res, 400, { error: 'invalid_content' }), null;
+    if (tags.length > 500) return sendJson(res, 400, { error: 'invalid_tags' }), null;
+    return { title, content, tags };
+  }
+
   listMembers(req, res) {
     const members = this.store.listActiveMembers();
     const date = todayLocal(this.getConfig().timeZone);
@@ -164,6 +297,7 @@ export class Api {
         active: Boolean(mb.active),
         reported_today: done.has(mb.id),
         link: this.memberLink(req, mb.token),
+        context: mb.context || '',
       })),
       // built-in try-it member: shares the same talk flow, never counted
       test_member: test ? {
@@ -250,6 +384,7 @@ export class Api {
         today: parseList(r.today),
         blockers: parseList(r.blockers),
         topics: parseList(r.topics),
+        transcript: r.transcript || '',
         duration_s: r.duration_s || 0,
         updated_at: r.updated_at,
       })),

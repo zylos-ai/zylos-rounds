@@ -1,14 +1,18 @@
 ---
 name: standup
-version: 0.2.1
+version: 0.3.0
 description: >-
   Voice daily-standup component. Team members talk to an AI agent (OpenAI
   Realtime, Chinese voice conversation) via a personal no-login link; the agent
   collects yesterday/today/blockers/meeting-topics, stores structured reports,
-  and serves per-day team digests. Use when managing standup members (add /
-  remove / reset link), reading daily reports or digests, checking who has
-  reported today, or troubleshooting the voice relay. Triggers: "日报",
-  "语音日报", "standup", "每日汇报", "日会待议", "谁还没汇报".
+  and serves per-day team digests. The agent has a maintainable "brain" —
+  editable team background, probing guidance and per-member context injected
+  every call, plus on-demand tools to recall a member's past reports and search
+  a team knowledge base. Use when managing standup members (add / remove /
+  reset link), tuning the agent's background / probing / knowledge, reading
+  daily reports / transcripts / digests, checking who has reported today, or
+  troubleshooting the voice relay. Triggers: "日报", "语音日报", "standup",
+  "每日汇报", "日会待议", "谁还没汇报", "追问", "背景", "知识库".
 type: capability
 
 lifecycle:
@@ -60,8 +64,9 @@ surfaces (roster, daily digest, history) sit behind password login
 | Path | Who | What |
 |------|-----|------|
 | `/standup/` | admin (login) | roster: members, links, today status; add/remove/reset-link |
-| `/standup/#/report/<YYYY-MM-DD>` | admin | daily digest (topics first, per-member cards, missing list) |
+| `/standup/#/report/<YYYY-MM-DD>` | admin | daily digest (topics first, per-member cards, raw transcript on demand, missing list) |
 | `/standup/#/reports` | admin | multi-day history |
+| `/standup/#/brain` | admin | 背景/追问: team background, probing guidance, knowledge base |
 | `/standup/u/<token>` | member | voice conversation page (no login) |
 
 ## Configuration (`~/zylos/components/standup/config.json`)
@@ -78,6 +83,7 @@ surfaces (roster, daily digest, history) sit behind password login
 | `timeZone` | `Asia/Shanghai` | report-date boundary |
 | `auth.enabled` | `true` | admin auth (never disable in production) |
 | `auth.password` | generated | scrypt hash; plaintext printed once at install |
+| `serviceToken` | generated | bearer token for the management API (context / knowledge) — minted on first start |
 
 `OPENAI_API_KEY` and `HTTPS_PROXY` are read from `~/zylos/.env` (process.env
 wins) — they are never stored in config.json.
@@ -93,12 +99,67 @@ the password from the operator, or operate through the web UI in a browser.
 Routine member management should go through the web UI / API — never write to
 the SQLite DB directly.
 
+## Agent brain (background / probing / knowledge)
+
+The agent's behaviour is shaped by editable content, not code. Three
+always-injected containers plus a searchable knowledge base:
+
+| Container | Scope | Effect |
+|-----------|-------|--------|
+| `team_background` | global | injected as 【团队背景】 so the agent understands what people talk about |
+| `probing_guidance` | global | 【追问指引】 — when / what / how-deep to follow up (this is *how* smart probing is controlled) |
+| member `context` | per-member | 【关于 X】 — that person's role and what to probe for them |
+| knowledge base | global | entries the agent searches on demand via `search_team_knowledge` |
+
+The agent also has two on-demand realtime tools (it decides when to call them):
+
+- `recall_member_history` — this member's recent submitted reports, so it can
+  follow up on past progress / blockers.
+- `search_team_knowledge` — keyword search over the knowledge base.
+
+Tune the brain from a conversation with the owner, then push the change here.
+Every edit takes effect on the next call — this is the loop that makes the app
+sharper over time.
+
+### Maintenance API (Luna / the coco avatar)
+
+Maintainable via the admin UI (`#/brain`, per-member 背景 dialog) **or**
+programmatically with the bearer service token (`config.serviceToken`).
+Base: `https://luna.jinglever.com/standup` (or `http://127.0.0.1:3478`).
+
+```bash
+TOK=$(node -e "console.log(require(process.env.HOME+'/zylos/components/standup/config.json').serviceToken)")
+B=http://127.0.0.1:3478
+AUTH="Authorization: Bearer $TOK"
+
+# background + probing guidance
+curl -s -H "$AUTH" $B/api/context
+curl -s -X PUT -H "$AUTH" -H 'Content-Type: application/json' \
+  -d '{"team_background":"...", "probing_guidance":"..."}' $B/api/context
+
+# per-member context (get ids/names first — no talk links exposed here)
+curl -s -H "$AUTH" $B/api/context/members
+curl -s -X PUT -H "$AUTH" -H 'Content-Type: application/json' \
+  -d '{"context":"前端负责人，关注上线节奏"}' $B/api/members/<id>/context
+
+# knowledge base
+curl -s -H "$AUTH" $B/api/knowledge
+curl -s -X POST -H "$AUTH" -H 'Content-Type: application/json' \
+  -d '{"title":"发布系统","content":"...","tags":"release 前端"}' $B/api/knowledge
+curl -s -X PUT    -H "$AUTH" -H 'Content-Type: application/json' -d '{...}' $B/api/knowledge/<id>
+curl -s -X DELETE -H "$AUTH" $B/api/knowledge/<id>
+```
+
+Member roster management (add / remove / reset link) stays session-only — the
+service token is scoped to brain content, not the roster.
+
 ## Data
 
-- `data/standup.db` — members (permanent tokens), reports (one row per
-  member×date, UNIQUE), admin sessions. WAL mode.
+- `data/standup.db` — members (permanent tokens, optional per-member
+  `context`), reports (one row per member×date, UNIQUE), admin sessions,
+  `agent_context` (background + probing), `knowledge`. WAL mode.
 - Reports keep both the structured summary (function-call output) and the
-  full conversation transcript.
+  full conversation transcript (viewable per member on the daily report page).
 
 ## Migration from the MVP (one-time)
 

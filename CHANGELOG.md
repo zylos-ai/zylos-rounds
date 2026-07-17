@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-07-18
+
+### Added
+- **Agent brain** — the agent's behaviour is now shaped by editable content,
+  not just code:
+  - `team_background` and `probing_guidance` containers, injected into every
+    call as 【团队背景】/【追问指引】. The probing guidance is *how* smart
+    follow-up is controlled (when / what / how-deep) — tune it, and the agent
+    probes accordingly on the next call
+  - per-member `context` (【关于 X】) — role and what to probe for that person
+  - team knowledge base (title / content / tags)
+- **On-demand retrieval tools** the realtime agent can call mid-conversation:
+  - `recall_member_history` — the member's own recent submitted reports, for
+    following up on past progress / blockers (conversation continuity)
+  - `search_team_knowledge` — keyword search over the knowledge base
+- **Management API** for the brain, reachable by admin session **or** a bearer
+  service token (`config.serviceToken`, minted on first start) so Luna / the
+  coco avatar can tune it programmatically:
+  `GET/PUT /api/context`, `GET /api/context/members`,
+  `PUT /api/members/:id/context`, `GET/POST/PUT/DELETE /api/knowledge`
+- **Admin UI**: new 背景/追问 page (background, probing, knowledge base); a
+  per-member 背景 editor on the roster; raw conversation transcript viewable on
+  demand in the daily report (原始对话 — 备查)
+- DB migration v3: `agent_context` table, `members.context` column,
+  `knowledge` table
+
+### Changed
+- Session instructions are composed from the base persona + the (non-empty)
+  background containers, replacing the hard-coded "最多追问一句" rule with the
+  editable probing guidance
+- The day-report API now returns each member's transcript for review
+
 ## [0.2.1] - 2026-07-18
 
 ### Added

@@ -16,7 +16,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { todayLocal } from './http-util.js';
 
-const TOOL = {
+const SUBMIT_TOOL = {
   type: 'function',
   name: 'submit_standup_summary',
   description: '在日报对话结束时提交结构化小结。当四个主题都聊到（或成员表示没有更多内容）时调用。',
@@ -32,11 +32,35 @@ const TOOL = {
   },
 };
 
-const instructions = name => `你是团队的日报助手 Luna，正在和同事「${name}」做每日语音汇报，全程说中文，口语自然、简短友好。
-流程：先简单打个招呼，然后依次了解四件事：1) 昨天做了什么；2) 今天准备做什么；3) 有什么卡点或风险；4) 有什么问题需要在今天日会上讨论。
-规则：一次只问一个问题；对方说得具体就不追问，说得模糊可以追问一句（最多一句）；整个对话控制在五分钟以内；对方明显说完了就进入下一题。
-最重要的规则：只回应对方真实说过的内容。如果没听清、没听懂或音频断续，直接说"不好意思我没听清，能再说一遍吗"，绝对禁止猜测、脑补或编造对方没说过的事，更不能把猜测写进小结。等对方把话说完再开口，不要抢话。
-结束：四件事都聊到后，调用 submit_standup_summary 提交小结，然后用一两句话口头跟对方确认要点并道别。不要念出完整清单，不要提"函数"或任何技术细节。`;
+// On-demand retrieval tools — the agent calls these mid-conversation when it
+// judges it needs context. Results are handled in the response.done branch.
+const RECALL_TOOL = {
+  type: 'function',
+  name: 'recall_member_history',
+  description: '查看这位同事最近几次的日报（昨天/今天/卡点/待议题）。当你想确认对方上次说了什么、或想跟进之前的进展或卡点时调用。',
+  parameters: {
+    type: 'object',
+    properties: {
+      days: { type: 'integer', description: '回看最近几次汇报，默认 5，最多 10' },
+    },
+    required: [],
+  },
+};
+
+const KNOWLEDGE_TOOL = {
+  type: 'function',
+  name: 'search_team_knowledge',
+  description: '检索团队知识库。当对方提到某个项目/名词你需要背景、或需要核对团队已有信息时调用。',
+  parameters: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: '检索关键词，用空格分隔多个词' },
+    },
+    required: ['query'],
+  },
+};
+
+const TOOLS = [SUBMIT_TOOL, RECALL_TOOL, KNOWLEDGE_TOOL];
 
 const ALLOWED_CLIENT_EVENTS = new Set([
   'input_audio_buffer.append', 'input_audio_buffer.commit', 'input_audio_buffer.clear',
@@ -48,11 +72,12 @@ function safeSend(ws, obj) {
 }
 
 export class Relay {
-  constructor(store, getConfig, env, settings) {
+  constructor(store, getConfig, env, settings, context) {
     this.store = store;
     this.getConfig = getConfig;
     this.env = env;
     this.settings = settings; // resolves key/model/voice per session (env > DB > config)
+    this.context = context;   // AgentContext: composes instructions + retrieval
     this.active = 0;
     this.wss = new WebSocketServer({ noServer: true });
   }
@@ -69,15 +94,15 @@ export class Relay {
     });
   }
 
-  sessionUpdate(name) {
+  sessionUpdate(member) {
     const cfg = this.getConfig();
     return {
       type: 'session.update',
       session: {
         type: 'realtime',
         output_modalities: ['audio'],
-        instructions: instructions(name),
-        tools: [TOOL],
+        instructions: this.context.buildInstructions(member),
+        tools: TOOLS,
         tool_choice: 'auto',
         audio: {
           input: {
@@ -89,6 +114,50 @@ export class Relay {
         },
       },
     };
+  }
+
+  /**
+   * Dispatch a realtime function_call. submit_standup_summary ends the flow;
+   * the retrieval tools return data and prompt the model to continue speaking.
+   */
+  handleToolCall(fc, { client, upstream, member, reportDate, model, markSaved }) {
+    const respond = output => {
+      safeSend(upstream, {
+        type: 'conversation.item.create',
+        item: { type: 'function_call_output', call_id: fc.call_id, output: typeof output === 'string' ? output : JSON.stringify(output) },
+      });
+      safeSend(upstream, { type: 'response.create' });
+    };
+    let args = {};
+    try { args = JSON.parse(fc.arguments || '{}'); } catch { /* keep empty args */ }
+
+    switch (fc.name) {
+      case 'submit_standup_summary':
+        try {
+          this.store.upsertSummary(member.id, reportDate, args, fc.arguments, model);
+          markSaved();
+          safeSend(client, { type: 'app.saved', summary: args });
+          respond({ ok: true, message: '已保存' });
+        } catch (e) {
+          console.error('[standup] summary parse error', e);
+        }
+        break;
+      case 'recall_member_history': {
+        const days = Math.min(10, Math.max(1, Number(args.days) || 5));
+        const data = this.context.recallHistory(member, reportDate, days);
+        console.log(`[standup] tool recall_member_history ${member.name} -> ${data.count} reports`);
+        respond(data);
+        break;
+      }
+      case 'search_team_knowledge': {
+        const data = this.context.searchKnowledge(String(args.query || ''));
+        console.log(`[standup] tool search_team_knowledge "${data.query}" -> ${data.count} hits`);
+        respond(data);
+        break;
+      }
+      default:
+        console.warn('[standup] unknown tool call', fc.name);
+    }
   }
 
   session(client, member) {
@@ -131,7 +200,7 @@ export class Relay {
       console.log(`[standup] session end ${member.name} (${reason}, ${dur}s, saved=${saved})`);
     }
 
-    upstream.on('open', () => upstream.send(JSON.stringify(this.sessionUpdate(member.name))));
+    upstream.on('open', () => upstream.send(JSON.stringify(this.sessionUpdate(member))));
     upstream.on('error', e => {
       console.error('[standup] upstream error', e.message);
       safeSend(client, { type: 'app.error', message: '上游连接失败' });
@@ -175,19 +244,8 @@ export class Relay {
           if (ev.transcript?.trim()) transcript.push(`Luna: ${ev.transcript.trim()}`);
           break;
         case 'response.done': {
-          const fc = (ev.response?.output || []).find(i => i.type === 'function_call' && i.name === 'submit_standup_summary');
-          if (fc) {
-            try {
-              const args = JSON.parse(fc.arguments);
-              this.store.upsertSummary(member.id, reportDate, args, fc.arguments, model);
-              saved = true;
-              safeSend(client, { type: 'app.saved', summary: args });
-              safeSend(upstream, { type: 'conversation.item.create', item: { type: 'function_call_output', call_id: fc.call_id, output: '{"ok":true,"message":"已保存"}' } });
-              safeSend(upstream, { type: 'response.create' });
-            } catch (e) {
-              console.error('[standup] summary parse error', e);
-            }
-          }
+          const calls = (ev.response?.output || []).filter(i => i.type === 'function_call');
+          for (const fc of calls) this.handleToolCall(fc, { client, upstream, member, reportDate, model, markSaved: () => { saved = true; } });
           break;
         }
         case 'conversation.item.input_audio_transcription.failed':

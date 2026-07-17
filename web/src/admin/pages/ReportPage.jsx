@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { MessageCircle, History, Target, TriangleAlert, Users } from 'lucide-react';
+import { MessageCircle, History, Target, TriangleAlert, Users, MessagesSquare, ChevronDown } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { api } from '../api';
 
@@ -83,6 +84,7 @@ export default function ReportPage({ date }) {
                 <ReportSection icon={Target} title="今天" items={r.today} />
               </div>
               <ReportSection icon={TriangleAlert} title="卡点" items={r.blockers} />
+              <TranscriptToggle transcript={r.transcript} />
             </CardContent>
           </Card>
         ))}
@@ -104,6 +106,30 @@ export default function ReportPage({ date }) {
         </CardContent>
       </Card>
     </>
+  );
+}
+
+// Raw conversation transcript — stored for review (备查), revealed on demand.
+function TranscriptToggle({ transcript }) {
+  const [open, setOpen] = useState(false);
+  if (!transcript || !transcript.trim()) return null;
+  return (
+    <div className="mt-4 border-t border-border pt-3">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 text-[0.8rem] font-semibold text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <MessagesSquare className="h-4 w-4" strokeWidth={1.75} />
+        原始对话
+        <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} strokeWidth={2} />
+      </button>
+      {open ? (
+        <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-accent px-3 py-2.5 font-sans text-[0.85rem] leading-relaxed text-muted-foreground">
+          {transcript}
+        </pre>
+      ) : null}
+    </div>
   );
 }
 
