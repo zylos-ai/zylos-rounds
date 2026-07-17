@@ -5,7 +5,7 @@ This document guides AI assistants working on the zylos-standup component.
 ## Project Conventions
 
 - **ESM only** — `import`/`export`, never `require()`. `"type": "module"` in package.json. Exception: `ecosystem.config.cjs` (PM2 requires CJS)
-- **Node.js 22.5+** — Minimum runtime version (uses `node:sqlite` DatabaseSync)
+- **Node.js 22.13+** — Minimum runtime version (uses `node:sqlite` DatabaseSync)
 - **Conventional commits** — `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`
 - **All runtime config in `config.json`** — `~/zylos/components/standup/config.json` (data directory, never committed). `OPENAI_API_KEY` / proxy come from `~/zylos/.env`, never config.json
 - **English for code** — Comments, commit messages, PR descriptions

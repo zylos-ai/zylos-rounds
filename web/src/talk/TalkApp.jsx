@@ -99,7 +99,7 @@ export default function TalkApp() {
           setPhase('listening');
           say('Luna 正在跟你打招呼…');
         },
-        error: (msg) => say(msg, true),
+        error: (msg) => { setSubmitting(false); say(msg, true); },
         speechStarted: () => {
           if (doneRef.current) return;
           setPhase('listening');
@@ -117,6 +117,7 @@ export default function TalkApp() {
         userText: (t) => setMessages((ms) => [...ms, { id: nid(), role: 'me', text: t }]),
         responseDone: () => {
           if (doneRef.current) return;
+          setSubmitting(false);
           setPhase('listening');
           say('轮到你说了');
         },
@@ -127,7 +128,7 @@ export default function TalkApp() {
           say('小结已保存，Luna 道别后可直接关闭页面');
           setTimeout(() => summaryRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
         },
-        closed: () => say('连接已断开，刷新页面可重试', true),
+        closed: () => { setSubmitting(false); say('连接已断开，刷新页面可重试', true); },
       },
     });
     try {

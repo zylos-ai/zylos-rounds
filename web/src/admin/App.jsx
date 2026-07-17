@@ -12,12 +12,14 @@ import HistoryPage from './pages/HistoryPage';
 export default function App() {
   const route = useRoute();
   const [authed, setAuthed] = useState(null); // null = checking
+  const [reportDate, setReportDate] = useState('');
 
   useEffect(() => {
     api('api/auth/me')
       .then((r) => {
         const ok = !!(r && r.authenticated);
         setAuthed(ok);
+        if (r?.date) setReportDate(r.date);
         if (!ok) navigate('#/login');
       })
       .catch(() => {
@@ -50,7 +52,7 @@ export default function App() {
   if (!authed) return null; // redirecting to #/login
 
   return (
-    <Layout route={route} onLogout={onLogout}>
+    <Layout route={route} onLogout={onLogout} reportDate={reportDate}>
       {route.name === 'roster' && <RosterPage />}
       {route.name === 'report' && <ReportPage date={route.date} />}
       {route.name === 'history' && <HistoryPage />}
@@ -58,8 +60,8 @@ export default function App() {
   );
 }
 
-function Layout({ route, onLogout, children }) {
-  const t = today();
+function Layout({ route, onLogout, reportDate, children }) {
+  const t = reportDate || today();
   const nav = [
     { label: '管理', hash: '#/', icon: Users, active: route.name === 'roster' },
     { label: '今日报告', hash: `#/report/${t}`, icon: FileText, active: route.name === 'report' && route.date === t },

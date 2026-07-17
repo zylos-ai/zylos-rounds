@@ -39,7 +39,11 @@ export class Api {
     // auth endpoints (no session required)
     if (p === '/api/auth/login') return this.auth.handleLogin(req, res), true;
     if (p === '/api/auth/logout') return this.auth.handleLogout(req, res), true;
-    if (p === '/api/auth/me') return this.auth.handleMe(req, res), true;
+    if (p === '/api/auth/me') {
+      const date = todayLocal(this.getConfig().timeZone);
+      sendJson(res, 200, { authenticated: this.auth.isAuthenticated(req), date });
+      return true;
+    }
 
     // member endpoint (token auth, no session)
     if (p === '/api/talk/session' && req.method === 'GET') {
