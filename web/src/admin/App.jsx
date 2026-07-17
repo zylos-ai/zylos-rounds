@@ -33,10 +33,12 @@ export default function App() {
     for (let i = 0; i < 2; i++) {
       try {
         const r = await api('api/auth/me');
-        if (r?.date) setReportDate(r.date);
-        setAuthed(true);
-        navigate('#/');
-        return;
+        if (r?.authenticated && r?.date) {
+          setReportDate(r.date);
+          setAuthed(true);
+          navigate('#/');
+          return;
+        }
       } catch { /* retry once */ }
     }
     throw new Error('date_fetch_failed');
