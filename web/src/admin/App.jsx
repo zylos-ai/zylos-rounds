@@ -17,10 +17,13 @@ export default function App() {
   useEffect(() => {
     api('api/auth/me')
       .then((r) => {
-        const ok = !!(r && r.authenticated);
-        setAuthed(ok);
-        if (r?.date) setReportDate(r.date);
-        if (!ok) navigate('#/login');
+        if (r?.authenticated && r?.date) {
+          setReportDate(r.date);
+          setAuthed(true);
+        } else {
+          setAuthed(false);
+          navigate('#/login');
+        }
       })
       .catch(() => {
         setAuthed(false);
