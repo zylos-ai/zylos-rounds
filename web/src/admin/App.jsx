@@ -31,6 +31,7 @@ export default function App() {
 
   const onLoggedIn = useCallback(() => {
     setAuthed(true);
+    api('api/auth/me').then((r) => { if (r?.date) setReportDate(r.date); }).catch(() => {});
     navigate('#/');
   }, []);
 

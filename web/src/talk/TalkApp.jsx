@@ -117,7 +117,6 @@ export default function TalkApp() {
         userText: (t) => setMessages((ms) => [...ms, { id: nid(), role: 'me', text: t }]),
         responseDone: () => {
           if (doneRef.current) return;
-          setSubmitting(false);
           setPhase('listening');
           say('轮到你说了');
         },
