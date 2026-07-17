@@ -81,8 +81,8 @@ body.page-talk {
 /* ---- talk page orb (call button) — ported from MVP talk.html ---- */
 .orb {
   position: relative;
-  width: 112px;
-  height: 112px;
+  width: 128px;
+  height: 128px;
   border-radius: 50%;
   border: 0;
   cursor: pointer;

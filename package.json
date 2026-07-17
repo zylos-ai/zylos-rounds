@@ -1,6 +1,6 @@
 {
   "name": "zylos-standup",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "AI-assisted async daily standup tool",
   "type": "module",
   "main": "src/index.js",

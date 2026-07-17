@@ -150,69 +150,116 @@ export default function TalkApp() {
 
   if (phase === 'loading') {
     return (
-      <Shell>
-        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">加载中…</div>
-      </Shell>
+      <div className="flex min-h-dvh items-center justify-center text-sm text-muted-foreground">加载中…</div>
     );
   }
 
   if (phase === 'invalid') {
     return (
-      <Shell>
-        <div className="flex flex-1 items-center justify-center px-2">
-          <Card className="w-full">
-            <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                <Link2Off className="h-5 w-5" strokeWidth={1.75} />
-              </div>
-              <div className="text-base font-semibold">链接无效</div>
-              <p className="max-w-[300px] text-sm leading-relaxed text-muted-foreground">
-                这个专属链接不存在或已失效，请联系管理员获取新的语音日报链接。
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </Shell>
+      <div className="flex min-h-dvh items-center justify-center px-5">
+        <Card className="w-full max-w-[420px]">
+          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <Link2Off className="h-6 w-6" strokeWidth={1.75} />
+            </div>
+            <div className="text-xl font-bold tracking-tight">链接无效</div>
+            <p className="max-w-[300px] text-[0.95rem] leading-relaxed text-muted-foreground">
+              这个专属链接不存在或已失效，请联系管理员获取新的语音日报链接。
+            </p>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
   const inCall = phase === 'listening' || phase === 'speaking';
+  // Hero (centered welcome) until the call is actually underway, then the
+  // top-anchored conversation layout takes over.
+  const started = inCall || phase === 'done' || messages.length > 0 || !!summary;
+
+  const orb = (
+    <button
+      type="button"
+      aria-label="开始对话"
+      disabled={phase !== 'idle'}
+      onClick={startCall}
+      className={cn(
+        'orb',
+        phase === 'listening' && 'listening',
+        phase === 'speaking' && 'speaking',
+        phase === 'done' && 'done'
+      )}
+    >
+      {phase === 'done' ? (
+        <Check className="h-[38px] w-[38px]" strokeWidth={1.6} />
+      ) : phase === 'connecting' ? (
+        <Loader2 className="h-[38px] w-[38px] animate-spin" strokeWidth={1.6} />
+      ) : (
+        <Mic className="h-[38px] w-[38px]" strokeWidth={1.6} />
+      )}
+    </button>
+  );
+
+  const statusLine = (
+    <div
+      className={cn(
+        'min-h-[1.3em] text-center text-[0.95rem]',
+        statusErr ? 'text-destructive' : 'text-muted-foreground'
+      )}
+      role="status"
+    >
+      {status}
+    </div>
+  );
+
+  if (!started) {
+    return (
+      <div className="flex min-h-dvh flex-col items-center justify-center px-5 pb-[calc(24px+env(safe-area-inset-bottom))]">
+        <div className="flex w-full max-w-[640px] flex-col items-center text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+            <Mic className="h-6 w-6" strokeWidth={2} />
+          </span>
+          <div className="mt-6 text-[0.82rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+            语音日报
+          </div>
+          <h1 className="mt-3 text-4xl font-bold leading-tight tracking-tight max-sm:text-3xl">
+            {name}，和 Luna 聊 3-5 分钟
+          </h1>
+          <p className="mt-4 text-[1.05rem] leading-relaxed text-muted-foreground max-sm:text-base">
+            昨天做了什么 · 今天计划 · 卡点 · 想在日会讨论的问题
+          </p>
+          <p className="mt-2 inline-flex items-center gap-1.5 text-[0.85rem] text-faint">
+            <Headphones className="h-4 w-4" strokeWidth={1.75} />
+            建议戴耳机，回声更少、听得更清
+          </p>
+          <div className="mt-12 max-sm:mt-10">{orb}</div>
+          <div className="mt-5">{statusLine}</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <Shell name={name}>
+    <div className="mx-auto flex min-h-dvh w-full max-w-[640px] flex-col px-5 pb-[calc(16px+env(safe-area-inset-bottom))]">
+      <header className="flex items-center gap-2.5 pb-2 pt-5">
+        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+          <Mic className="h-[18px] w-[18px]" strokeWidth={2} />
+        </span>
+        <div className="leading-tight">
+          <div className="text-[1.02rem] font-bold tracking-tight">语音日报</div>
+          {name ? <div className="text-[0.78rem] text-muted-foreground">{name}</div> : null}
+        </div>
+      </header>
+
       {/* stage */}
-      <div className="flex flex-col items-center pb-1.5 pt-5">
-        <button
-          type="button"
-          aria-label="开始对话"
-          disabled={phase !== 'idle'}
-          onClick={startCall}
-          className={cn(
-            'orb',
-            phase === 'listening' && 'listening',
-            phase === 'speaking' && 'speaking',
-            phase === 'done' && 'done'
-          )}
-        >
-          {phase === 'done' ? (
-            <Check className="h-[34px] w-[34px]" strokeWidth={1.6} />
-          ) : phase === 'connecting' ? (
-            <Loader2 className="h-[34px] w-[34px] animate-spin" strokeWidth={1.6} />
-          ) : (
-            <Mic className="h-[34px] w-[34px]" strokeWidth={1.6} />
-          )}
-        </button>
+      <div className="flex flex-col items-center pb-1.5 pt-4">
+        {orb}
 
         <div className={cn('mt-3 flex h-9 items-center justify-center', !inCall && 'invisible')}>
           <Waveform analyser={engineRef.current?.analyser} active={inCall} />
         </div>
 
-        <div
-          className={cn('min-h-[1.3em] text-center text-[0.83rem]', statusErr ? 'text-destructive' : 'text-muted-foreground')}
-          role="status"
-        >
-          {status}
-        </div>
+        {statusLine}
 
         {inCall && (
           <Button variant="secondary" className="mt-2.5" onClick={endCall} disabled={submitting}>
@@ -228,7 +275,7 @@ export default function TalkApp() {
           <div
             key={m.id}
             className={cn(
-              'max-w-[86%] whitespace-pre-wrap rounded-lg border px-3 py-2 text-[0.9rem] leading-normal',
+              'max-w-[86%] whitespace-pre-wrap rounded-lg border px-3.5 py-2.5 text-[0.92rem] leading-relaxed',
               m.role === 'ai'
                 ? 'self-start border-border-strong bg-card shadow-xs'
                 : 'self-end border-primary-line bg-primary-soft'
@@ -243,9 +290,9 @@ export default function TalkApp() {
       {summary && (
         <div ref={summaryRef} className="mb-1.5 mt-3.5">
           <Card>
-            <CardContent className="py-4">
-              <div className="flex items-center gap-2 text-[0.95rem] font-semibold text-success">
-                <CircleCheck className="h-4 w-4" strokeWidth={1.75} />
+            <CardContent className="py-5">
+              <div className="flex items-center gap-2 text-[1.05rem] font-bold tracking-tight text-success">
+                <CircleCheck className="h-[18px] w-[18px]" strokeWidth={1.75} />
                 日报已提交
               </div>
               <SummarySection icon={History} title="昨天" items={summary.yesterday} />
@@ -256,7 +303,7 @@ export default function TalkApp() {
           </Card>
         </div>
       )}
-    </Shell>
+    </div>
   );
 }
 
