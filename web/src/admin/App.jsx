@@ -89,24 +89,26 @@ function Layout({ route, onLogout, reportDate, children }) {
   return (
     <div className="min-h-dvh">
       <header className="border-b border-border bg-card">
-        <div className="mx-auto flex h-[52px] max-w-[760px] items-center gap-4 px-5">
-          <a href="#/" className="flex items-center gap-2 text-[0.95rem] font-semibold text-foreground no-underline">
-            <Mic className="h-[18px] w-[18px] text-primary" strokeWidth={1.75} />
-            语音日报
+        <div className="mx-auto flex h-16 max-w-[1200px] items-center gap-6 px-6 max-sm:gap-3 max-sm:px-4">
+          <a href="#/" className="flex items-center gap-2.5 text-lg font-bold tracking-tight text-foreground no-underline">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <Mic className="h-[18px] w-[18px]" strokeWidth={2} />
+            </span>
+            <span className="max-sm:hidden">语音日报</span>
           </a>
-          <nav className="flex items-center gap-1">
+          <nav className="flex items-center gap-1.5">
             {nav.map((item) => (
               <a
                 key={item.hash}
                 href={item.hash}
                 className={cn(
-                  'inline-flex h-[30px] items-center gap-1.5 rounded-md px-3 text-sm font-medium no-underline transition-colors duration-150',
+                  'inline-flex h-9 items-center gap-2 rounded-lg px-4 text-[0.9rem] font-medium no-underline transition-colors duration-150 max-sm:px-3',
                   item.active
                     ? 'bg-primary-soft text-primary'
                     : 'text-muted-foreground hover:bg-accent hover:text-foreground'
                 )}
               >
-                <item.icon className="h-3.5 w-3.5 max-sm:hidden" strokeWidth={1.75} />
+                <item.icon className="h-4 w-4 max-sm:hidden" strokeWidth={1.75} />
                 {item.label}
               </a>
             ))}
@@ -118,7 +120,7 @@ function Layout({ route, onLogout, reportDate, children }) {
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-[760px] px-5 pb-12 pt-6">{children}</main>
+      <main className="mx-auto max-w-[1200px] px-6 pb-16 pt-10 max-sm:px-4 max-sm:pt-6">{children}</main>
     </div>
   );
 }

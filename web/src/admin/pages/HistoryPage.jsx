@@ -27,17 +27,17 @@ export default function HistoryPage() {
 
   return (
     <>
-      <h1 className="mb-1 flex items-center gap-2 text-xl font-semibold">历史报告</h1>
-      <p className="mb-5 text-sm text-muted-foreground">每天有人汇报即自动生成当日报告，点日期查看</p>
+      <p className="mb-2 text-sm font-medium text-muted-foreground">每天有人汇报即自动生成当日报告，点日期查看</p>
+      <h1 className="text-4xl font-bold tracking-tight max-sm:text-3xl">历史报告</h1>
 
-      <Card>
-        <CardContent className="px-2 py-1.5">
+      <Card className="mt-8">
+        <CardContent className="px-4 py-2">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>日期</TableHead>
-                <TableHead>已汇报</TableHead>
-                <TableHead>日会待议</TableHead>
+                <TableHead className="text-[0.85rem]">日期</TableHead>
+                <TableHead className="text-[0.85rem]">已汇报</TableHead>
+                <TableHead className="text-[0.85rem]">日会待议</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -50,15 +50,18 @@ export default function HistoryPage() {
               ) : (
                 days.map((d) => (
                   <TableRow key={d.date}>
-                    <TableCell>
-                      <a href={`#/report/${d.date}`} className="font-medium text-primary no-underline hover:underline">
+                    <TableCell className="py-4">
+                      <a
+                        href={`#/report/${d.date}`}
+                        className="text-[0.95rem] font-semibold text-primary no-underline hover:underline"
+                      >
                         {d.date}
                       </a>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="py-4 text-[0.95rem] tabular-nums">
                       {d.submitted}/{d.member_count} 人
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="py-4">
                       {d.topics_count ? <Badge>{d.topics_count} 个待议题</Badge> : <span className="text-faint">—</span>}
                     </TableCell>
                   </TableRow>

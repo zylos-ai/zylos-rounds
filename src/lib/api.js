@@ -19,15 +19,18 @@ function newToken() {
   return crypto.randomBytes(8).toString('base64url');
 }
 
-function memberLink(req, token) {
-  return `${browserOrigin(req)}/u/${token}`;
-}
-
 export class Api {
   constructor(store, auth, getConfig) {
     this.store = store;
     this.auth = auth;
     this.getConfig = getConfig;
+  }
+
+  // publicOrigin covers TLS-terminating proxies that forward plain http
+  // (X-Forwarded-Proto would otherwise mislabel the public https links).
+  memberLink(req, token) {
+    const origin = (this.getConfig().publicOrigin || '').replace(/\/+$/, '') || browserOrigin(req);
+    return `${origin}/u/${token}`;
   }
 
   /**
@@ -88,7 +91,7 @@ export class Api {
         name: mb.name,
         active: Boolean(mb.active),
         reported_today: done.has(mb.id),
-        link: memberLink(req, mb.token),
+        link: this.memberLink(req, mb.token),
       })),
     });
   }
@@ -110,7 +113,7 @@ export class Api {
         name,
         active: true,
         reported_today: false,
-        link: memberLink(req, token),
+        link: this.memberLink(req, token),
       });
     } catch (err) {
       if (!String(err.message).includes('UNIQUE')) throw err;
@@ -124,7 +127,7 @@ export class Api {
         name,
         active: true,
         reported_today: done.has(inactive.id),
-        link: memberLink(req, token),
+        link: this.memberLink(req, token),
       });
     }
   }
@@ -140,7 +143,7 @@ export class Api {
     if (!member || !member.active) return sendJson(res, 404, { error: 'not_found' });
     const token = newToken();
     this.store.resetMemberToken(id, token);
-    sendJson(res, 200, { id, link: memberLink(req, token) });
+    sendJson(res, 200, { id, link: this.memberLink(req, token) });
   }
 
   history(res) {

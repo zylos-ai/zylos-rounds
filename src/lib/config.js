@@ -16,6 +16,7 @@ export const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
 export const DEFAULT_CONFIG = {
   enabled: true,
   port: 3478,
+  publicOrigin: '', // e.g. https://host/standup — overrides X-Forwarded-* for member links
   model: 'gpt-realtime-2.1',
   voice: 'marin',
   transcriptionModel: 'gpt-realtime-whisper',

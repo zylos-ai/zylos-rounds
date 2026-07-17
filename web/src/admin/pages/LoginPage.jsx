@@ -31,29 +31,30 @@ export default function LoginPage({ onLoggedIn }) {
 
   return (
     <div className="flex min-h-dvh items-center justify-center px-5">
-      <Card className="w-full max-w-[360px]">
-        <CardHeader className="pt-6">
-          <CardTitle className="text-base">
-            <Mic className="h-[18px] w-[18px] text-primary" strokeWidth={1.75} />
-            语音日报 · 管理
-          </CardTitle>
-          <CardDescription>输入管理密码登录</CardDescription>
+      <Card className="w-full max-w-[420px]">
+        <CardHeader className="pt-8">
+          <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+            <Mic className="h-6 w-6" strokeWidth={2} />
+          </span>
+          <CardTitle className="text-2xl font-bold tracking-tight">语音日报</CardTitle>
+          <CardDescription className="text-[0.95rem]">输入管理密码进入管理后台</CardDescription>
         </CardHeader>
-        <CardContent className="pb-6">
-          <form onSubmit={submit} className="flex flex-col gap-3">
-            <div className="flex flex-col gap-1.5">
+        <CardContent className="pb-8 pt-2">
+          <form onSubmit={submit} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
               <Label htmlFor="password">密码</Label>
               <Input
                 id="password"
                 type="password"
                 autoFocus
                 autoComplete="current-password"
+                className="h-11 text-base"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
-            <Button type="submit" disabled={busy || !password}>
+            <Button type="submit" className="h-11 text-[0.95rem]" disabled={busy || !password}>
               {busy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
               登录
             </Button>

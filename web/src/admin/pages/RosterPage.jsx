@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Users, UserCheck, Copy, Check, RefreshCw, Trash2, Loader2 } from 'lucide-react';
+import { Users, UserCheck, Clock, Copy, Check, ExternalLink, RefreshCw, Trash2, Loader2 } from 'lucide-react';
 import { cn, copyText, today } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -101,31 +101,42 @@ export default function RosterPage() {
     return <p className="text-sm text-muted-foreground">{loadError || '加载中…'}</p>;
   }
 
+  const total = members.length;
   const done = members.filter((m) => m.reported_today).length;
+  const pct = total ? Math.round((done / total) * 100) : 0;
 
   return (
     <>
-      <h1 className="mb-1 flex items-center gap-2 text-xl font-semibold">成员管理</h1>
-      <p className="mb-5 text-sm text-muted-foreground">今天 {reportDate || today()} · 每位成员通过自己的专属链接和 Luna 语音汇报</p>
+      <p className="mb-2 text-sm font-medium text-muted-foreground">今天 {reportDate || today()}</p>
+      <h1 className="text-4xl font-bold tracking-tight max-sm:text-3xl">成员管理</h1>
+      <p className="mt-3 text-base text-muted-foreground">每位成员通过自己的专属链接和 Luna 语音汇报</p>
 
-      {/* stat chips */}
-      <div className="mb-4 flex flex-wrap gap-2.5">
-        <StatChip icon={Users} label="成员" value={members.length} suffix="人" />
-        <StatChip icon={UserCheck} label="已汇报" value={done} valueClass="text-success" />
-        <StatChip icon={Users} label="待汇报" value={members.length - done} />
+      {/* stat tiles */}
+      <div className="mt-8 grid grid-cols-3 gap-4 max-sm:grid-cols-1">
+        <StatTile icon={Users} label="成员" value={total} suffix="人" />
+        <StatTile icon={UserCheck} label="已汇报" value={done} valueClass="text-success" />
+        <StatTile icon={Clock} label="待汇报" value={total - done} />
       </div>
 
-      {loadError ? <p className="mb-3 text-sm text-destructive">{loadError}</p> : null}
+      {/* completion bar */}
+      <div className="mt-4 flex items-center gap-4">
+        <div className="h-2 flex-1 overflow-hidden rounded-full bg-accent">
+          <div className="h-full rounded-full bg-success transition-[width] duration-500" style={{ width: `${pct}%` }} />
+        </div>
+        <span className="text-sm font-semibold tabular-nums text-muted-foreground">今日完成 {pct}%</span>
+      </div>
 
-      <Card className="mb-4">
-        <CardContent className="px-2 py-1.5">
+      {loadError ? <p className="mt-6 text-sm text-destructive">{loadError}</p> : null}
+
+      <Card className="mt-8">
+        <CardContent className="px-4 py-2">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>成员</TableHead>
-                <TableHead>专属语音链接</TableHead>
-                <TableHead>今日状态</TableHead>
-                <TableHead className="w-16" />
+                <TableHead className="text-[0.85rem]">成员</TableHead>
+                <TableHead className="text-[0.85rem]">专属语音链接</TableHead>
+                <TableHead className="text-[0.85rem]">今日状态</TableHead>
+                <TableHead className="w-20" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -138,10 +149,12 @@ export default function RosterPage() {
               ) : (
                 members.map((m) => (
                   <TableRow key={m.id}>
-                    <TableCell className="whitespace-nowrap font-medium">{m.name}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1.5">
-                        <code className="max-w-[320px] truncate font-mono text-xs text-muted-foreground">{m.link}</code>
+                    <TableCell className="whitespace-nowrap py-4 text-[0.95rem] font-semibold">{m.name}</TableCell>
+                    <TableCell className="py-4">
+                      <div className="flex items-center gap-2">
+                        <code className="max-w-[440px] truncate font-mono text-[0.8rem] text-muted-foreground max-lg:max-w-[280px]">
+                          {m.link}
+                        </code>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -152,12 +165,17 @@ export default function RosterPage() {
                         >
                           {copiedId === m.id ? <Check strokeWidth={1.75} /> : <Copy strokeWidth={1.75} />}
                         </Button>
+                        <Button asChild variant="ghost" size="icon" title="新标签页打开" aria-label={`打开 ${m.name} 的链接`}>
+                          <a href={m.link} target="_blank" rel="noreferrer">
+                            <ExternalLink strokeWidth={1.75} />
+                          </a>
+                        </Button>
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="py-4">
                       {m.reported_today ? <Badge variant="success">已汇报</Badge> : <Badge>待汇报</Badge>}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="py-4">
                       <div className="flex items-center justify-end gap-0.5">
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
@@ -216,15 +234,15 @@ export default function RosterPage() {
       </Card>
 
       {/* add member */}
-      <form onSubmit={onAdd} className="flex items-center gap-2">
+      <form onSubmit={onAdd} className="mt-6 flex items-center gap-3">
         <Input
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="新成员姓名"
           autoComplete="off"
-          className="max-w-[260px]"
+          className="h-11 max-w-[300px] text-base"
         />
-        <Button type="submit" disabled={busy || !name.trim()}>
+        <Button type="submit" className="h-11 px-6 text-[0.95rem]" disabled={busy || !name.trim()}>
           {busy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
           添加成员
         </Button>
@@ -234,13 +252,19 @@ export default function RosterPage() {
   );
 }
 
-function StatChip({ icon: Icon, label, value, suffix, valueClass }) {
+function StatTile({ icon: Icon, label, value, suffix, valueClass }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-border-strong bg-card px-3.5 py-[5px] text-[0.82rem] text-muted-foreground shadow-xs">
-      <Icon className="h-[13px] w-[13px]" strokeWidth={1.75} />
-      {label}
-      <b className={cn('text-[0.95rem] font-semibold text-foreground', valueClass)}>{value}</b>
-      {suffix}
-    </span>
+    <Card>
+      <CardContent className="flex items-center justify-between px-6 py-5">
+        <div>
+          <p className="text-sm font-medium text-muted-foreground">{label}</p>
+          <p className={cn('mt-2 text-[2.75rem] font-bold leading-none tracking-tight tabular-nums', valueClass)}>
+            {value}
+            {suffix ? <span className="ml-1.5 text-base font-medium text-muted-foreground">{suffix}</span> : null}
+          </p>
+        </div>
+        <Icon className="h-9 w-9 text-border-strong" strokeWidth={1.5} />
+      </CardContent>
+    </Card>
   );
 }

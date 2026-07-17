@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-07-17
+
+### Changed
+- Bolder admin UI: 1200px shell with a branded header, hero page titles,
+  large stat tiles with a completion progress bar, taller table rows,
+  two-column report cards, and a brand-marked login page
+
+### Added
+- Open-in-new-tab button next to each member link's copy button
+- `publicOrigin` config option: overrides `X-Forwarded-*`-derived origin when
+  building member links, so TLS-terminating proxies that forward plain HTTP
+  still produce `https://` links
+
 ## [0.1.0] - 2026-07-17
 
 ### Added
