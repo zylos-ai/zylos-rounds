@@ -5,6 +5,7 @@
 
 import crypto from 'node:crypto';
 import { sendJson, readJsonBody, browserOrigin, todayLocal } from './http-util.js';
+import { MODEL_OPTIONS, VOICE_OPTIONS } from './settings.js';
 
 const parseList = v => {
   try {
@@ -20,10 +21,11 @@ function newToken() {
 }
 
 export class Api {
-  constructor(store, auth, getConfig) {
+  constructor(store, auth, getConfig, settings) {
     this.store = store;
     this.auth = auth;
     this.getConfig = getConfig;
+    this.settings = settings;
   }
 
   // publicOrigin covers TLS-terminating proxies that forward plain http
@@ -52,7 +54,7 @@ export class Api {
     if (p === '/api/talk/session' && req.method === 'GET') {
       const member = this.store.getMemberByToken(url.searchParams.get('token') || '');
       if (!member) return sendJson(res, 404, { error: 'invalid_token' }), true;
-      return sendJson(res, 200, { name: member.name }), true;
+      return sendJson(res, 200, { name: member.name, is_test: Boolean(member.is_test) }), true;
     }
 
     if (!p.startsWith('/api/')) return false;
@@ -76,14 +78,57 @@ export class Api {
     m = p.match(/^\/api\/reports\/(\d{4}-\d{2}-\d{2})$/);
     if (m && req.method === 'GET') return this.dayReport(res, m[1]), true;
 
+    if (p === '/api/settings' && req.method === 'GET') return this.getSettings(res), true;
+    if (p === '/api/settings' && req.method === 'PUT') return await this.putSettings(req, res), true;
+    if (p === '/api/settings/test-connection' && req.method === 'POST') {
+      return sendJson(res, 200, await this.settings.testConnection()), true;
+    }
+
     sendJson(res, 404, { error: 'not_found' });
     return true;
+  }
+
+  // The key itself is write-only: GET exposes only whether/where one is set.
+  getSettings(res) {
+    sendJson(res, 200, {
+      openai_key_source: this.settings.keySource(), // 'env' | 'db' | 'none'
+      model: this.settings.resolveModel(),
+      voice: this.settings.resolveVoice(),
+      model_options: MODEL_OPTIONS,
+      voice_options: VOICE_OPTIONS,
+    });
+  }
+
+  async putSettings(req, res) {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      return sendJson(res, 400, { error: 'bad_request' });
+    }
+    if (body.model !== undefined) {
+      if (!MODEL_OPTIONS.includes(body.model)) return sendJson(res, 400, { error: 'invalid_model' });
+      this.settings.setModel(body.model);
+    }
+    if (body.voice !== undefined) {
+      if (!VOICE_OPTIONS.includes(body.voice)) return sendJson(res, 400, { error: 'invalid_voice' });
+      this.settings.setVoice(body.voice);
+    }
+    if (body.clear_openai_key === true) {
+      this.settings.clearKey();
+    } else if (body.openai_key !== undefined) {
+      const key = String(body.openai_key).trim();
+      if (!key || key.length > 512) return sendJson(res, 400, { error: 'invalid_key' });
+      this.settings.setKey(key);
+    }
+    return this.getSettings(res);
   }
 
   listMembers(req, res) {
     const members = this.store.listActiveMembers();
     const date = todayLocal(this.getConfig().timeZone);
     const done = new Set(this.store.submittedMemberIds(date));
+    const test = this.store.getTestMember();
     sendJson(res, 200, {
       date,
       members: members.map(mb => ({
@@ -93,6 +138,12 @@ export class Api {
         reported_today: done.has(mb.id),
         link: this.memberLink(req, mb.token),
       })),
+      // built-in try-it member: shares the same talk flow, never counted
+      test_member: test ? {
+        id: test.id,
+        name: test.name,
+        link: this.memberLink(req, test.token),
+      } : null,
     });
   }
 
@@ -133,6 +184,8 @@ export class Api {
   }
 
   removeMember(res, id) {
+    const member = this.store.getMemberById(id);
+    if (member?.is_test) return sendJson(res, 400, { error: 'test_member_undeletable' });
     const info = this.store.deactivateMember(id);
     if (!info.changes) return sendJson(res, 404, { error: 'not_found' });
     sendJson(res, 204, {});

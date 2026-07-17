@@ -10,11 +10,13 @@
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import crypto from 'node:crypto';
 import { getConfig, watchConfig, loadEnvSecrets, DATA_DIR, CONFIG_PATH } from './lib/config.js';
 import { Store } from './lib/store.js';
 import { AuthGate } from './lib/auth.js';
 import { Api } from './lib/api.js';
 import { Relay } from './lib/relay.js';
+import { Settings } from './lib/settings.js';
 import { Static } from './lib/static.js';
 import { sendText, sendJson } from './lib/http-util.js';
 
@@ -30,16 +32,21 @@ if (!config.enabled) {
 }
 
 const env = loadEnvSecrets();
-if (!env.openaiApiKey) {
-  console.error('[standup] Missing OPENAI_API_KEY (checked ~/zylos/.env and process.env)');
-  process.exit(1);
-}
 
 const store = new Store(path.join(DATA_DIR, 'data', 'standup.db'));
+const settings = new Settings(store, getConfig, env);
+// Key may live in .env or (for fresh installs) be set later from the admin
+// settings page — missing at startup is a warning, not a fatal error.
+if (!settings.resolveKey()) {
+  console.warn('[standup] No OpenAI API key configured yet — set one in the admin settings page (or ~/zylos/.env)');
+}
+// Built-in try-it member: full talk flow, excluded from all rosters/digests.
+store.ensureTestMember('体验成员', crypto.randomBytes(8).toString('base64url'));
+
 const auth = new AuthGate(config, store, CONFIG_PATH);
-const api = new Api(store, auth, getConfig);
+const api = new Api(store, auth, getConfig, settings);
 const statics = new Static(path.join(__dirname, 'public'));
-const relay = new Relay(store, getConfig, env);
+const relay = new Relay(store, getConfig, env, settings);
 
 watchConfig(() => console.log('[standup] Config reloaded'));
 
@@ -90,7 +97,7 @@ relay.attach(server);
 
 const port = config.port ?? 3478;
 server.listen(port, '127.0.0.1', () => {
-  console.log(`[standup] Listening on 127.0.0.1:${port} (model=${config.model}, voice=${config.voice}, proxy=${env.proxy ? 'on' : 'off'}, auth=${auth.enabled ? 'on' : 'OFF'})`);
+  console.log(`[standup] Listening on 127.0.0.1:${port} (model=${settings.resolveModel()}, voice=${settings.resolveVoice()}, key=${settings.keySource()}, proxy=${env.proxy ? 'on' : 'off'}, auth=${auth.enabled ? 'on' : 'OFF'})`);
 });
 
 function shutdown() {

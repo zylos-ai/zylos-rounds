@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-07-17
+
+### Added
+- Settings page (`#/settings`) in the admin UI: configure the OpenAI API
+  key, conversation model, and voice without touching server files
+  - API key is stored in the component DB and is write-only at the API
+    surface (GET only reports the source: env / db / none); a key in
+    `~/zylos/.env` always takes precedence, the DB key is the fallback
+  - Model and voice dropdowns apply to the next call (no restart needed)
+  - Test-connection button probes `/v1/models` with the resolved key
+- Built-in try-it member (体验成员): seeded automatically with a permanent
+  link, shares the full talk flow (including the spoken summary) but is
+  excluded from every roster count, completion rate, daily report, and
+  history; shown as a separate "体验链接" block on the roster page and
+  cannot be deleted; its talk page is labeled 体验模式
+- DB migration v2: `settings` table + `members.is_test` column
+
+### Changed
+- The server no longer exits when no OpenAI key is configured at startup:
+  it warns and lets the admin configure one from the settings page; calls
+  without any key fail with a clear in-call error message
+
 ## [0.1.2] - 2026-07-17
 
 ### Changed

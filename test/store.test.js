@@ -98,3 +98,53 @@ test('history aggregates submitted counts and topic counts', () => {
   assert.equal(Number(days[1].topics_count), 2);
   s.close();
 });
+
+test('settings CRUD: set, overwrite, delete', () => {
+  const s = tmpStore();
+  assert.equal(s.getSetting('model'), null);
+  s.setSetting('model', 'gpt-realtime');
+  assert.equal(s.getSetting('model'), 'gpt-realtime');
+  s.setSetting('model', 'gpt-realtime-2.1'); // upsert overwrites
+  assert.equal(s.getSetting('model'), 'gpt-realtime-2.1');
+  s.deleteSetting('model');
+  assert.equal(s.getSetting('model'), null);
+  s.close();
+});
+
+test('test member: ensured idempotently, reactivated if inactive', () => {
+  const s = tmpStore();
+  const t1 = s.ensureTestMember('体验成员', 'tokT');
+  assert.equal(Boolean(t1.is_test), true);
+  const t2 = s.ensureTestMember('体验成员', 'tokOther'); // second call keeps original
+  assert.equal(t2.id, t1.id);
+  assert.equal(t2.token, 'tokT');
+  s.db.prepare('UPDATE members SET active=0 WHERE id=?').run(t1.id);
+  const t3 = s.ensureTestMember('体验成员', 'tokIgnored');
+  assert.equal(t3.id, t1.id);
+  assert.equal(Boolean(t3.active), true); // reactivated, token preserved
+  assert.equal(t3.token, 'tokT');
+  s.close();
+});
+
+test('test member is excluded from rosters, digests, and history', () => {
+  const s = tmpStore();
+  const real = Number(s.addMember('真人', 'tokR').lastInsertRowid);
+  const t = s.ensureTestMember('体验成员', 'tokT');
+  // test member talks and submits like anyone else
+  s.upsertSummary(t.id, '2026-07-17', { yesterday: ['试'], today: [], blockers: [], topics_for_meeting: ['话题'] }, '{}', 'm');
+  s.appendTranscript(t.id, '2026-07-17', 'test line', 30, 'm', true);
+  s.upsertSummary(real, '2026-07-17', { yesterday: ['真'], today: [], blockers: [], topics_for_meeting: [] }, '{}', 'm');
+  // ...but never appears in any aggregate
+  assert.equal(s.listActiveMembers().length, 1); // roster: real only
+  assert.deepEqual(s.submittedMemberIds('2026-07-17'), [real]);
+  const rows = s.dayReports('2026-07-17');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].name, '真人');
+  const days = s.reportHistory();
+  assert.equal(days.length, 1);
+  assert.equal(Number(days[0].submitted), 1);
+  assert.equal(Number(days[0].topics_count), 0); // test topics not counted
+  // token lookup still works for the talk flow
+  assert.equal(s.getMemberByToken('tokT').is_test, 1);
+  s.close();
+});

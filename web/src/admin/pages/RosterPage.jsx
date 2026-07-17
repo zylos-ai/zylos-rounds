@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Users, UserCheck, Clock, Copy, Check, ExternalLink, RefreshCw, Trash2, Loader2 } from 'lucide-react';
+import { Users, UserCheck, Clock, Copy, Check, ExternalLink, RefreshCw, Trash2, Loader2, FlaskConical } from 'lucide-react';
 import { cn, copyText, today } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -21,6 +21,7 @@ import { api } from '../api';
 
 export default function RosterPage() {
   const [members, setMembers] = useState(null);
+  const [testMember, setTestMember] = useState(null);
   const [reportDate, setReportDate] = useState('');
   const [loadError, setLoadError] = useState('');
   const [name, setName] = useState('');
@@ -34,6 +35,7 @@ export default function RosterPage() {
     try {
       const data = await api('api/members');
       setMembers(data.members || []);
+      setTestMember(data.test_member || null);
       if (data.date) setReportDate(data.date);
     } catch (err) {
       if (err.status !== 401) setLoadError('加载失败，请刷新重试');
@@ -248,6 +250,43 @@ export default function RosterPage() {
         </Button>
       </form>
       {addError ? <p className="mt-2 text-sm text-destructive">{addError}</p> : null}
+
+      {/* built-in try-it link — separate from the roster, never counted */}
+      {testMember ? (
+        <Card className="mt-10">
+          <CardContent className="flex flex-wrap items-center gap-x-4 gap-y-2 px-6 py-5">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent text-muted-foreground">
+              <FlaskConical className="h-5 w-5" strokeWidth={1.75} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[0.95rem] font-semibold">
+                体验链接
+                <span className="ml-2 text-[0.82rem] font-normal text-muted-foreground">
+                  任何人可用它体验语音对话，内容不计入正式汇报和统计
+                </span>
+              </p>
+              <div className="mt-1.5 flex items-center gap-2">
+                <code className="min-w-0 truncate font-mono text-[0.8rem] text-muted-foreground">{testMember.link}</code>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  title="复制链接"
+                  aria-label="复制体验链接"
+                  className={cn(copiedId === testMember.id && 'text-success hover:text-success')}
+                  onClick={() => onCopy(testMember)}
+                >
+                  {copiedId === testMember.id ? <Check strokeWidth={1.75} /> : <Copy strokeWidth={1.75} />}
+                </Button>
+                <Button asChild variant="ghost" size="icon" title="新标签页打开" aria-label="打开体验链接">
+                  <a href={testMember.link} target="_blank" rel="noreferrer">
+                    <ExternalLink strokeWidth={1.75} />
+                  </a>
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
     </>
   );
 }

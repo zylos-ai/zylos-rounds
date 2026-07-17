@@ -10,6 +10,7 @@ import {
   MessageCircle,
   Loader2,
   Link2Off,
+  FlaskConical,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -26,6 +27,7 @@ export default function TalkApp() {
   // loading | invalid | idle | connecting | listening | speaking | done
   const [phase, setPhase] = useState('loading');
   const [name, setName] = useState('');
+  const [isTest, setIsTest] = useState(false);
   const [status, setStatus] = useState('');
   const [statusErr, setStatusErr] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -54,6 +56,7 @@ export default function TalkApp() {
         }
         const data = await res.json();
         setName(data.name || '');
+        setIsTest(Boolean(data.is_test));
         document.title = `语音日报 · ${data.name || ''}`;
         setPhase('idle');
         say('点击麦克风开始');
@@ -228,6 +231,12 @@ export default function TalkApp() {
           <p className="mt-4 text-[1.05rem] leading-relaxed text-muted-foreground max-sm:text-base">
             昨天做了什么 · 今天计划 · 卡点 · 想在日会讨论的问题
           </p>
+          {isTest ? (
+            <p className="mt-2 inline-flex items-center gap-1.5 text-[0.85rem] text-faint">
+              <FlaskConical className="h-4 w-4" strokeWidth={1.75} />
+              体验模式 · 内容不计入正式汇报
+            </p>
+          ) : null}
           <p className="mt-2 inline-flex items-center gap-1.5 text-[0.85rem] text-faint">
             <Headphones className="h-4 w-4" strokeWidth={1.75} />
             建议戴耳机，回声更少、听得更清
@@ -247,7 +256,17 @@ export default function TalkApp() {
         </span>
         <div className="leading-tight">
           <div className="text-[1.02rem] font-bold tracking-tight">语音日报</div>
-          {name ? <div className="text-[0.78rem] text-muted-foreground">{name}</div> : null}
+          {name ? (
+            <div className="flex items-center gap-1.5 text-[0.78rem] text-muted-foreground">
+              {name}
+              {isTest ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-accent px-2 py-px text-[0.7rem] font-medium">
+                  <FlaskConical className="h-3 w-3" strokeWidth={1.75} />
+                  体验模式
+                </span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </header>
 

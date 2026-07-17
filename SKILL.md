@@ -1,6 +1,6 @@
 ---
 name: standup
-version: 0.1.2
+version: 0.2.0
 description: >-
   Voice daily-standup component. Team members talk to an AI agent (OpenAI
   Realtime, Chinese voice conversation) via a personal no-login link; the agent

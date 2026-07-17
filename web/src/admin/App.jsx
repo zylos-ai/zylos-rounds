@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Mic, Users, FileText, History, LogOut } from 'lucide-react';
+import { Mic, Users, FileText, History, LogOut, Settings as SettingsIcon } from 'lucide-react';
 import { cn, today } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { api } from './api';
@@ -8,6 +8,7 @@ import LoginPage from './pages/LoginPage';
 import RosterPage from './pages/RosterPage';
 import ReportPage from './pages/ReportPage';
 import HistoryPage from './pages/HistoryPage';
+import SettingsPage from './pages/SettingsPage';
 
 export default function App() {
   const route = useRoute();
@@ -69,6 +70,7 @@ export default function App() {
       {route.name === 'roster' && <RosterPage />}
       {route.name === 'report' && <ReportPage date={route.date} />}
       {route.name === 'history' && <HistoryPage />}
+      {route.name === 'settings' && <SettingsPage />}
     </Layout>
   );
 }
@@ -84,6 +86,7 @@ function Layout({ route, onLogout, reportDate, children }) {
       icon: History,
       active: route.name === 'history' || (route.name === 'report' && route.date !== t),
     },
+    { label: '设置', hash: '#/settings', icon: SettingsIcon, active: route.name === 'settings' },
   ];
 
   return (

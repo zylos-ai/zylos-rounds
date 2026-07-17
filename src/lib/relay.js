@@ -48,10 +48,11 @@ function safeSend(ws, obj) {
 }
 
 export class Relay {
-  constructor(store, getConfig, env) {
+  constructor(store, getConfig, env, settings) {
     this.store = store;
     this.getConfig = getConfig;
     this.env = env;
+    this.settings = settings; // resolves key/model/voice per session (env > DB > config)
     this.active = 0;
     this.wss = new WebSocketServer({ noServer: true });
   }
@@ -84,7 +85,7 @@ export class Relay {
             turn_detection: { type: 'semantic_vad', eagerness: 'low' },
             transcription: { model: cfg.transcriptionModel ?? 'gpt-realtime-whisper', language: 'zh' },
           },
-          output: { voice: cfg.voice ?? 'marin', format: { type: 'audio/pcm', rate: 24000 } },
+          output: { voice: this.settings.resolveVoice(), format: { type: 'audio/pcm', rate: 24000 } },
         },
       },
     };
@@ -92,7 +93,13 @@ export class Relay {
 
   session(client, member) {
     const cfg = this.getConfig();
-    const model = cfg.model ?? 'gpt-realtime-2.1';
+    const apiKey = this.settings.resolveKey();
+    if (!apiKey) {
+      safeSend(client, { type: 'app.error', message: '尚未配置 OpenAI API Key，请管理员在设置页配置' });
+      client.close();
+      return;
+    }
+    const model = this.settings.resolveModel();
     const maxSessionMs = cfg.maxSessionMs ?? 10 * 60 * 1000;
     const reportDate = todayLocal(cfg.timeZone);
     this.active++;
@@ -103,7 +110,7 @@ export class Relay {
 
     const upstream = new WebSocket(`wss://api.openai.com/v1/realtime?model=${model}`, {
       agent: this.env.proxy ? new HttpsProxyAgent(this.env.proxy) : undefined,
-      headers: { Authorization: `Bearer ${this.env.openaiApiKey}` },
+      headers: { Authorization: `Bearer ${apiKey}` },
     });
 
     const killTimer = setTimeout(() => finish('timeout'), maxSessionMs);

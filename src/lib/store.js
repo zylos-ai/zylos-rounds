@@ -39,6 +39,17 @@ const MIGRATIONS = [
       );
     `,
   },
+  {
+    version: 2,
+    sql: `
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+      );
+      ALTER TABLE members ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
 ];
 
 export class Store {
@@ -64,13 +75,52 @@ export class Store {
     }
   }
 
+  // ---- settings ----
+  getSetting(key) {
+    return this.db.prepare('SELECT value FROM settings WHERE key=?').get(key)?.value ?? null;
+  }
+
+  setSetting(key, value) {
+    this.db.prepare(`
+      INSERT INTO settings(key,value) VALUES(?,?)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now','localtime')
+    `).run(key, value);
+  }
+
+  deleteSetting(key) {
+    this.db.prepare('DELETE FROM settings WHERE key=?').run(key);
+  }
+
   // ---- members ----
   getMemberByToken(token) {
     return this.db.prepare('SELECT * FROM members WHERE token=? AND active=1').get(token);
   }
 
+  /** Regular (non-test) active members — the roster all stats are counted against. */
   listActiveMembers() {
-    return this.db.prepare('SELECT * FROM members WHERE active=1 ORDER BY id').all();
+    return this.db.prepare('SELECT * FROM members WHERE active=1 AND is_test=0 ORDER BY id').all();
+  }
+
+  getTestMember() {
+    return this.db.prepare('SELECT * FROM members WHERE is_test=1 ORDER BY id LIMIT 1').get();
+  }
+
+  /**
+   * Ensure the built-in test member exists and is active. Its reports are
+   * excluded from all rosters/digests — it exists purely so anyone can try
+   * the conversation without polluting real standup data.
+   */
+  ensureTestMember(name, token) {
+    const existing = this.getTestMember();
+    if (!existing) {
+      this.db.prepare('INSERT INTO members(name,token,is_test) VALUES(?,?,1)').run(name, token);
+      return this.getTestMember();
+    }
+    if (!existing.active) {
+      this.db.prepare('UPDATE members SET active=1 WHERE id=?').run(existing.id);
+      return this.getMemberById(existing.id);
+    }
+    return existing;
   }
 
   addMember(name, token) {
@@ -82,7 +132,7 @@ export class Store {
   }
 
   getInactiveMemberByName(name) {
-    return this.db.prepare('SELECT * FROM members WHERE name=? AND active=0').get(name);
+    return this.db.prepare('SELECT * FROM members WHERE name=? AND active=0 AND is_test=0').get(name);
   }
 
   reactivateMember(id, token) {
@@ -98,26 +148,31 @@ export class Store {
   }
 
   // ---- reports ----
+  // Test-member reports are stored like any other but excluded from every
+  // aggregate below — they never count toward rosters, digests, or history.
   submittedMemberIds(date) {
-    return this.db.prepare(
-      "SELECT member_id FROM reports WHERE report_date=? AND status='submitted'"
-    ).all(date).map(r => r.member_id);
+    return this.db.prepare(`
+      SELECT r.member_id FROM reports r JOIN members m ON m.id=r.member_id
+      WHERE r.report_date=? AND r.status='submitted' AND m.is_test=0
+    `).all(date).map(r => r.member_id);
   }
 
   dayReports(date) {
     return this.db.prepare(`
       SELECT r.*, m.name FROM reports r JOIN members m ON m.id=r.member_id
-      WHERE r.report_date=? AND r.status='submitted' ORDER BY r.updated_at
+      WHERE r.report_date=? AND r.status='submitted' AND m.is_test=0 ORDER BY r.updated_at
     `).all(date);
   }
 
   reportHistory(limit = 90) {
     return this.db.prepare(`
-      SELECT report_date,
-        SUM(status='submitted') submitted,
-        SUM(CASE WHEN status='submitted'
-          THEN (SELECT COUNT(*) FROM json_each(COALESCE(topics,'[]'))) ELSE 0 END) topics_count
-      FROM reports GROUP BY report_date ORDER BY report_date DESC LIMIT ?
+      SELECT r.report_date,
+        SUM(r.status='submitted') submitted,
+        SUM(CASE WHEN r.status='submitted'
+          THEN (SELECT COUNT(*) FROM json_each(COALESCE(r.topics,'[]'))) ELSE 0 END) topics_count
+      FROM reports r JOIN members m ON m.id=r.member_id
+      WHERE m.is_test=0
+      GROUP BY r.report_date ORDER BY r.report_date DESC LIMIT ?
     `).all(limit);
   }
 
