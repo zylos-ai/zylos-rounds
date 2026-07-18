@@ -60,7 +60,25 @@ const KNOWLEDGE_TOOL = {
   },
 };
 
+// Oneshot communication tasks submit a generic summary instead of the
+// standup's four fixed buckets (the question frame is free text, so the
+// output shape stays generic: 分条要点 + 值得负责人注意的信号).
+const ONESHOT_SUBMIT_TOOL = {
+  type: 'function',
+  name: 'submit_conversation_summary',
+  description: '在这次一对一沟通结束时提交结构化小结。当问题框架里的要点都聊到（或对方表示没有更多内容）时调用。',
+  parameters: {
+    type: 'object',
+    properties: {
+      summary: { type: 'array', items: { type: 'string' }, description: '对话要点，按主题分条，每条一句话，忠实于对方原意' },
+      highlights: { type: 'array', items: { type: 'string' }, description: '值得负责人特别注意的重点信号（分歧、强烈观点、风险、诉求），没有则空数组' },
+    },
+    required: ['summary', 'highlights'],
+  },
+};
+
 const TOOLS = [SUBMIT_TOOL, RECALL_TOOL, KNOWLEDGE_TOOL];
+const ONESHOT_TOOLS = [ONESHOT_SUBMIT_TOOL, RECALL_TOOL, KNOWLEDGE_TOOL];
 
 const ALLOWED_CLIENT_EVENTS = new Set([
   'input_audio_buffer.append', 'input_audio_buffer.commit', 'input_audio_buffer.clear',
@@ -83,27 +101,39 @@ export class Relay {
     this.wss = new WebSocketServer({ noServer: true });
   }
 
+  /**
+   * Link-driven routing (owner ruling 2026-07-18): the permanent member token
+   * routes to the built-in recurring standup; a per-(task, member) token routes
+   * to that oneshot task's conversation. Returns null for unknown tokens.
+   */
+  resolveToken(token) {
+    const member = this.store.getMemberByToken(token);
+    if (member) return { member, task: this.store.getDailyTask() || null };
+    return this.store.getTaskSessionByToken(token);
+  }
+
   /** Attach to the HTTP server's upgrade event. */
   attach(server) {
     server.on('upgrade', (req, socket, head) => {
       const url = new URL(req.url, 'http://internal');
       if (url.pathname !== '/ws') return socket.destroy();
       const cfg = this.getConfig();
-      const member = this.store.getMemberByToken(url.searchParams.get('token') || '');
-      if (!member || this.active >= (cfg.maxConcurrent ?? 4)) return socket.destroy();
-      this.wss.handleUpgrade(req, socket, head, ws => this.session(ws, member));
+      const resolved = this.resolveToken(url.searchParams.get('token') || '');
+      if (!resolved || this.active >= (cfg.maxConcurrent ?? 4)) return socket.destroy();
+      this.wss.handleUpgrade(req, socket, head, ws => this.session(ws, resolved.member, resolved.task));
     });
   }
 
-  sessionUpdate(member) {
+  sessionUpdate(member, task) {
     const cfg = this.getConfig();
+    const oneshot = task && task.type === 'oneshot';
     return {
       type: 'session.update',
       session: {
         type: 'realtime',
         output_modalities: ['audio'],
-        instructions: this.context.buildInstructions(member),
-        tools: TOOLS,
+        instructions: this.context.buildInstructions(member, task),
+        tools: oneshot ? ONESHOT_TOOLS : TOOLS,
         tool_choice: 'auto',
         audio: {
           input: {
@@ -121,7 +151,7 @@ export class Relay {
    * Dispatch a realtime function_call. submit_standup_summary ends the flow;
    * the retrieval tools return data and prompt the model to continue speaking.
    */
-  handleToolCall(fc, { client, upstream, member, reportDate, model, markSaved }) {
+  handleToolCall(fc, { client, upstream, member, task, reportDate, model, markSaved }) {
     const respond = output => {
       safeSend(upstream, {
         type: 'conversation.item.create',
@@ -143,6 +173,18 @@ export class Relay {
           console.error('[rounds] summary parse error', e);
         }
         break;
+      case 'submit_conversation_summary':
+        try {
+          const summary = JSON.stringify(Array.isArray(args.summary) ? args.summary : []);
+          const highlights = JSON.stringify(Array.isArray(args.highlights) ? args.highlights : []);
+          this.store.submitTaskSummary(task.id, member.id, summary, highlights);
+          markSaved();
+          safeSend(client, { type: 'app.saved', summary: args });
+          respond({ ok: true, message: '已保存' });
+        } catch (e) {
+          console.error('[rounds] task summary parse error', e);
+        }
+        break;
       case 'recall_member_history': {
         const days = Math.min(10, Math.max(1, Number(args.days) || 5));
         const data = this.context.recallHistory(member, reportDate, days);
@@ -161,7 +203,7 @@ export class Relay {
     }
   }
 
-  session(client, member) {
+  session(client, member, task = null) {
     const cfg = this.getConfig();
     const apiKey = this.settings.resolveKey();
     if (!apiKey) {
@@ -169,6 +211,7 @@ export class Relay {
       client.close();
       return;
     }
+    const oneshot = task && task.type === 'oneshot';
     const model = this.settings.resolveModel();
     const maxSessionMs = cfg.maxSessionMs ?? 10 * 60 * 1000;
     const reportDate = todayLocal(cfg.timeZone);
@@ -176,7 +219,7 @@ export class Relay {
     const startedAt = Date.now();
     const transcript = [];
     let saved = false;
-    console.log(`[rounds] session start ${member.name}`);
+    console.log(`[rounds] session start ${member.name}${oneshot ? ` (task #${task.id} ${task.title})` : ''}`);
 
     const upstream = new WebSocket(`wss://api.openai.com/v1/realtime?model=${model}`, {
       agent: this.env.proxy ? new HttpsProxyAgent(this.env.proxy) : undefined,
@@ -196,14 +239,18 @@ export class Relay {
       self.active = Math.max(0, self.active - 1);
       const dur = Math.round((Date.now() - startedAt) / 1000);
       if (transcript.length) {
-        store.appendTranscript(member.id, reportDate, transcript.join('\n'), dur, model, saved);
+        if (oneshot) store.appendTaskTranscript(task.id, member.id, transcript.join('\n'), dur);
+        else store.appendTranscript(member.id, reportDate, transcript.join('\n'), dur, model, saved);
       }
       console.log(`[rounds] session end ${member.name} (${reason}, ${dur}s, saved=${saved})`);
-      // fire-and-forget: merge today's submitted report into the member's 动态画像
-      if (saved && self.profiles) self.profiles.updateAfterReport(member.id, reportDate);
+      // fire-and-forget: merge the submitted conversation into the member's 动态画像
+      if (saved && self.profiles) {
+        if (oneshot) self.profiles.updateAfterTaskSession(member.id, task.id);
+        else self.profiles.updateAfterReport(member.id, reportDate);
+      }
     }
 
-    upstream.on('open', () => upstream.send(JSON.stringify(this.sessionUpdate(member))));
+    upstream.on('open', () => upstream.send(JSON.stringify(this.sessionUpdate(member, task))));
     upstream.on('error', e => {
       console.error('[rounds] upstream error', e.message);
       safeSend(client, { type: 'app.error', message: '上游连接失败' });
@@ -222,8 +269,9 @@ export class Relay {
         return;
       }
       if (ev.type === 'app.end') {
+        const submitTool = oneshot ? 'submit_conversation_summary' : 'submit_standup_summary';
         safeSend(upstream, { type: 'response.cancel' });
-        safeSend(upstream, { type: 'response.create', response: { instructions: '对方要结束对话了。如果还没提交小结，现在立刻调用 submit_standup_summary，然后简短道别。' } });
+        safeSend(upstream, { type: 'response.create', response: { instructions: `对方要结束对话了。如果还没提交小结，现在立刻调用 ${submitTool}，然后简短道别。` } });
         return;
       }
       if (ALLOWED_CLIENT_EVENTS.has(ev.type) && upstream.readyState === WebSocket.OPEN) {
@@ -248,7 +296,7 @@ export class Relay {
           break;
         case 'response.done': {
           const calls = (ev.response?.output || []).filter(i => i.type === 'function_call');
-          for (const fc of calls) this.handleToolCall(fc, { client, upstream, member, reportDate, model, markSaved: () => { saved = true; } });
+          for (const fc of calls) this.handleToolCall(fc, { client, upstream, member, task, reportDate, model, markSaved: () => { saved = true; } });
           break;
         }
         case 'conversation.item.input_audio_transcription.failed':

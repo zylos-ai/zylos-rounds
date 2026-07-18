@@ -83,6 +83,47 @@ const MIGRATIONS = [
       ALTER TABLE members ADD COLUMN profile_updated_at TEXT;
     `,
   },
+  {
+    // v0.6 communication tasks (沟通任务). A task = brief + question frame +
+    // participants + window + digest form. The daily standup becomes the single
+    // built-in `recurring` task (its per-day data stays in `reports`); `oneshot`
+    // tasks (e.g. quarterly reviews) get one conversation per participant,
+    // reached via a per-(task, member) link token. The permanent member token
+    // keeps routing to the recurring task. Digest lives on the task row and is
+    // overwritten on each (manual or scheduled) trigger; closing is decoupled.
+    version: 5,
+    sql: `
+      CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT NOT NULL CHECK(type IN ('recurring','oneshot')),
+        title TEXT NOT NULL,
+        brief TEXT,
+        questions TEXT,
+        status TEXT NOT NULL DEFAULT 'open',
+        deadline TEXT,
+        digest_auto_at TEXT,
+        digest_auto_fired INTEGER NOT NULL DEFAULT 0,
+        digest_close_linked INTEGER NOT NULL DEFAULT 0,
+        digest TEXT,
+        digest_updated_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+      );
+      CREATE TABLE IF NOT EXISTS task_members (
+        task_id INTEGER NOT NULL REFERENCES tasks(id),
+        member_id INTEGER NOT NULL REFERENCES members(id),
+        token TEXT UNIQUE,
+        status TEXT NOT NULL DEFAULT 'pending',
+        summary TEXT,
+        highlights TEXT,
+        transcript TEXT,
+        duration_s INTEGER,
+        updated_at TEXT,
+        PRIMARY KEY(task_id, member_id)
+      );
+      ALTER TABLE reports ADD COLUMN task_id INTEGER;
+    `,
+  },
 ];
 
 export class Store {
@@ -318,6 +359,126 @@ export class Store {
         status=CASE WHEN reports.status='submitted' THEN 'submitted' ELSE excluded.status END,
         updated_at=datetime('now','localtime')
     `).run(memberId, date, submitted ? 'submitted' : 'draft', transcript, durationS, model);
+  }
+
+  // ---- communication tasks (沟通任务) ----
+
+  /** Seed the single built-in recurring daily-standup task. Idempotent. */
+  ensureDailyTask(title) {
+    const existing = this.db.prepare("SELECT * FROM tasks WHERE type='recurring' ORDER BY id LIMIT 1").get();
+    if (existing) return existing;
+    this.db.prepare("INSERT INTO tasks(type,title) VALUES('recurring',?)").run(title);
+    return this.db.prepare("SELECT * FROM tasks WHERE type='recurring' ORDER BY id LIMIT 1").get();
+  }
+
+  getDailyTask() {
+    return this.db.prepare("SELECT * FROM tasks WHERE type='recurring' ORDER BY id LIMIT 1").get();
+  }
+
+  getTask(id) {
+    return this.db.prepare('SELECT * FROM tasks WHERE id=?').get(id);
+  }
+
+  listTasks() {
+    return this.db.prepare('SELECT * FROM tasks ORDER BY (type=\'recurring\') DESC, id DESC').all();
+  }
+
+  createTask({ type, title, brief, questions, deadline, digestAutoAt, digestCloseLinked }) {
+    const info = this.db.prepare(`
+      INSERT INTO tasks(type,title,brief,questions,deadline,digest_auto_at,digest_close_linked)
+      VALUES(?,?,?,?,?,?,?)
+    `).run(type, title, brief ?? null, questions ?? null, deadline ?? null, digestAutoAt ?? null, digestCloseLinked ? 1 : 0);
+    return this.getTask(Number(info.lastInsertRowid));
+  }
+
+  updateTask(id, fields) {
+    const cols = {
+      title: 'title', brief: 'brief', questions: 'questions', deadline: 'deadline',
+      digestAutoAt: 'digest_auto_at', digestCloseLinked: 'digest_close_linked',
+    };
+    const sets = [];
+    const vals = [];
+    for (const [k, col] of Object.entries(cols)) {
+      if (fields[k] === undefined) continue;
+      sets.push(`${col}=?`);
+      vals.push(k === 'digestCloseLinked' ? (fields[k] ? 1 : 0) : (fields[k] ?? null));
+    }
+    // editing the auto-trigger re-arms it
+    if (fields.digestAutoAt !== undefined) sets.push('digest_auto_fired=0');
+    if (!sets.length) return this.getTask(id);
+    vals.push(id);
+    this.db.prepare(`UPDATE tasks SET ${sets.join(',')}, updated_at=datetime('now','localtime') WHERE id=?`).run(...vals);
+    return this.getTask(id);
+  }
+
+  setTaskStatus(id, status) {
+    this.db.prepare("UPDATE tasks SET status=?, updated_at=datetime('now','localtime') WHERE id=?").run(status, id);
+    return this.getTask(id);
+  }
+
+  /** Overwrite the task-level digest (re-triggering replaces the previous one). */
+  setTaskDigest(id, digest) {
+    this.db.prepare(`
+      UPDATE tasks SET digest=?, digest_updated_at=datetime('now','localtime'),
+        updated_at=datetime('now','localtime') WHERE id=?
+    `).run(digest, id);
+  }
+
+  markTaskAutoFired(id) {
+    this.db.prepare('UPDATE tasks SET digest_auto_fired=1 WHERE id=?').run(id);
+  }
+
+  /** Open tasks whose auto-trigger time has passed and hasn't fired yet. */
+  dueAutoDigestTasks(nowLocalIso) {
+    return this.db.prepare(`
+      SELECT * FROM tasks
+      WHERE status='open' AND digest_auto_at IS NOT NULL AND digest_auto_fired=0 AND digest_auto_at <= ?
+    `).all(nowLocalIso);
+  }
+
+  deleteTask(id) {
+    this.db.prepare('DELETE FROM task_members WHERE task_id=?').run(id);
+    return this.db.prepare("DELETE FROM tasks WHERE id=? AND type='oneshot'").run(id);
+  }
+
+  addTaskMember(taskId, memberId, token) {
+    this.db.prepare('INSERT INTO task_members(task_id,member_id,token) VALUES(?,?,?)').run(taskId, memberId, token);
+  }
+
+  taskMembers(taskId) {
+    return this.db.prepare(`
+      SELECT tm.*, m.name, m.active FROM task_members tm JOIN members m ON m.id=tm.member_id
+      WHERE tm.task_id=? ORDER BY m.id
+    `).all(taskId);
+  }
+
+  /** Resolve a per-task link token → { task, member } for open tasks only. */
+  getTaskSessionByToken(token) {
+    const row = this.db.prepare(`
+      SELECT tm.task_id, tm.member_id FROM task_members tm
+      JOIN tasks t ON t.id=tm.task_id
+      JOIN members m ON m.id=tm.member_id
+      WHERE tm.token=? AND t.status='open' AND m.active=1
+    `).get(token);
+    if (!row) return null;
+    return { task: this.getTask(row.task_id), member: this.getMemberById(row.member_id) };
+  }
+
+  submitTaskSummary(taskId, memberId, summary, highlights) {
+    this.db.prepare(`
+      UPDATE task_members SET status='submitted', summary=?, highlights=?,
+        updated_at=datetime('now','localtime') WHERE task_id=? AND member_id=?
+    `).run(summary ?? null, highlights ?? null, taskId, memberId);
+  }
+
+  appendTaskTranscript(taskId, memberId, transcript, durationS) {
+    this.db.prepare(`
+      UPDATE task_members SET
+        transcript=COALESCE(transcript,'')||CASE WHEN transcript IS NULL THEN '' ELSE char(10) END||?,
+        duration_s=COALESCE(duration_s,0)+?,
+        updated_at=datetime('now','localtime')
+      WHERE task_id=? AND member_id=?
+    `).run(transcript, durationS, taskId, memberId);
   }
 
   // ---- auth sessions ----

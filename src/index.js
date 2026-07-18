@@ -19,6 +19,7 @@ import { Relay } from './lib/relay.js';
 import { Settings } from './lib/settings.js';
 import { AgentContext } from './lib/context.js';
 import { ProfileUpdater } from './lib/profile.js';
+import { DigestGenerator } from './lib/digest.js';
 import { Static } from './lib/static.js';
 import { sendText, sendJson } from './lib/http-util.js';
 
@@ -45,6 +46,10 @@ if (!settings.resolveKey()) {
 // Built-in try-it member: full talk flow, excluded from all rosters/digests.
 store.ensureTestMember('体验成员', crypto.randomBytes(8).toString('base64url'));
 
+// The daily standup is the single built-in recurring communication task;
+// permanent member tokens route to it. Oneshot tasks are created via API/UI.
+store.ensureDailyTask('每日日报');
+
 // The agent's maintainable brain (background + probing + knowledge). Seed the
 // default probing guidance once so the mechanism is useful out of the box.
 const context = new AgentContext(store);
@@ -64,10 +69,12 @@ if (!config.serviceToken) {
 }
 
 const auth = new AuthGate(config, store, CONFIG_PATH);
-const api = new Api(store, auth, getConfig, settings, context);
+const digests = new DigestGenerator(store, getConfig, env, settings);
+const api = new Api(store, auth, getConfig, settings, context, digests);
 const statics = new Static(path.join(__dirname, 'public'));
 const profiles = new ProfileUpdater(store, getConfig, env, settings);
 const relay = new Relay(store, getConfig, env, settings, context, profiles);
+digests.startScheduler();
 
 watchConfig(() => console.log('[rounds] Config reloaded'));
 
@@ -87,10 +94,11 @@ const server = http.createServer(async (req, res) => {
       return sendText(res, 404, 'not found');
     }
 
-    // member talk page — token checked server-side before serving the app
+    // member talk page — token checked server-side before serving the app.
+    // Accepts both permanent member tokens (daily standup) and per-task tokens.
     const m = url.pathname.match(/^\/u\/([A-Za-z0-9_-]+)$/);
     if (m && req.method === 'GET') {
-      if (!store.getMemberByToken(m[1])) {
+      if (!store.getMemberByToken(m[1]) && !store.getTaskSessionByToken(m[1])) {
         return sendText(res, 404, '链接无效或已失效', 'text/plain; charset=utf-8');
       }
       if (statics.serve(res, 'talk.html')) return;
@@ -124,6 +132,7 @@ server.listen(port, '127.0.0.1', () => {
 function shutdown() {
   console.log('[rounds] Shutting down...');
   auth.stop();
+  digests.stopScheduler();
   server.close(() => {
     store.close();
     process.exit(0);

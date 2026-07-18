@@ -18,7 +18,7 @@ const SILENCE = Buffer.alloc(24000 * 2 * 1.5); // 1.5s of silence to trigger VAD
 const t0 = Date.now(); const ms = () => `${Date.now() - t0}ms`;
 
 const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws?token=${TOKEN}`);
-let clipIdx = 0, sending = false, saved = null;
+let clipIdx = 0, sending = false, saved = null, ended = false;
 
 async function sendClip(i) {
   if (sending || i >= clips.length) return;
@@ -50,7 +50,10 @@ ws.on('message', raw => {
       saved = ev.summary; console.log(`[${ms()}] ✅ app.saved:`, JSON.stringify(ev.summary, null, 1)); break;
     case 'response.done':
       if (saved) { setTimeout(() => ws.close(), 3000); break; } // goodbye finished
-      if (!sending && clipIdx < clips.length) setTimeout(() => sendClip(clipIdx), 600);
+      if (!sending && clipIdx < clips.length) { setTimeout(() => sendClip(clipIdx), 600); break; }
+      // out of clips and nothing saved yet — ask the agent to wrap up
+      // (mirrors the member pressing 结束并提交)
+      if (!sending && !ended) { ended = true; ws.send(JSON.stringify({ type: 'app.end' })); console.log(`[${ms()}] >> app.end`); }
       break;
     case 'error': console.log(`[${ms()}] API ERROR`, JSON.stringify(ev.error)); break;
   }

@@ -5,7 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.1] - 2026-07-18
+## [0.6.0] - 2026-07-18
+
+### Added
+- **Communication tasks (沟通任务)** — the product's core abstraction. A task
+  = brief + question frame (free text) + participants + window + digest form.
+  The daily standup is now the single built-in `recurring` task; `oneshot`
+  tasks (e.g. quarterly review 1:1s) run one conversation per participant
+- **Link-driven routing** — permanent member links keep serving the daily
+  standup; each oneshot task mints per-(task, member) links that open that
+  task's conversation directly and die when the task closes
+- **Task-level digest** — synthesizes all per-member summaries into
+  共识 / 分歧 / 重点信号 for the owner. Manual trigger by default, optional
+  scheduled auto-trigger, close-on-digest as a separate linkage, re-trigger
+  overwrites the previous digest
+- **Admin 任务 page** — task list, create form (brief/questions/participants/
+  deadline/digest config), task detail with per-member links, status,
+  summaries, transcripts and the digest panel
+- **CLI `task` subcommands** — create/list/show/update/digest/close/reopen/
+  remove, for agents driving one-off rounds via the API key
+- Oneshot sessions submit via a generic `submit_conversation_summary` tool
+  (要点 + 重点信号) and feed the member's dynamic profile like standups do
+- DB migration v5 (`tasks`, `task_members`, `reports.task_id`)
 
 ### Fixed
 - PM2 `ecosystem.config.cjs` still pointed its working directory at the old

@@ -26,12 +26,13 @@ function newToken() {
 }
 
 export class Api {
-  constructor(store, auth, getConfig, settings, context) {
+  constructor(store, auth, getConfig, settings, context, digests) {
     this.store = store;
     this.auth = auth;
     this.getConfig = getConfig;
     this.settings = settings;
     this.context = context;
+    this.digests = digests;
   }
 
   // The whole admin surface is reachable by a human admin (session cookie) OR
@@ -75,11 +76,18 @@ export class Api {
       return true;
     }
 
-    // member endpoint (token auth, no session)
+    // member endpoint (token auth, no session) — resolves both the permanent
+    // member token (daily standup) and per-task oneshot tokens
     if (p === '/api/talk/session' && req.method === 'GET') {
-      const member = this.store.getMemberByToken(url.searchParams.get('token') || '');
-      if (!member) return sendJson(res, 404, { error: 'invalid_token' }), true;
-      return sendJson(res, 200, { name: member.name, is_test: Boolean(member.is_test) }), true;
+      const token = url.searchParams.get('token') || '';
+      const member = this.store.getMemberByToken(token);
+      if (member) return sendJson(res, 200, { name: member.name, is_test: Boolean(member.is_test) }), true;
+      const ts = this.store.getTaskSessionByToken(token);
+      if (!ts) return sendJson(res, 404, { error: 'invalid_token' }), true;
+      return sendJson(res, 200, {
+        name: ts.member.name, is_test: false,
+        task: { id: ts.task.id, title: ts.task.title },
+      }), true;
     }
 
     if (!p.startsWith('/api/')) return false;
@@ -130,6 +138,21 @@ export class Api {
 
     m = p.match(/^\/api\/members\/(\d+)\/reset-token$/);
     if (m && req.method === 'POST') return this.resetToken(req, res, Number(m[1])), true;
+
+    // ---- communication tasks ----
+    if (p === '/api/tasks' && req.method === 'GET') return this.listTasks(req, res), true;
+    if (p === '/api/tasks' && req.method === 'POST') return await this.createTask(req, res), true;
+
+    m = p.match(/^\/api\/tasks\/(\d+)$/);
+    if (m && req.method === 'GET') return this.taskDetail(req, res, Number(m[1])), true;
+    if (m && req.method === 'PUT') return await this.updateTask(req, res, Number(m[1])), true;
+    if (m && req.method === 'DELETE') return this.deleteTask(res, Number(m[1])), true;
+
+    m = p.match(/^\/api\/tasks\/(\d+)\/digest$/);
+    if (m && req.method === 'POST') return await this.triggerDigest(req, res, Number(m[1])), true;
+
+    m = p.match(/^\/api\/tasks\/(\d+)\/(close|reopen)$/);
+    if (m && req.method === 'POST') return this.setTaskStatus(res, Number(m[1]), m[2]), true;
 
     if (p === '/api/reports/history' && req.method === 'GET') return this.history(res), true;
 
@@ -305,6 +328,160 @@ export class Api {
     if (!content || content.length > 20000) return sendJson(res, 400, { error: 'invalid_content' }), null;
     if (tags.length > 500) return sendJson(res, 400, { error: 'invalid_tags' }), null;
     return { title, content, tags };
+  }
+
+  // ---- communication tasks ----
+
+  taskJson(req, task, rows) {
+    const submitted = rows.filter(r => r.status === 'submitted').length;
+    return {
+      id: task.id,
+      type: task.type,
+      title: task.title,
+      brief: task.brief || '',
+      questions: task.questions || '',
+      status: task.status,
+      deadline: task.deadline || null,
+      digest_auto_at: task.digest_auto_at || null,
+      digest_close_linked: Boolean(task.digest_close_linked),
+      digest: task.digest || '',
+      digest_updated_at: task.digest_updated_at || null,
+      created_at: task.created_at,
+      member_count: rows.length,
+      submitted_count: submitted,
+    };
+  }
+
+  listTasks(req, res) {
+    const tasks = this.store.listTasks().map(t => {
+      if (t.type === 'recurring') {
+        const date = todayLocal(this.getConfig().timeZone);
+        const members = this.store.listActiveMembers();
+        const done = this.store.submittedMemberIds(date);
+        return { ...this.taskJson(req, t, []), member_count: members.length, submitted_count: done.length };
+      }
+      return this.taskJson(req, t, this.store.taskMembers(t.id));
+    });
+    sendJson(res, 200, { tasks });
+  }
+
+  taskDetail(req, res, id) {
+    const task = this.store.getTask(id);
+    if (!task) return sendJson(res, 404, { error: 'not_found' });
+    if (task.type === 'recurring') {
+      // the built-in daily task's per-day data lives in the reports pages
+      return sendJson(res, 200, { ...this.taskJson(req, task, []), members: [] });
+    }
+    const rows = this.store.taskMembers(id);
+    sendJson(res, 200, {
+      ...this.taskJson(req, task, rows),
+      members: rows.map(r => ({
+        member_id: r.member_id,
+        name: r.name,
+        status: r.status,
+        link: this.memberLink(req, r.token),
+        summary: parseList(r.summary),
+        highlights: parseList(r.highlights),
+        transcript: r.transcript || '',
+        duration_s: r.duration_s || 0,
+        updated_at: r.updated_at || null,
+      })),
+    });
+  }
+
+  // Free-text task fields per the owner's Q4 ruling — brief and questions are
+  // plain text, no structured form.
+  readTaskFields(body) {
+    const out = {};
+    if (body.title !== undefined) {
+      const t = String(body.title).trim();
+      if (!t || t.length > 120) return { error: 'invalid_title' };
+      out.title = t;
+    }
+    for (const [k, max] of [['brief', 20000], ['questions', 20000]]) {
+      if (body[k] === undefined) continue;
+      const v = String(body[k] ?? '');
+      if (v.length > max) return { error: `invalid_${k}` };
+      out[k] = v.trim() || null;
+    }
+    if (body.deadline !== undefined) {
+      const v = String(body.deadline ?? '').trim();
+      if (v && !/^\d{4}-\d{2}-\d{2}/.test(v)) return { error: 'invalid_deadline' };
+      out.deadline = v || null;
+    }
+    if (body.digest_auto_at !== undefined) {
+      const v = String(body.digest_auto_at ?? '').trim();
+      if (v && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v)) return { error: 'invalid_digest_auto_at' };
+      out.digestAutoAt = v || null;
+    }
+    if (body.digest_close_linked !== undefined) out.digestCloseLinked = Boolean(body.digest_close_linked);
+    return { fields: out };
+  }
+
+  async createTask(req, res) {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      return sendJson(res, 400, { error: 'bad_request' });
+    }
+    const parsed = this.readTaskFields(body);
+    if (parsed.error) return sendJson(res, 400, { error: parsed.error });
+    if (!parsed.fields.title) return sendJson(res, 400, { error: 'invalid_title' });
+
+    const ids = Array.isArray(body.member_ids) ? body.member_ids.map(Number) : [];
+    const roster = new Map(this.store.listActiveMembers().map(mb => [mb.id, mb]));
+    const memberIds = [...new Set(ids)].filter(id => roster.has(id));
+    if (!memberIds.length) return sendJson(res, 400, { error: 'no_members' });
+
+    const task = this.store.createTask({ type: 'oneshot', ...parsed.fields });
+    for (const memberId of memberIds) this.store.addTaskMember(task.id, memberId, newToken());
+    return this.taskDetail(req, res, task.id);
+  }
+
+  async updateTask(req, res, id) {
+    const task = this.store.getTask(id);
+    if (!task) return sendJson(res, 404, { error: 'not_found' });
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      return sendJson(res, 400, { error: 'bad_request' });
+    }
+    const parsed = this.readTaskFields(body);
+    if (parsed.error) return sendJson(res, 400, { error: parsed.error });
+    this.store.updateTask(id, parsed.fields);
+    return this.taskDetail(req, res, id);
+  }
+
+  async triggerDigest(req, res, id) {
+    const task = this.store.getTask(id);
+    if (!task || task.type !== 'oneshot') return sendJson(res, 404, { error: 'not_found' });
+    let body = {};
+    try {
+      body = await readJsonBody(req);
+    } catch { /* empty body is fine */ }
+    try {
+      const result = await this.digests.trigger(id, body.close === undefined ? {} : { close: Boolean(body.close) });
+      if (!result.ok) return sendJson(res, 409, { error: result.error });
+      return this.taskDetail(req, res, id);
+    } catch (err) {
+      console.error('[rounds] digest trigger failed', err.message);
+      return sendJson(res, 502, { error: 'digest_failed', message: err.message });
+    }
+  }
+
+  setTaskStatus(res, id, action) {
+    const task = this.store.getTask(id);
+    if (!task || task.type !== 'oneshot') return sendJson(res, 404, { error: 'not_found' });
+    this.store.setTaskStatus(id, action === 'close' ? 'closed' : 'open');
+    sendJson(res, 200, { id, status: this.store.getTask(id).status });
+  }
+
+  deleteTask(res, id) {
+    const info = this.store.deleteTask(id);
+    if (!info.changes) return sendJson(res, 404, { error: 'not_found' });
+    sendJson(res, 204, {});
   }
 
   listMembers(req, res) {

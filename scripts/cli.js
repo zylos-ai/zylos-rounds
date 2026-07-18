@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * standup CLI — agent-friendly management client for zylos-rounds.
+ * rounds CLI — agent-friendly management client for zylos-rounds.
  *
  * Talks to the admin API with the bearer API key (config.serviceToken); never
  * touches the database. Designed for AI agents: JSON output, stdin for long
@@ -21,7 +21,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
-const HELP = `standup CLI — manage the voice-standup app via its admin API
+const HELP = `rounds CLI — manage the Rounds app via its admin API
 
 Usage: cli.js [--url U] [--key K] <command> [args]
 
@@ -43,6 +43,19 @@ Knowledge base
   knowledge add --title T [--tags G] [text]              (content from text arg or stdin)
   knowledge update <id> [--title T] [--tags G] [text]
   knowledge remove <id>
+
+Communication tasks (沟通任务)
+  task list                           all tasks (built-in daily + oneshot) with progress
+  task show <id>                      detail: per-member links/status/summaries + digest
+  task create --title T --members 1,2,3|all [brief]
+                                      create an oneshot task; brief from text arg or stdin;
+                                      [--questions Q] [--deadline YYYY-MM-DD]
+                                      [--auto-digest YYYY-MM-DDTHH:MM] [--close-on-digest]
+  task update <id> [--title T] [--questions Q] [--deadline D]
+                   [--auto-digest ISO|none] [--close-on-digest true|false] [brief]
+  task digest <id> [--close true|false]   generate/overwrite the digest (close is optional override)
+  task close <id> | task reopen <id>
+  task remove <id>                    delete an oneshot task and its links
 
 Reports & settings
   report today | report <YYYY-MM-DD>  day digest (structured + transcripts)
@@ -180,6 +193,47 @@ async function run(target, cmd, sub, args, flags) {
       });
     }
     case 'knowledge remove': return del(`/api/knowledge/${id(args[0])}`).then(() => ({ ok: true, removed: id(args[0]) }));
+
+    case 'task list': return get('/api/tasks');
+    case 'task show': return get(`/api/tasks/${id(args[0])}`);
+    case 'task create': {
+      if (!flags.title) fail('usage: task create --title T --members 1,2,3|all [brief]');
+      let memberIds;
+      if (!flags.members || flags.members === 'all') {
+        memberIds = (await get('/api/members')).members.map(mb => mb.id);
+      } else {
+        memberIds = flags.members.split(',').map(s => Number(s.trim())).filter(Boolean);
+      }
+      const body = { title: flags.title, member_ids: memberIds };
+      const brief = textInput(args[0]);
+      if (brief) body.brief = brief;
+      if (flags.questions) body.questions = flags.questions;
+      if (flags.deadline) body.deadline = flags.deadline;
+      if (flags['auto-digest']) body.digest_auto_at = flags['auto-digest'];
+      if (flags['close-on-digest'] !== undefined) body.digest_close_linked = flags['close-on-digest'] !== 'false';
+      return post('/api/tasks', body);
+    }
+    case 'task update': {
+      const tid = id(args[0]);
+      const body = {};
+      if (flags.title) body.title = flags.title;
+      if (flags.questions !== undefined) body.questions = flags.questions;
+      if (flags.deadline !== undefined) body.deadline = flags.deadline;
+      if (flags['auto-digest'] !== undefined) body.digest_auto_at = flags['auto-digest'] === 'none' ? '' : flags['auto-digest'];
+      if (flags['close-on-digest'] !== undefined) body.digest_close_linked = flags['close-on-digest'] !== 'false';
+      const brief = textInput(args[1]);
+      if (brief) body.brief = brief;
+      if (!Object.keys(body).length) fail('nothing to update');
+      return put(`/api/tasks/${tid}`, body);
+    }
+    case 'task digest': {
+      const body = {};
+      if (flags.close !== undefined) body.close = flags.close !== 'false';
+      return post(`/api/tasks/${id(args[0])}/digest`, body);
+    }
+    case 'task close': return post(`/api/tasks/${id(args[0])}/close`, {});
+    case 'task reopen': return post(`/api/tasks/${id(args[0])}/reopen`, {});
+    case 'task remove': return del(`/api/tasks/${id(args[0])}`).then(() => ({ ok: true, removed: id(args[0]) }));
 
     case 'report today': {
       const date = (await get('/api/auth/me')).date;

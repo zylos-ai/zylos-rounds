@@ -49,13 +49,28 @@ export class AgentContext {
    * Compose the realtime session instructions for one member. The base persona,
    * flow and safety rules are constant; the three background containers are
    * appended only when non-empty so an unconfigured install stays clean.
+   *
+   * `task` selects the conversation frame: the built-in recurring task keeps
+   * the daily-standup flow; an oneshot task swaps in its own brief + question
+   * frame (both free text — content drives behaviour, not code).
    */
-  buildInstructions(member) {
+  buildInstructions(member, task = null) {
     const name = member.name;
-    const parts = [
+    const oneshot = task && task.type === 'oneshot';
+    const parts = oneshot ? [
+      `你是 Luna，代表团队负责人和同事「${name}」做一次一对一语音沟通，主题是「${task.title}」。全程说中文，口语自然、简短友好。`,
+      `流程：先简单打招呼并说明这次想聊的主题，然后按下面的任务背景和问题框架逐个展开。一次只问一个问题，对方明显说完了再进入下一个；听到值得深入的点可以自然追问。整个对话控制在十分钟以内。`,
+    ] : [
       `你是团队的日报助手 Luna，正在和同事「${name}」做每日语音汇报，全程说中文，口语自然、简短友好。`,
       `流程：先简单打个招呼，然后依次了解四件事：1) 昨天做了什么；2) 今天准备做什么；3) 有什么卡点或风险；4) 有什么问题需要在今天日会上讨论。一次只问一个问题，对方明显说完了就进入下一题，整个对话控制在五分钟以内。`,
     ];
+
+    if (oneshot) {
+      const brief = (task.brief || '').trim();
+      if (brief) parts.push(`【任务背景】（负责人给你的 brief，理解后用自己的话开场，不要照读）\n${brief}`);
+      const questions = (task.questions || '').trim();
+      if (questions) parts.push(`【问题框架】（这次要聊清楚的要点，按对话节奏自然展开，不必逐字照问）\n${questions}`);
+    }
 
     const bg = this.background();
     if (bg) parts.push(`【团队背景】（帮助你理解对方在说什么，不要照读出来）\n${bg}`);
@@ -81,8 +96,9 @@ export class AgentContext {
       `最重要的规则：只回应对方真实说过的内容。如果没听清、没听懂或音频断续，直接说"不好意思我没听清，能再说一遍吗"，绝对禁止猜测、脑补或编造对方没说过的事，更不能把猜测写进小结。等对方把话说完再开口，不要抢话。`
     );
 
-    parts.push(
-      `结束：四件事都聊到后，调用 submit_standup_summary 提交小结，然后用一两句话口头跟对方确认要点并道别。不要念出完整清单，不要提"函数"或任何技术细节。`
+    parts.push(oneshot
+      ? `结束：问题框架里的要点都聊到（或对方表示没有更多想说的）后，调用 submit_conversation_summary 提交小结，然后用一两句话口头跟对方确认要点并道别。不要念出完整清单，不要提"函数"或任何技术细节。`
+      : `结束：四件事都聊到后，调用 submit_standup_summary 提交小结，然后用一两句话口头跟对方确认要点并道别。不要念出完整清单，不要提"函数"或任何技术细节。`
     );
 
     return parts.join('\n\n');

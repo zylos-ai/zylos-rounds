@@ -28,6 +28,7 @@ export default function TalkApp() {
   const [phase, setPhase] = useState('loading');
   const [name, setName] = useState('');
   const [isTest, setIsTest] = useState(false);
+  const [task, setTask] = useState(null); // oneshot task {id,title} — null = daily standup
   const [status, setStatus] = useState('');
   const [statusErr, setStatusErr] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -57,7 +58,8 @@ export default function TalkApp() {
         const data = await res.json();
         setName(data.name || '');
         setIsTest(Boolean(data.is_test));
-        document.title = `Rounds · ${data.name || ''}`;
+        setTask(data.task || null);
+        document.title = `Rounds · ${data.task ? data.task.title : (data.name || '')}`;
         setPhase('idle');
         say('点击麦克风开始');
       } catch {
@@ -226,10 +228,10 @@ export default function TalkApp() {
             Rounds
           </div>
           <h1 className="mt-3 text-4xl font-bold leading-tight tracking-tight max-sm:text-3xl">
-            {name}，和 Luna 聊 3-5 分钟
+            {task ? `${name}，聊聊「${task.title}」` : `${name}，和 Luna 聊 3-5 分钟`}
           </h1>
           <p className="mt-4 text-[1.05rem] leading-relaxed text-muted-foreground max-sm:text-base">
-            昨天做了什么 · 今天计划 · 卡点 · 想在日会讨论的问题
+            {task ? 'Luna 代表负责人和你做一次一对一沟通，想到什么说什么' : '昨天做了什么 · 今天计划 · 卡点 · 想在日会讨论的问题'}
           </p>
           {isTest ? (
             <p className="mt-2 inline-flex items-center gap-1.5 text-[0.85rem] text-faint">
@@ -259,6 +261,11 @@ export default function TalkApp() {
           {name ? (
             <div className="flex items-center gap-1.5 text-[0.78rem] text-muted-foreground">
               {name}
+              {task ? (
+                <span className="inline-flex items-center rounded-full bg-accent px-2 py-px text-[0.7rem] font-medium">
+                  {task.title}
+                </span>
+              ) : null}
               {isTest ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-accent px-2 py-px text-[0.7rem] font-medium">
                   <FlaskConical className="h-3 w-3" strokeWidth={1.75} />
@@ -344,7 +351,7 @@ function SummarySection({ icon: Icon, title, items }) {
   );
 }
 
-function Shell({ name, children }) {
+function Shell({ name, task, children }) {
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[560px] flex-col px-5 pb-[calc(16px+env(safe-area-inset-bottom))]">
       <header className="pb-1 pt-[18px]">
@@ -354,7 +361,7 @@ function Shell({ name, children }) {
         </h1>
         {name ? (
           <p className="mt-1.5 text-[0.82rem] leading-normal text-muted-foreground">
-            {name}，和 Luna 聊 3-5 分钟：昨天做了什么 · 今天计划 · 卡点 · 想在日会讨论的问题。
+            {task ? `${name}，正在聊「${task.title}」——Luna 代表负责人和你做一次一对一沟通。` : `${name}，和 Luna 聊 3-5 分钟：昨天做了什么 · 今天计划 · 卡点 · 想在日会讨论的问题。`}
           </p>
         ) : null}
         {name ? (

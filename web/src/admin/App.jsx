@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Mic, Users, FileText, History, LogOut, Brain, Settings as SettingsIcon } from 'lucide-react';
+import { Mic, Users, FileText, History, LogOut, Brain, Settings as SettingsIcon, ClipboardList } from 'lucide-react';
 import { cn, today } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { api } from './api';
@@ -10,6 +10,7 @@ import ReportPage from './pages/ReportPage';
 import HistoryPage from './pages/HistoryPage';
 import BrainPage from './pages/BrainPage';
 import SettingsPage from './pages/SettingsPage';
+import { TasksPage, TaskDetailPage } from './pages/TasksPage';
 
 export default function App() {
   const route = useRoute();
@@ -73,6 +74,8 @@ export default function App() {
       {route.name === 'history' && <HistoryPage />}
       {route.name === 'brain' && <BrainPage />}
       {route.name === 'settings' && <SettingsPage />}
+      {route.name === 'tasks' && <TasksPage />}
+      {route.name === 'task' && <TaskDetailPage id={route.id} />}
     </Layout>
   );
 }
@@ -81,6 +84,7 @@ function Layout({ route, onLogout, reportDate, children }) {
   const t = reportDate || today();
   const nav = [
     { label: '管理', hash: '#/', icon: Users, active: route.name === 'roster' },
+    { label: '任务', hash: '#/tasks', icon: ClipboardList, active: route.name === 'tasks' || route.name === 'task' },
     { label: '今日报告', hash: `#/report/${t}`, icon: FileText, active: route.name === 'report' && route.date === t },
     {
       label: '历史',
