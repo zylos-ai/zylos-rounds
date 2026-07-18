@@ -282,3 +282,49 @@ test('talk session resolves only task tokens and flags the built-in daily', asyn
     close();
   }
 });
+
+test('text models: DB > config > default layering, digest follows profile, blank reverts', async () => {
+  const { call, close } = await boot();
+  try {
+    // fresh install: nothing stored, defaults apply, digest follows profile
+    let s = (await call('GET', '/api/settings')).data;
+    assert.equal(s.profile_model, '');
+    assert.equal(s.digest_model, '');
+    assert.equal(s.profile_model_default, 'gpt-5.1');
+    assert.equal(s.profile_model_effective, 'gpt-5.1');
+    assert.equal(s.digest_model_effective, 'gpt-5.1');
+
+    // setting the profile model pulls the digest model along
+    s = (await call('PUT', '/api/settings', { profile_model: 'gpt-5.2-mini' })).data;
+    assert.equal(s.profile_model, 'gpt-5.2-mini');
+    assert.equal(s.profile_model_effective, 'gpt-5.2-mini');
+    assert.equal(s.digest_model_effective, 'gpt-5.2-mini');
+
+    // an explicit digest model decouples it
+    s = (await call('PUT', '/api/settings', { digest_model: 'gpt-5.1' })).data;
+    assert.equal(s.digest_model_effective, 'gpt-5.1');
+    assert.equal(s.profile_model_effective, 'gpt-5.2-mini');
+
+    // blank reverts each field independently
+    s = (await call('PUT', '/api/settings', { profile_model: '' })).data;
+    assert.equal(s.profile_model, '');
+    assert.equal(s.profile_model_effective, 'gpt-5.1');
+    assert.equal(s.digest_model_effective, 'gpt-5.1'); // still the explicit one
+    s = (await call('PUT', '/api/settings', { digest_model: '' })).data;
+    assert.equal(s.digest_model, '');
+    assert.equal(s.digest_model_effective, 'gpt-5.1'); // back to following profile
+
+    // over-long model names are rejected
+    const bad = await call('PUT', '/api/settings', { profile_model: 'x'.repeat(129) });
+    assert.equal(bad.status, 400);
+
+    // test endpoint: no key configured → no_key without hitting the network
+    const t = await call('POST', '/api/settings/test-text-model', { model: 'gpt-5.1' });
+    assert.equal(t.status, 200);
+    assert.deepEqual(t.data, { ok: false, error: 'no_key' });
+    // and it is auth-gated
+    assert.equal((await call('POST', '/api/settings/test-text-model', { model: 'gpt-5.1' }, {})).status, 401);
+  } finally {
+    close();
+  }
+});

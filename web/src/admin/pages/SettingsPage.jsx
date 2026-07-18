@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { KeyRound, AudioLines, Loader2, CheckCircle2, XCircle, Volume2, Square } from 'lucide-react';
+import { KeyRound, AudioLines, FileText, Loader2, CheckCircle2, XCircle, Volume2, Square } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -12,6 +12,7 @@ const TEST_ERRORS = {
   invalid_key: 'API key 无效（401）',
   timeout: '连接超时，请检查网络或代理',
   network: '网络错误，无法连接 OpenAI',
+  invalid_model: '模型不可用，请检查模型名',
 };
 
 export default function SettingsPage() {
@@ -31,6 +32,14 @@ export default function SettingsPage() {
   const [modelBusy, setModelBusy] = useState(false);
   const [modelMsg, setModelMsg] = useState(null);
   const msgTimer = useRef(null);
+
+  // text-model card state
+  const [profileModel, setProfileModel] = useState('');
+  const [digestModel, setDigestModel] = useState('');
+  const [textBusy, setTextBusy] = useState(false);
+  const [textMsg, setTextMsg] = useState(null);
+  const textMsgTimer = useRef(null);
+  const [textTest, setTextTest] = useState({}); // { profile|digest: { busy, result } }
 
   // voice preview
   const [previewing, setPreviewing] = useState(false);
@@ -71,6 +80,8 @@ export default function SettingsPage() {
       setSettings(data);
       setModel(data.model);
       setVoice(data.voice);
+      setProfileModel(data.profile_model || '');
+      setDigestModel(data.digest_model || '');
     } catch (err) {
       if (err.status !== 401) setLoadError('加载失败，请刷新重试');
     }
@@ -78,7 +89,10 @@ export default function SettingsPage() {
 
   useEffect(() => {
     load();
-    return () => clearTimeout(msgTimer.current);
+    return () => {
+      clearTimeout(msgTimer.current);
+      clearTimeout(textMsgTimer.current);
+    };
   }, [load]);
 
   const flash = (setter, msg) => {
@@ -150,6 +164,52 @@ export default function SettingsPage() {
     }
   };
 
+  const onSaveTextModels = async (e) => {
+    e.preventDefault();
+    if (textBusy) return;
+    setTextBusy(true);
+    try {
+      const data = await api('api/settings', {
+        method: 'PUT',
+        body: { profile_model: profileModel.trim(), digest_model: digestModel.trim() },
+      });
+      setSettings(data);
+      setProfileModel(data.profile_model || '');
+      setDigestModel(data.digest_model || '');
+      setTextTest({});
+      setTextMsg({ ok: true, text: '已保存，下一次画像更新 / 汇总生效' });
+    } catch (err) {
+      if (err.status !== 401) setTextMsg({ ok: false, text: '保存失败，请重试' });
+    } finally {
+      setTextBusy(false);
+      clearTimeout(textMsgTimer.current);
+      textMsgTimer.current = setTimeout(() => setTextMsg(null), 4000);
+    }
+  };
+
+  const onTestTextModel = async (which) => {
+    if (textTest[which]?.busy) return;
+    const input = which === 'profile' ? profileModel.trim() : digestModel.trim();
+    const fallback = which === 'profile'
+      ? settings.profile_model_default
+      : (settings.digest_model_default || (profileModel.trim() || settings.profile_model_default));
+    const model = input || fallback;
+    setTextTest((s) => ({ ...s, [which]: { busy: true, result: null } }));
+    try {
+      const r = await api('api/settings/test-text-model', { method: 'POST', body: { model } });
+      setTextTest((s) => ({
+        ...s,
+        [which]: { busy: false, result: r.ok ? { ok: true, text: `${model} 可用` } : { ok: false, text: `${model}：${TEST_ERRORS[r.error] || `测试失败（${r.error}）`}` } },
+      }));
+    } catch (err) {
+      if (err.status !== 401) {
+        setTextTest((s) => ({ ...s, [which]: { busy: false, result: { ok: false, text: '请求失败，请重试' } } }));
+      } else {
+        setTextTest((s) => ({ ...s, [which]: { busy: false, result: null } }));
+      }
+    }
+  };
+
   if (settings === null) {
     return <p className="text-sm text-muted-foreground">{loadError || '加载中…'}</p>;
   }
@@ -159,7 +219,7 @@ export default function SettingsPage() {
   return (
     <>
       <h1 className="text-4xl font-bold tracking-tight max-sm:text-3xl">设置</h1>
-      <p className="mt-3 text-base text-muted-foreground">配置语音对话使用的 OpenAI 连接、模型和音色</p>
+      <p className="mt-3 text-base text-muted-foreground">配置语音对话使用的 OpenAI 连接、模型和音色，以及画像 / 汇总使用的文本模型</p>
 
       {loadError ? <p className="mt-6 text-sm text-destructive">{loadError}</p> : null}
 
@@ -287,6 +347,64 @@ export default function SettingsPage() {
 
           {modelMsg ? (
             <p className={cn('mt-3 text-sm', modelMsg.ok ? 'text-success' : 'text-destructive')}>{modelMsg.text}</p>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      {/* text models (profile updater / task digest) */}
+      <Card className="mt-6">
+        <CardContent className="px-6 py-6">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent text-muted-foreground">
+              <FileText className="h-5 w-5" strokeWidth={1.75} />
+            </span>
+            <div>
+              <h2 className="text-lg font-semibold leading-tight">文本模型</h2>
+              <p className="mt-0.5 text-sm text-muted-foreground">动态画像更新与任务汇总使用的文字模型，在对话结束后异步运行，不影响语音通话</p>
+            </div>
+          </div>
+
+          <form onSubmit={onSaveTextModels} className="mt-6 flex flex-col gap-4">
+            {[
+              { key: 'profile', label: '画像模型', value: profileModel, setValue: setProfileModel, placeholder: `留空使用默认（${settings.profile_model_default}）` },
+              { key: 'digest', label: '汇总模型', value: digestModel, setValue: setDigestModel, placeholder: settings.digest_model_default ? `留空使用默认（${settings.digest_model_default}）` : '留空则跟随画像模型' },
+            ].map(({ key, label, value, setValue, placeholder }) => (
+              <div key={key}>
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-sm font-medium text-muted-foreground">{label}</span>
+                    <Input
+                      value={value}
+                      onChange={(e) => { setValue(e.target.value); setTextTest((s) => ({ ...s, [key]: undefined })); }}
+                      placeholder={placeholder}
+                      autoComplete="off"
+                      className="h-11 w-[320px] max-w-full text-base"
+                      aria-label={label}
+                    />
+                  </label>
+                  <Button type="button" variant="outline" className="h-11 px-4 text-[0.95rem]" disabled={textTest[key]?.busy} onClick={() => onTestTextModel(key)}>
+                    {textTest[key]?.busy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
+                    测试
+                  </Button>
+                </div>
+                {textTest[key]?.result ? (
+                  <p className={cn('mt-2 flex items-center gap-1.5 text-sm', textTest[key].result.ok ? 'text-success' : 'text-destructive')}>
+                    {textTest[key].result.ok ? <CheckCircle2 className="h-4 w-4" strokeWidth={1.75} /> : <XCircle className="h-4 w-4" strokeWidth={1.75} />}
+                    {textTest[key].result.text}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+            <div>
+              <Button type="submit" className="h-11 px-6 text-[0.95rem]" disabled={textBusy}>
+                {textBusy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
+                保存
+              </Button>
+            </div>
+          </form>
+
+          {textMsg ? (
+            <p className={cn('mt-3 text-sm', textMsg.ok ? 'text-success' : 'text-destructive')}>{textMsg.text}</p>
           ) : null}
         </CardContent>
       </Card>

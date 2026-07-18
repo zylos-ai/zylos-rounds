@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.3] - 2026-07-19
+
+### Added
+- **Configurable text models (文本模型) in Settings.** The profile updater
+  (动态画像) and task digest (任务汇总) models are now configurable from the
+  admin Settings page — free-text model name, per-field 测试 button (one
+  minimal chat completion verifies the model answers), blank reverts to the
+  default (digest follows the profile model when unset). Resolution layering
+  matches model/voice: settings DB > config.json (`profileModel` /
+  `digestModel`) > built-in default (`gpt-5.1`)
+- **API**: `GET/PUT /api/settings` gains `profile_model` / `digest_model`
+  (stored + `_default` / `_effective` views); new
+  `POST /api/settings/test-text-model`
+- **CLI**: `settings set --profile-model M --digest-model M` (`''` reverts)
+
 ## [0.7.2] - 2026-07-19
 
 ### Added

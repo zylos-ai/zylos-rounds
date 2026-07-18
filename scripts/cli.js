@@ -68,7 +68,8 @@ Reports & settings
   report today | report <YYYY-MM-DD>  day digest (structured + transcripts)
   report history                      per-day submission counts
   settings get
-  settings set [--model M] [--voice V]
+  settings set [--model M] [--voice V] [--profile-model M] [--digest-model M]
+                                      profile/digest = text models for 画像/汇总; '' reverts to default
 
 All output is JSON. Long text is best piped via stdin:
   cat notes.md | cli.js member set-context 3
@@ -289,7 +290,9 @@ async function run(target, cmd, sub, args, flags) {
       const body = {};
       if (flags.model) body.model = flags.model;
       if (flags.voice) body.voice = flags.voice;
-      if (!Object.keys(body).length) fail('usage: settings set [--model M] [--voice V]');
+      if (flags['profile-model'] !== undefined) body.profile_model = flags['profile-model'];
+      if (flags['digest-model'] !== undefined) body.digest_model = flags['digest-model'];
+      if (!Object.keys(body).length) fail('usage: settings set [--model M] [--voice V] [--profile-model M] [--digest-model M]');
       return put('/api/settings', body);
     }
 

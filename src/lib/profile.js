@@ -130,10 +130,9 @@ export class ProfileUpdater {
 
   /** One chat-completions call. profileApiBase override exists for E2E mocks. */
   callModel(key, prompt) {
-    const cfg = this.getConfig();
     return callChatModel({
-      base: cfg.profileApiBase,
-      model: cfg.profileModel || DEFAULT_PROFILE_MODEL,
+      base: this.getConfig().profileApiBase,
+      model: this.settings.resolveProfileModel(),
       key,
       prompt,
       proxy: this.env.proxy,

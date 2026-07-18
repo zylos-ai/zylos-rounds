@@ -14,7 +14,6 @@
  */
 
 import { callChatModel } from './llm.js';
-import { DEFAULT_PROFILE_MODEL } from './profile.js';
 import { ONESHOT_CYCLE, currentCycleKey, previousCycleKey } from './cycle.js';
 import { todayLocal } from './http-util.js';
 
@@ -109,7 +108,7 @@ export class DigestGenerator {
     const cfg = this.getConfig();
     const text = await callChatModel({
       base: cfg.profileApiBase,
-      model: cfg.digestModel || cfg.profileModel || DEFAULT_PROFILE_MODEL,
+      model: this.settings.resolveDigestModel(),
       key: apiKey,
       prompt: this.buildPrompt(task, rows, key),
       proxy: this.env.proxy,

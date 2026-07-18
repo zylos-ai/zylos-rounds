@@ -167,6 +167,9 @@ export class Api {
     if (p === '/api/settings/test-connection' && req.method === 'POST') {
       return sendJson(res, 200, await this.settings.testConnection()), true;
     }
+    if (p === '/api/settings/test-text-model' && req.method === 'POST') {
+      return await this.testTextModel(req, res), true;
+    }
 
     m = p.match(/^\/api\/settings\/voice-sample\/([a-z]+)$/);
     if (m && req.method === 'GET') return this.voiceSample(res, m[1]), true;
@@ -202,6 +205,13 @@ export class Api {
       voice: this.settings.resolveVoice(),
       model_options: MODEL_OPTIONS,
       voice_options: VOICE_OPTIONS,
+      // text models: stored value ('' = unset, defaults apply) + what applies then
+      profile_model: this.settings.storedProfileModel(),
+      digest_model: this.settings.storedDigestModel(),
+      profile_model_default: this.settings.defaultProfileModel(),
+      digest_model_default: this.settings.defaultDigestModel(),
+      profile_model_effective: this.settings.resolveProfileModel(),
+      digest_model_effective: this.settings.resolveDigestModel(),
     });
   }
 
@@ -220,6 +230,16 @@ export class Api {
       if (!VOICE_OPTIONS.includes(body.voice)) return sendJson(res, 400, { error: 'invalid_voice' });
       this.settings.setVoice(body.voice);
     }
+    if (body.profile_model !== undefined) {
+      const v = String(body.profile_model).trim();
+      if (v.length > 128) return sendJson(res, 400, { error: 'invalid_model' });
+      this.settings.setProfileModel(v); // '' reverts to default
+    }
+    if (body.digest_model !== undefined) {
+      const v = String(body.digest_model).trim();
+      if (v.length > 128) return sendJson(res, 400, { error: 'invalid_model' });
+      this.settings.setDigestModel(v); // '' reverts to following the profile model
+    }
     if (body.clear_openai_key === true) {
       this.settings.clearKey();
     } else if (body.openai_key !== undefined) {
@@ -228,6 +248,19 @@ export class Api {
       this.settings.setKey(key);
     }
     return this.getSettings(res);
+  }
+
+  /** Probe a text model with one minimal completion; body.model defaults to the effective profile model. */
+  async testTextModel(req, res) {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      return sendJson(res, 400, { error: 'bad_request' });
+    }
+    const model = String(body.model || '').trim() || this.settings.resolveProfileModel();
+    if (model.length > 128) return sendJson(res, 400, { error: 'invalid_model' });
+    return sendJson(res, 200, await this.settings.testTextModel(model));
   }
 
   // ---- agent context containers (background + probing guidance) ----

@@ -11,6 +11,8 @@
 
 import { request as httpsRequest } from 'node:https';
 import { HttpsProxyAgent } from 'https-proxy-agent';
+import { callChatModel } from './llm.js';
+import { DEFAULT_PROFILE_MODEL } from './profile.js';
 
 export const MODEL_OPTIONS = ['gpt-realtime-2.1', 'gpt-realtime', 'gpt-realtime-mini'];
 export const VOICE_OPTIONS = ['marin', 'cedar', 'coral', 'sage', 'shimmer', 'alloy', 'ash', 'ballad', 'echo', 'verse'];
@@ -56,6 +58,70 @@ export class Settings {
 
   setVoice(value) {
     this.store.setSetting('voice', value);
+  }
+
+  // ---- text models (profile updater 画像 / task digest 汇总) ----
+  // Same layering as model/voice: settings DB > config.json > defaults.
+  // The digest model falls back to the profile model when unset anywhere.
+
+  storedProfileModel() {
+    return this.store.getSetting('profile_model') || '';
+  }
+
+  storedDigestModel() {
+    return this.store.getSetting('digest_model') || '';
+  }
+
+  defaultProfileModel() {
+    return this.getConfig().profileModel || DEFAULT_PROFILE_MODEL;
+  }
+
+  defaultDigestModel() {
+    return this.getConfig().digestModel || '';
+  }
+
+  resolveProfileModel() {
+    return this.storedProfileModel() || this.defaultProfileModel();
+  }
+
+  resolveDigestModel() {
+    return this.storedDigestModel() || this.defaultDigestModel() || this.resolveProfileModel();
+  }
+
+  setProfileModel(value) {
+    if (value) this.store.setSetting('profile_model', value);
+    else this.store.deleteSetting('profile_model');
+  }
+
+  setDigestModel(value) {
+    if (value) this.store.setSetting('digest_model', value);
+    else this.store.deleteSetting('digest_model');
+  }
+
+  /**
+   * Verify a text model actually answers: one minimal chat-completions call
+   * with the resolved key. Honors profileApiBase (E2E mocks / custom base).
+   */
+  async testTextModel(model) {
+    const key = this.resolveKey();
+    if (!key) return { ok: false, error: 'no_key' };
+    try {
+      await callChatModel({
+        base: this.getConfig().profileApiBase,
+        model,
+        key,
+        prompt: '只回复两个字符：OK',
+        proxy: this.env.proxy,
+        timeoutMs: 30_000,
+      });
+      return { ok: true };
+    } catch (err) {
+      const m = String(err.message || '');
+      if (m.includes('http_401')) return { ok: false, error: 'invalid_key' };
+      if (m.includes('http_404') || m.includes('http_400')) return { ok: false, error: 'invalid_model' };
+      if (m.includes('timeout')) return { ok: false, error: 'timeout' };
+      return { ok: false, error: 'network' };
+    }
   }
 
   /** Cheap key + connectivity probe: GET /v1/models with the resolved key. */
