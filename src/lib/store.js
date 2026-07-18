@@ -73,6 +73,16 @@ const MIGRATIONS = [
       );
     `,
   },
+  {
+    // Dynamic member profile (动态画像) — auto-maintained by an LLM pass after
+    // each submitted report (new facts merged in, stale ones aged out), distinct
+    // from the human-written `context`. Both are injected into call instructions.
+    version: 4,
+    sql: `
+      ALTER TABLE members ADD COLUMN profile TEXT;
+      ALTER TABLE members ADD COLUMN profile_updated_at TEXT;
+    `,
+  },
 ];
 
 export class Store {
@@ -178,6 +188,16 @@ export class Store {
   // ---- members ----
   setMemberContext(id, context) {
     return this.db.prepare('UPDATE members SET context=? WHERE id=?').run(context ?? null, id);
+  }
+
+  setMemberProfile(id, profile) {
+    return this.db.prepare(`
+      UPDATE members SET profile=?, profile_updated_at=datetime('now','localtime') WHERE id=?
+    `).run(profile ?? null, id);
+  }
+
+  getReport(memberId, date) {
+    return this.db.prepare('SELECT * FROM reports WHERE member_id=? AND report_date=?').get(memberId, date);
   }
 
   /**

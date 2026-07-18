@@ -63,6 +63,10 @@ export class AgentContext {
     const memberCtx = (member.context || '').trim();
     if (memberCtx) parts.push(`【关于 ${name}】（这位同事的角色和需要重点关注的点）\n${memberCtx}`);
 
+    // Auto-maintained profile — merged from past reports after each standup.
+    const profile = (member.profile || '').trim();
+    if (profile) parts.push(`【${name} 的动态画像】（根据其过往日报自动整理，帮助你理解上下文，不要照读出来）\n${profile}`);
+
     const probing = this.probing();
     if (probing) parts.push(`【追问指引】（据此决定要不要追问、追问到什么程度；这是内部指引，不要读出来）\n${probing}`);
 

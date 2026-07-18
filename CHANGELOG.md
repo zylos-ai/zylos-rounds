@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-07-18
+
+### Added
+- **Agent-friendly CLI** (`scripts/cli.js`) — full app management from the
+  command line via the admin API, JSON in/out, stdin for long text, zero
+  prompts. Members (add / remove / reset-link / context / profile), brain
+  containers, knowledge base (incl. search), day reports and settings.
+  Credentials resolve from flags → `STANDUP_URL`/`STANDUP_API_KEY` env →
+  `cli.json` in the data dir → same-host `config.json`, so a remote agent
+  (e.g. the coco avatar) only needs a `cli.json` with the public URL + API key
+- **API key with full admin scope** — the bearer `config.serviceToken` now
+  covers the entire admin API (roster, reports, settings — previously brain
+  content only), so agents can operate the app without database access or a
+  login session. New endpoints: `GET /api/knowledge/search`,
+  `PUT /api/members/:id/profile`
+- **Dynamic member profiles (动态画像)** — after each submitted report an LLM
+  pass (`profileModel`, default `gpt-5.1`) merges the day's structured
+  summary + transcript into a per-member profile: entries are dated, re-dated
+  when re-confirmed, and aged out when stale. The profile is injected into the
+  member's next call (【X 的动态画像】) alongside the hand-written 背景, and is
+  viewable / hand-correctable in the roster dialog (成员管理 → 背景与画像).
+  Test-member sessions never update profiles; failures are soft (previous
+  profile kept). DB migration v4 (`members.profile`, `profile_updated_at`)
+
 ## [0.3.0] - 2026-07-18
 
 ### Added

@@ -99,6 +99,23 @@ test('history aggregates submitted counts and topic counts', () => {
   s.close();
 });
 
+test('member profile: set, timestamp, clear, and report lookup', () => {
+  const s = tmpStore();
+  const id = Number(s.addMember('P', 'tp').lastInsertRowid);
+  assert.equal(s.getMemberById(id).profile, null);
+  s.setMemberProfile(id, '- [2026-07-18] 负责语音日报');
+  const m = s.getMemberById(id);
+  assert.match(m.profile, /语音日报/);
+  assert.ok(m.profile_updated_at);
+  s.setMemberProfile(id, null);
+  assert.equal(s.getMemberById(id).profile, null);
+
+  s.upsertSummary(id, '2026-07-18', { yesterday: ['y'], today: [], blockers: [], topics_for_meeting: [] }, '{}', 'm');
+  assert.equal(s.getReport(id, '2026-07-18').status, 'submitted');
+  assert.equal(s.getReport(id, '2026-01-01'), undefined);
+  s.close();
+});
+
 test('settings CRUD: set, overwrite, delete', () => {
   const s = tmpStore();
   assert.equal(s.getSetting('model'), null);

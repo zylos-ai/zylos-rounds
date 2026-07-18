@@ -96,6 +96,10 @@ test('buildInstructions injects only non-empty containers', () => {
   assert.match(full, /【团队背景】[\s\S]*BG/);
   assert.match(full, /【关于 Nick】[\s\S]*Nick 是 QA/);
   assert.match(full, /【追问指引】[\s\S]*PG/);
+
+  assert.doesNotMatch(full, /动态画像/); // absent until auto-maintained
+  const withProfile = ctx.buildInstructions({ name: 'Nick', context: '', profile: '- [2026-07-17] 负责发布系统' });
+  assert.match(withProfile, /【Nick 的动态画像】[\s\S]*负责发布系统/);
   s.close();
 });
 

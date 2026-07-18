@@ -1,18 +1,22 @@
 ---
 name: standup
-version: 0.3.0
+version: 0.4.0
 description: >-
   Voice daily-standup component. Team members talk to an AI agent (OpenAI
   Realtime, Chinese voice conversation) via a personal no-login link; the agent
   collects yesterday/today/blockers/meeting-topics, stores structured reports,
   and serves per-day team digests. The agent has a maintainable "brain" —
-  editable team background, probing guidance and per-member context injected
-  every call, plus on-demand tools to recall a member's past reports and search
-  a team knowledge base. Use when managing standup members (add / remove /
-  reset link), tuning the agent's background / probing / knowledge, reading
-  daily reports / transcripts / digests, checking who has reported today, or
-  troubleshooting the voice relay. Triggers: "日报", "语音日报", "standup",
-  "每日汇报", "日会待议", "谁还没汇报", "追问", "背景", "知识库".
+  editable team background, probing guidance, per-member context and an
+  auto-maintained dynamic profile (动态画像, merged from past reports after
+  each standup) injected every call, plus on-demand tools to recall a member's
+  past reports and search a team knowledge base. Full management is available
+  to agents via scripts/cli.js with the bearer API key (config.serviceToken) —
+  members, brain, knowledge, reports, settings — no DB access needed. Use when
+  managing standup members (add / remove / reset link), tuning the agent's
+  background / probing / knowledge / profiles, reading daily reports /
+  transcripts / digests, checking who has reported today, or troubleshooting
+  the voice relay. Triggers: "日报", "语音日报", "standup", "每日汇报",
+  "日会待议", "谁还没汇报", "追问", "背景", "画像", "知识库".
 type: capability
 
 lifecycle:
@@ -83,7 +87,9 @@ surfaces (roster, daily digest, history) sit behind password login
 | `timeZone` | `Asia/Shanghai` | report-date boundary |
 | `auth.enabled` | `true` | admin auth (never disable in production) |
 | `auth.password` | generated | scrypt hash; plaintext printed once at install |
-| `serviceToken` | generated | bearer token for the management API (context / knowledge) — minted on first start |
+| `serviceToken` | generated | bearer API key — full admin API scope (roster / brain / knowledge / reports / settings); minted on first start |
+| `profileModel` | `gpt-5.1` | text model that maintains the 动态画像 after each report |
+| `profileApiBase` | `https://api.openai.com` | override for tests/mocks only |
 
 `OPENAI_API_KEY` and `HTTPS_PROXY` are read from `~/zylos/.env` (process.env
 wins) — they are never stored in config.json.
@@ -92,12 +98,43 @@ To reset the admin password: write a plaintext value into `auth.password`,
 restart the service — it is migrated to a scrypt hash on startup and printed
 to neither logs nor console.
 
-## Admin operations (agent-side, via API)
+## Admin operations (agent-side, via CLI)
 
-The admin API uses the session cookie; for agent-side operations, log in with
-the password from the operator, or operate through the web UI in a browser.
-Routine member management should go through the web UI / API — never write to
-the SQLite DB directly.
+The whole admin API accepts the bearer API key (`config.serviceToken`) — use
+the bundled CLI instead of raw curl or the web UI. Never write to the SQLite
+DB directly.
+
+```bash
+CLI="node ~/zylos/.claude/skills/standup/scripts/cli.js"
+
+$CLI member list                       # roster + links + today's status
+$CLI member add 小王
+$CLI member remove 3                   # deactivate (history kept)
+$CLI member reset-link 3
+echo "前端负责人，关注上线节奏" | $CLI member set-context 3
+echo "- [2026-07-18] 在做发布系统" | $CLI member set-profile 3   # correct the 动态画像
+
+$CLI brain get
+echo "..." | $CLI brain set team-background
+echo "..." | $CLI brain set probing-guidance
+
+$CLI knowledge list
+$CLI knowledge search 发布 系统
+echo "内容..." | $CLI knowledge add --title "发布系统" --tags "release"
+$CLI knowledge update 2 --title "新标题"
+$CLI knowledge remove 2
+
+$CLI report today                      # or: report 2026-07-18 / report history
+$CLI settings get
+$CLI settings set --voice cedar
+```
+
+Credential resolution: `--url`/`--key` flags → `STANDUP_URL`/`STANDUP_API_KEY`
+env → `~/zylos/components/standup/cli.json` (`{"url","apiKey"}`) → same-host
+`config.json` (127.0.0.1 + serviceToken). On this host it works with zero
+setup. For a remote agent (e.g. the coco avatar): copy `scripts/cli.js`, drop
+a `cli.json` in its own data dir pointing at
+`https://luna.jinglever.com/standup` with the API key — no DB, no login.
 
 ## Agent brain (background / probing / knowledge)
 
@@ -108,7 +145,8 @@ always-injected containers plus a searchable knowledge base:
 |-----------|-------|--------|
 | `team_background` | global | injected as 【团队背景】 so the agent understands what people talk about |
 | `probing_guidance` | global | 【追问指引】 — when / what / how-deep to follow up (this is *how* smart probing is controlled) |
-| member `context` | per-member | 【关于 X】 — that person's role and what to probe for them |
+| member `context` | per-member | 【关于 X】 — hand-written role and what to probe for them |
+| member `profile` | per-member | 【X 的动态画像】 — auto-maintained: after each submitted report an LLM pass merges new facts in, re-dates re-confirmed ones, ages out stale ones. Hand-correctable (roster dialog or CLI) |
 | knowledge base | global | entries the agent searches on demand via `search_team_knowledge` |
 
 The agent also has two on-demand realtime tools (it decides when to call them):
@@ -121,43 +159,34 @@ Tune the brain from a conversation with the owner, then push the change here.
 Every edit takes effect on the next call — this is the loop that makes the app
 sharper over time.
 
-### Maintenance API (Luna / the coco avatar)
+### Management API (Luna / the coco avatar)
 
-Maintainable via the admin UI (`#/brain`, per-member 背景 dialog) **or**
-programmatically with the bearer service token (`config.serviceToken`).
-Base: `https://luna.jinglever.com/standup` (or `http://127.0.0.1:3478`).
+Everything the admin UI can do is also available programmatically with the
+bearer API key (`config.serviceToken`) — prefer the CLI above; raw endpoints
+for reference: `GET/POST/DELETE /api/members`, `POST
+/api/members/:id/reset-token`, `PUT /api/members/:id/context`, `PUT
+/api/members/:id/profile`, `GET/PUT /api/context`, `GET /api/context/members`,
+`GET/POST/PUT/DELETE /api/knowledge`, `GET /api/knowledge/search?q=`,
+`GET /api/reports/history`, `GET /api/reports/<date>`, `GET/PUT
+/api/settings`. Base: `https://luna.jinglever.com/standup` (or
+`http://127.0.0.1:3478`). Only login itself is session-only.
 
-```bash
-TOK=$(node -e "console.log(require(process.env.HOME+'/zylos/components/standup/config.json').serviceToken)")
-B=http://127.0.0.1:3478
-AUTH="Authorization: Bearer $TOK"
+### Dynamic profiles (动态画像)
 
-# background + probing guidance
-curl -s -H "$AUTH" $B/api/context
-curl -s -X PUT -H "$AUTH" -H 'Content-Type: application/json' \
-  -d '{"team_background":"...", "probing_guidance":"..."}' $B/api/context
-
-# per-member context (get ids/names first — no talk links exposed here)
-curl -s -H "$AUTH" $B/api/context/members
-curl -s -X PUT -H "$AUTH" -H 'Content-Type: application/json' \
-  -d '{"context":"前端负责人，关注上线节奏"}' $B/api/members/<id>/context
-
-# knowledge base
-curl -s -H "$AUTH" $B/api/knowledge
-curl -s -X POST -H "$AUTH" -H 'Content-Type: application/json' \
-  -d '{"title":"发布系统","content":"...","tags":"release 前端"}' $B/api/knowledge
-curl -s -X PUT    -H "$AUTH" -H 'Content-Type: application/json' -d '{...}' $B/api/knowledge/<id>
-curl -s -X DELETE -H "$AUTH" $B/api/knowledge/<id>
-```
-
-Member roster management (add / remove / reset link) stays session-only — the
-service token is scoped to brain content, not the roster.
+After each **submitted** report (test member excluded), a `profileModel` pass
+rewrites that member's profile from: existing profile + hand-written 背景
+(reference only) + the day's structured summary + transcript. Entries carry a
+last-confirmed date, get re-dated when re-confirmed, and age out after ~30
+days of silence. Injected into the member's next call. Failures are soft (old
+profile kept; see `pm2 logs` for `profile update failed`). Correct mistakes
+via the roster dialog or `member set-profile`.
 
 ## Data
 
 - `data/standup.db` — members (permanent tokens, optional per-member
-  `context`), reports (one row per member×date, UNIQUE), admin sessions,
-  `agent_context` (background + probing), `knowledge`. WAL mode.
+  `context`, auto-maintained `profile`), reports (one row per member×date,
+  UNIQUE), admin sessions, `agent_context` (background + probing),
+  `knowledge`. WAL mode.
 - Reports keep both the structured summary (function-call output) and the
   full conversation transcript (viewable per member on the daily report page).
 

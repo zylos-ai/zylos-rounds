@@ -34,9 +34,12 @@ export class Api {
     this.context = context;
   }
 
-  // Management surface (context/knowledge) is reachable by a human admin
-  // (session cookie) OR by Luna / the coco avatar (Bearer service token) — the
-  // latter is how the brain gets tuned programmatically from a conversation.
+  // The whole admin surface is reachable by a human admin (session cookie) OR
+  // by Luna / the coco avatar (Bearer API key, config.serviceToken) — roster,
+  // brain content, knowledge, reports and settings alike. Owner's 2026-07-18
+  // ruling: the API key is a full management credential so agents can operate
+  // the app (via scripts/cli.js) without touching the database; only the login
+  // itself stays session-only.
   isManager(req) {
     if (this.auth.isAuthenticated(req)) return true;
     const m = /^Bearer\s+(.+)$/i.exec(req.headers.authorization || '');
@@ -81,44 +84,48 @@ export class Api {
 
     if (!p.startsWith('/api/')) return false;
 
-    // ---- management surface: admin session OR bearer service token ----
-    if (p === '/api/context' || p === '/api/context/members' || p === '/api/knowledge' ||
-        /^\/api\/knowledge\/\d+$/.test(p) || /^\/api\/members\/\d+\/context$/.test(p)) {
-      if (!this.isManager(req)) return sendJson(res, 401, { error: 'unauthorized' }), true;
-
-      if (p === '/api/context' && req.method === 'GET') return this.getContext(res), true;
-      if (p === '/api/context' && req.method === 'PUT') return await this.putContext(req, res), true;
-
-      // id/name/context only (no talk links) — lets Luna / the avatar target
-      // per-member context without the session-only roster.
-      if (p === '/api/context/members' && req.method === 'GET') {
-        return sendJson(res, 200, {
-          members: this.store.listActiveMembers().map(mb => ({ id: mb.id, name: mb.name, context: mb.context || '' })),
-        }), true;
-      }
-
-      if (p === '/api/knowledge' && req.method === 'GET') return this.listKnowledge(res), true;
-      if (p === '/api/knowledge' && req.method === 'POST') return await this.addKnowledge(req, res), true;
-
-      let km = p.match(/^\/api\/knowledge\/(\d+)$/);
-      if (km && req.method === 'PUT') return await this.updateKnowledge(req, res, Number(km[1])), true;
-      if (km && req.method === 'DELETE') return this.deleteKnowledge(res, Number(km[1])), true;
-
-      const cm = p.match(/^\/api\/members\/(\d+)\/context$/);
-      if (cm && req.method === 'PUT') return await this.putMemberContext(req, res, Number(cm[1])), true;
-
-      return sendJson(res, 404, { error: 'not_found' }), true;
-    }
-
-    // everything else under /api/ requires an admin session
-    if (!this.auth.isAuthenticated(req)) {
+    // everything else under /api/ requires admin session OR bearer API key
+    if (!this.isManager(req)) {
       return sendJson(res, 401, { error: 'unauthorized' }), true;
     }
+
+    if (p === '/api/context' && req.method === 'GET') return this.getContext(res), true;
+    if (p === '/api/context' && req.method === 'PUT') return await this.putContext(req, res), true;
+
+    // id/name/context/profile only (no talk links) — compact brain view
+    if (p === '/api/context/members' && req.method === 'GET') {
+      return sendJson(res, 200, {
+        members: this.store.listActiveMembers().map(mb => ({
+          id: mb.id, name: mb.name, context: mb.context || '',
+          profile: mb.profile || '', profile_updated_at: mb.profile_updated_at || null,
+        })),
+      }), true;
+    }
+
+    if (p === '/api/knowledge' && req.method === 'GET') return this.listKnowledge(res), true;
+    if (p === '/api/knowledge' && req.method === 'POST') return await this.addKnowledge(req, res), true;
+    if (p === '/api/knowledge/search' && req.method === 'GET') {
+      const limit = Math.min(10, Math.max(1, Number(url.searchParams.get('limit')) || 3));
+      const hits = this.store.searchKnowledge(url.searchParams.get('q') || '', limit);
+      return sendJson(res, 200, {
+        results: hits.map(k => ({ id: k.id, title: k.title, content: k.content, tags: k.tags || '', updated_at: k.updated_at })),
+      }), true;
+    }
+
+    let m = p.match(/^\/api\/knowledge\/(\d+)$/);
+    if (m && req.method === 'PUT') return await this.updateKnowledge(req, res, Number(m[1])), true;
+    if (m && req.method === 'DELETE') return this.deleteKnowledge(res, Number(m[1])), true;
+
+    m = p.match(/^\/api\/members\/(\d+)\/context$/);
+    if (m && req.method === 'PUT') return await this.putMemberContext(req, res, Number(m[1])), true;
+
+    m = p.match(/^\/api\/members\/(\d+)\/profile$/);
+    if (m && req.method === 'PUT') return await this.putMemberProfile(req, res, Number(m[1])), true;
 
     if (p === '/api/members' && req.method === 'GET') return this.listMembers(req, res), true;
     if (p === '/api/members' && req.method === 'POST') return await this.addMember(req, res), true;
 
-    let m = p.match(/^\/api\/members\/(\d+)$/);
+    m = p.match(/^\/api\/members\/(\d+)$/);
     if (m && req.method === 'DELETE') return this.removeMember(res, Number(m[1])), true;
 
     m = p.match(/^\/api\/members\/(\d+)\/reset-token$/);
@@ -236,6 +243,22 @@ export class Api {
     sendJson(res, 200, { id, context: v });
   }
 
+  // Manual correction surface for the auto-maintained profile (动态画像).
+  async putMemberProfile(req, res, id) {
+    const member = this.store.getMemberById(id);
+    if (!member) return sendJson(res, 404, { error: 'not_found' });
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      return sendJson(res, 400, { error: 'bad_request' });
+    }
+    const v = body.profile === undefined || body.profile === null ? '' : String(body.profile);
+    if (v.length > 8000) return sendJson(res, 400, { error: 'too_long' });
+    this.store.setMemberProfile(id, v || null);
+    sendJson(res, 200, { id, profile: v });
+  }
+
   // ---- team knowledge base ----
   listKnowledge(res) {
     sendJson(res, 200, {
@@ -298,6 +321,8 @@ export class Api {
         reported_today: done.has(mb.id),
         link: this.memberLink(req, mb.token),
         context: mb.context || '',
+        profile: mb.profile || '',
+        profile_updated_at: mb.profile_updated_at || null,
       })),
       // built-in try-it member: shares the same talk flow, never counted
       test_member: test ? {

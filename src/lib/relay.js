@@ -72,12 +72,13 @@ function safeSend(ws, obj) {
 }
 
 export class Relay {
-  constructor(store, getConfig, env, settings, context) {
+  constructor(store, getConfig, env, settings, context, profiles) {
     this.store = store;
     this.getConfig = getConfig;
     this.env = env;
     this.settings = settings; // resolves key/model/voice per session (env > DB > config)
     this.context = context;   // AgentContext: composes instructions + retrieval
+    this.profiles = profiles; // ProfileUpdater: merges submitted reports into 动态画像
     this.active = 0;
     this.wss = new WebSocketServer({ noServer: true });
   }
@@ -198,6 +199,8 @@ export class Relay {
         store.appendTranscript(member.id, reportDate, transcript.join('\n'), dur, model, saved);
       }
       console.log(`[standup] session end ${member.name} (${reason}, ${dur}s, saved=${saved})`);
+      // fire-and-forget: merge today's submitted report into the member's 动态画像
+      if (saved && self.profiles) self.profiles.updateAfterReport(member.id, reportDate);
     }
 
     upstream.on('open', () => upstream.send(JSON.stringify(this.sessionUpdate(member))));

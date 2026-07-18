@@ -181,8 +181,8 @@ export default function RosterPage() {
                       <div className="flex items-center justify-end gap-0.5">
                         <MemberContextButton
                           member={m}
-                          onSaved={(context) =>
-                            setMembers((ms) => ms.map((x) => (x.id === m.id ? { ...x, context } : x)))
+                          onSaved={(patch) =>
+                            setMembers((ms) => ms.map((x) => (x.id === m.id ? { ...x, ...patch } : x)))
                           }
                         />
                         <AlertDialog>
@@ -297,17 +297,22 @@ export default function RosterPage() {
   );
 }
 
-// Per-member background/probing note — injected as 【关于 X】 into that
-// member's standup instructions. A filled icon marks members that have one.
+const textareaCls =
+  'w-full rounded-md border border-input bg-transparent px-3 py-2.5 text-[0.95rem] leading-relaxed text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring placeholder:text-faint resize-y';
+
+// Per-member brain dialog: human-written 背景 (injected as 【关于 X】) plus the
+// auto-maintained 动态画像 (merged from past reports after each standup, hand-
+// correctable here). A filled icon marks members that have either.
 function MemberContextButton({ member, onSaved }) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState(member.context || '');
+  const [profile, setProfile] = useState(member.profile || '');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  const has = Boolean((member.context || '').trim());
+  const has = Boolean((member.context || '').trim() || (member.profile || '').trim());
 
   const onOpenChange = (next) => {
-    if (next) { setValue(member.context || ''); setErr(''); }
+    if (next) { setValue(member.context || ''); setProfile(member.profile || ''); setErr(''); }
     setOpen(next);
   };
 
@@ -316,8 +321,17 @@ function MemberContextButton({ member, onSaved }) {
     setBusy(true);
     setErr('');
     try {
-      const r = await api(`api/members/${member.id}/context`, { method: 'PUT', body: { context: value } });
-      onSaved(r.context || '');
+      const patch = {};
+      if (value !== (member.context || '')) {
+        const r = await api(`api/members/${member.id}/context`, { method: 'PUT', body: { context: value } });
+        patch.context = r.context || '';
+      }
+      // only touch the profile when hand-edited — keeps profile_updated_at honest
+      if (profile !== (member.profile || '')) {
+        const r = await api(`api/members/${member.id}/profile`, { method: 'PUT', body: { profile } });
+        patch.profile = r.profile || '';
+      }
+      onSaved(patch);
       setOpen(false);
     } catch (e) {
       if (e.status !== 401) setErr('保存失败，请重试');
@@ -331,8 +345,8 @@ function MemberContextButton({ member, onSaved }) {
       <Button
         variant="ghost"
         size="icon"
-        title={has ? '编辑背景/关注点' : '添加背景/关注点'}
-        aria-label={`${member.name} 的背景`}
+        title={has ? '编辑背景/画像' : '添加背景/画像'}
+        aria-label={`${member.name} 的背景与画像`}
         className={cn(has && 'text-primary')}
         onClick={() => onOpenChange(true)}
       >
@@ -340,18 +354,36 @@ function MemberContextButton({ member, onSaved }) {
       </Button>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>「{member.name}」的背景 / 关注点</AlertDialogTitle>
+          <AlertDialogTitle>「{member.name}」的背景与画像</AlertDialogTitle>
           <AlertDialogDescription>
-            这位同事的角色、当前项目、需要重点追问的点。会在他的语音汇报里注入给助手，帮助更有针对性地追问。
+            两部分都会在语音汇报时注入给助手：背景由你维护；动态画像在每次汇报后自动更新，也可以在这里手动修正。
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <textarea
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder="例如：前端负责人，正在做发布系统；重点关注上线节奏和回归测试覆盖。"
-          rows={5}
-          className="w-full rounded-md border border-input bg-transparent px-3 py-2.5 text-[0.95rem] leading-relaxed text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring placeholder:text-faint resize-y"
-        />
+        <div>
+          <p className="mb-1.5 text-sm font-medium">基础背景 / 关注点</p>
+          <textarea
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="例如：前端负责人，正在做发布系统；重点关注上线节奏和回归测试覆盖。"
+            rows={4}
+            className={textareaCls}
+          />
+        </div>
+        <div>
+          <p className="mb-1.5 text-sm font-medium">
+            动态画像
+            <span className="ml-2 font-normal text-muted-foreground">
+              {member.profile_updated_at ? `自动更新于 ${member.profile_updated_at}` : '汇报后自动生成'}
+            </span>
+          </p>
+          <textarea
+            value={profile}
+            onChange={(e) => setProfile(e.target.value)}
+            placeholder="这位同事完成语音汇报后，助手会自动在这里整理出他的角色、项目脉络和持续关注点。"
+            rows={6}
+            className={textareaCls}
+          />
+        </div>
         {err ? <p className="-mt-1 text-sm text-destructive">{err}</p> : null}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>取消</AlertDialogCancel>

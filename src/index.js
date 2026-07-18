@@ -18,6 +18,7 @@ import { Api } from './lib/api.js';
 import { Relay } from './lib/relay.js';
 import { Settings } from './lib/settings.js';
 import { AgentContext } from './lib/context.js';
+import { ProfileUpdater } from './lib/profile.js';
 import { Static } from './lib/static.js';
 import { sendText, sendJson } from './lib/http-util.js';
 
@@ -49,8 +50,9 @@ store.ensureTestMember('体验成员', crypto.randomBytes(8).toString('base64url
 const context = new AgentContext(store);
 context.seedDefaults();
 
-// Bearer token for the management API (context/knowledge maintenance by Luna /
-// the coco avatar). Minted once and persisted into the component config.
+// Bearer API key for the management API — full admin scope (roster, brain,
+// knowledge, reports, settings) for Luna / the coco avatar and scripts/cli.js.
+// Minted once and persisted into the component config.
 if (!config.serviceToken) {
   config.serviceToken = crypto.randomBytes(24).toString('base64url');
   try {
@@ -64,7 +66,8 @@ if (!config.serviceToken) {
 const auth = new AuthGate(config, store, CONFIG_PATH);
 const api = new Api(store, auth, getConfig, settings, context);
 const statics = new Static(path.join(__dirname, 'public'));
-const relay = new Relay(store, getConfig, env, settings, context);
+const profiles = new ProfileUpdater(store, getConfig, env, settings);
+const relay = new Relay(store, getConfig, env, settings, context, profiles);
 
 watchConfig(() => console.log('[standup] Config reloaded'));
 
