@@ -1,7 +1,7 @@
 {
   "name": "zylos-rounds",
-  "version": "0.5.0",
-  "description": "AI-assisted async daily standup tool",
+  "version": "0.5.1",
+  "description": "Rounds — delegated 1:1 voice conversations for teams (daily standup built in)",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
