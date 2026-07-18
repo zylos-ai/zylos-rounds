@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Mic, Users, FileText, History, LogOut, Brain, Settings as SettingsIcon, ClipboardList } from 'lucide-react';
 import { cn, today } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -82,6 +82,15 @@ export default function App() {
 
 function Layout({ route, onLogout, reportDate, children }) {
   const t = reportDate || today();
+  const navRef = useRef(null);
+
+  // on narrow screens the nav scrolls horizontally — keep the active tab in view
+  useEffect(() => {
+    const el = navRef.current?.querySelector('[data-active="true"]');
+    if (el && navRef.current.scrollWidth > navRef.current.clientWidth) {
+      el.scrollIntoView({ block: 'nearest', inline: 'center' });
+    }
+  }, [route.name]);
   const nav = [
     { label: '管理', hash: '#/', icon: Users, active: route.name === 'roster' },
     { label: '任务', hash: '#/tasks', icon: ClipboardList, active: route.name === 'tasks' || route.name === 'task' },
@@ -106,13 +115,14 @@ function Layout({ route, onLogout, reportDate, children }) {
             </span>
             <span className="max-sm:hidden">Rounds</span>
           </a>
-          <nav className="flex items-center gap-1.5">
+          <nav ref={navRef} className="no-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto sm:flex-none">
             {nav.map((item) => (
               <a
                 key={item.hash}
                 href={item.hash}
+                data-active={item.active || undefined}
                 className={cn(
-                  'inline-flex h-9 items-center gap-2 rounded-lg px-4 text-[0.9rem] font-medium no-underline transition-colors duration-150 max-sm:px-3',
+                  'inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-4 text-[0.9rem] font-medium no-underline transition-colors duration-150 max-sm:px-3',
                   item.active
                     ? 'bg-primary-soft text-primary'
                     : 'text-muted-foreground hover:bg-accent hover:text-foreground'

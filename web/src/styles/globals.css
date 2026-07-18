@@ -143,3 +143,12 @@ body.page-talk {
     transform: scale(1.045);
   }
 }
+
+/* hide scrollbars on horizontally scrollable mobile nav */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

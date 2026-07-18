@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-07-18
+
+### Fixed
+- **Mobile layout for the admin SPA.** The top nav no longer wraps tab labels
+  vertically on phone widths — it scrolls horizontally (hidden scrollbar) and
+  auto-centers the active tab. The roster renders as a stacked member list on
+  small screens instead of a squeezed table (link copy/open plus
+  context/reset/remove actions intact); raw link URLs are hidden on phones in
+  the task detail member rows; the tasks-page header wraps instead of
+  crowding the create button
+
 ## [0.6.0] - 2026-07-18
 
 ### Added

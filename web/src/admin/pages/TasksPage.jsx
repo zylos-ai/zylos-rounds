@@ -56,7 +56,7 @@ export function TasksPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-end justify-between gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-4xl font-bold tracking-tight max-sm:text-3xl">沟通任务</h1>
           <p className="mt-2 text-muted-foreground">代表负责人与成员做一对一语音沟通：日报是内置循环任务，一次性任务按主题发起</p>
@@ -353,8 +353,8 @@ export function TaskDetailPage({ id }) {
                   {m.status === 'submitted'
                     ? <Badge className="bg-primary-soft text-primary border-transparent">已完成</Badge>
                     : <Badge variant="secondary">待沟通</Badge>}
-                  <code className="min-w-0 flex-1 truncate text-[0.85rem] text-muted-foreground">{m.link}</code>
-                  <div className="flex gap-1">
+                  <code className="min-w-0 flex-1 truncate text-[0.85rem] text-muted-foreground max-sm:hidden">{m.link}</code>
+                  <div className="ml-auto flex gap-1">
                     <Button variant="ghost" size="icon" title={`复制 ${m.name} 的任务链接`} onClick={() => copy(m.member_id, m.link)}>
                       {copied === m.member_id ? <Check className="h-4 w-4 text-primary" /> : <Copy className="h-4 w-4" />}
                     </Button>

@@ -130,7 +130,37 @@ export default function RosterPage() {
 
       {loadError ? <p className="mt-6 text-sm text-destructive">{loadError}</p> : null}
 
-      <Card className="mt-8">
+      {/* mobile: stacked member list — the full table doesn't fit a phone width */}
+      <Card className="mt-8 sm:hidden">
+        <CardContent className="px-4 py-1">
+          {members.length === 0 ? (
+            <p className="py-4 text-sm text-faint">暂无成员，先在下方添加</p>
+          ) : (
+            <div className="divide-y divide-border">
+              {members.map((m) => (
+                <div key={m.id} className="flex items-center gap-1 py-3">
+                  <div className="min-w-0 flex-1 pr-2">
+                    <p className="truncate text-[0.95rem] font-semibold">{m.name}</p>
+                    <p className="mt-1.5">
+                      {m.reported_today ? <Badge variant="success">已汇报</Badge> : <Badge>待汇报</Badge>}
+                    </p>
+                  </div>
+                  <LinkButtons m={m} copiedId={copiedId} onCopy={onCopy} />
+                  <span className="mx-1 h-4 w-px shrink-0 bg-border" />
+                  <MemberRowActions
+                    m={m}
+                    onSaved={(patch) => setMembers((ms) => ms.map((x) => (x.id === m.id ? { ...x, ...patch } : x)))}
+                    onResetToken={onResetToken}
+                    onRemove={onRemove}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="mt-8 max-sm:hidden">
         <CardContent className="px-4 py-2">
           <Table>
             <TableHeader>
@@ -157,21 +187,7 @@ export default function RosterPage() {
                         <code className="max-w-[440px] truncate font-mono text-[0.8rem] text-muted-foreground max-lg:max-w-[280px]">
                           {m.link}
                         </code>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="复制链接"
-                          aria-label={`复制 ${m.name} 的链接`}
-                          className={cn(copiedId === m.id && 'text-success hover:text-success')}
-                          onClick={() => onCopy(m)}
-                        >
-                          {copiedId === m.id ? <Check strokeWidth={1.75} /> : <Copy strokeWidth={1.75} />}
-                        </Button>
-                        <Button asChild variant="ghost" size="icon" title="新标签页打开" aria-label={`打开 ${m.name} 的链接`}>
-                          <a href={m.link} target="_blank" rel="noreferrer">
-                            <ExternalLink strokeWidth={1.75} />
-                          </a>
-                        </Button>
+                        <LinkButtons m={m} copiedId={copiedId} onCopy={onCopy} />
                       </div>
                     </TableCell>
                     <TableCell className="py-4">
@@ -179,58 +195,14 @@ export default function RosterPage() {
                     </TableCell>
                     <TableCell className="py-4">
                       <div className="flex items-center justify-end gap-0.5">
-                        <MemberContextButton
-                          member={m}
+                        <MemberRowActions
+                          m={m}
                           onSaved={(patch) =>
                             setMembers((ms) => ms.map((x) => (x.id === m.id ? { ...x, ...patch } : x)))
                           }
+                          onResetToken={onResetToken}
+                          onRemove={onRemove}
                         />
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon" title="重置链接" aria-label={`重置 ${m.name} 的链接`}>
-                              <RefreshCw strokeWidth={1.75} />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>重置「{m.name}」的专属链接？</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                会生成一个新的专属链接，旧链接立即失效。适用于链接泄露或需要更换的情况。新链接会自动复制到剪贴板。
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>取消</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => onResetToken(m)}>重置链接</AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              title="移除成员"
-                              aria-label={`移除成员 ${m.name}`}
-                              className="hover:bg-destructive-soft hover:text-destructive"
-                            >
-                              <Trash2 strokeWidth={1.75} />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>移除成员「{m.name}」？</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                历史日报会保留，专属链接立即失效。之后可以重新添加同名成员（历史记录会关联回来）。
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>取消</AlertDialogCancel>
-                              <AlertDialogAction variant="destructive" onClick={() => onRemove(m)}>
-                                移除
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -293,6 +265,84 @@ export default function RosterPage() {
           </CardContent>
         </Card>
       ) : null}
+    </>
+  );
+}
+
+// copy + open-in-new-tab pair, shared by the desktop table and the mobile list
+function LinkButtons({ m, copiedId, onCopy }) {
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="icon"
+        title="复制链接"
+        aria-label={`复制 ${m.name} 的链接`}
+        className={cn('shrink-0', copiedId === m.id && 'text-success hover:text-success')}
+        onClick={() => onCopy(m)}
+      >
+        {copiedId === m.id ? <Check strokeWidth={1.75} /> : <Copy strokeWidth={1.75} />}
+      </Button>
+      <Button asChild variant="ghost" size="icon" title="新标签页打开" aria-label={`打开 ${m.name} 的链接`} className="shrink-0">
+        <a href={m.link} target="_blank" rel="noreferrer">
+          <ExternalLink strokeWidth={1.75} />
+        </a>
+      </Button>
+    </>
+  );
+}
+
+// context/reset/remove action cluster, shared by the desktop table and the mobile list
+function MemberRowActions({ m, onSaved, onResetToken, onRemove }) {
+  return (
+    <>
+      <MemberContextButton member={m} onSaved={onSaved} />
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button variant="ghost" size="icon" title="重置链接" aria-label={`重置 ${m.name} 的链接`} className="shrink-0">
+            <RefreshCw strokeWidth={1.75} />
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>重置「{m.name}」的专属链接？</AlertDialogTitle>
+            <AlertDialogDescription>
+              会生成一个新的专属链接，旧链接立即失效。适用于链接泄露或需要更换的情况。新链接会自动复制到剪贴板。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={() => onResetToken(m)}>重置链接</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            title="移除成员"
+            aria-label={`移除成员 ${m.name}`}
+            className="shrink-0 hover:bg-destructive-soft hover:text-destructive"
+          >
+            <Trash2 strokeWidth={1.75} />
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>移除成员「{m.name}」？</AlertDialogTitle>
+            <AlertDialogDescription>
+              历史日报会保留，专属链接立即失效。之后可以重新添加同名成员（历史记录会关联回来）。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => onRemove(m)}>
+              移除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
