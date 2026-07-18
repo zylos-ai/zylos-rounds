@@ -125,7 +125,7 @@ export class Relay {
     });
   }
 
-  sessionUpdate(member, task) {
+  sessionUpdate(member, task, prior = null) {
     const cfg = this.getConfig();
     const generic = task && !task.is_builtin;
     return {
@@ -133,7 +133,7 @@ export class Relay {
       session: {
         type: 'realtime',
         output_modalities: ['audio'],
-        instructions: this.context.buildInstructions(member, task),
+        instructions: this.context.buildInstructions(member, task, prior),
         tools: generic ? GENERIC_TOOLS : TOOLS,
         tool_choice: 'auto',
         audio: {
@@ -232,6 +232,15 @@ export class Relay {
     const startedAt = Date.now();
     const transcript = [];
     let saved = false;
+    // Same-cycle continuation: an earlier session today (drop, refresh, or a
+    // finished call the member reopens) left its transcript in the store — feed
+    // it back so the agent picks up where it left off instead of restarting.
+    const priorRec = generic
+      ? this.store.getCycleRecord(task.id, member.id, cycleKey)
+      : this.store.getReport(member.id, reportDate);
+    const prior = priorRec?.transcript
+      ? { transcript: priorRec.transcript, submitted: priorRec.status === 'submitted' }
+      : null;
     console.log(`[rounds] session start ${member.name}${generic ? ` (task #${task.id} ${task.title}, cycle ${cycleKey})` : ''}`);
 
     const upstream = new WebSocket(`${conn.wsUrl}?model=${model}`, {
@@ -267,7 +276,7 @@ export class Relay {
       }
     }
 
-    upstream.on('open', () => upstream.send(JSON.stringify(this.sessionUpdate(member, task))));
+    upstream.on('open', () => upstream.send(JSON.stringify(this.sessionUpdate(member, task, prior))));
     upstream.on('error', e => {
       console.error('[rounds] upstream error', e.message);
       safeSend(client, { type: 'app.error', message: '上游连接失败' });

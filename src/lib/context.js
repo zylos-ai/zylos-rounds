@@ -56,7 +56,7 @@ export class AgentContext {
    * behaviour, not code). Custom recurring tasks add a "this round" framing
    * so members understand it repeats.
    */
-  buildInstructions(member, task = null) {
+  buildInstructions(member, task = null, prior = null) {
     const name = member.name;
     const generic = task && !task.is_builtin;
     const recurring = generic && task.type === 'recurring';
@@ -94,6 +94,15 @@ export class AgentContext {
     // on top of the global guidance (same layering as brief/questions).
     const taskProbe = (task?.probe_instruction || '').trim();
     if (taskProbe) parts.push(`【本任务的追问指引】（针对这次沟通任务的追问重点，优先于通用指引）\n${taskProbe}`);
+
+    // Same-cycle continuation: an earlier session (dropped connection, page
+    // refresh, or a reopened finished call) already covered part of the flow.
+    if (prior?.transcript) {
+      const t = prior.transcript.length > 4000 ? `……（更早的内容略）\n${prior.transcript.slice(-4000)}` : prior.transcript;
+      parts.push(
+        `【已聊过的内容】（这是${generic ? '本周期' : '今天'}早些时候你们已经聊过的对话记录，可能因断线或刷新中断。这次是继续，不是重新开始：开场用一句话自然衔接（比如"我们接着刚才的继续"），已经聊清楚的问题绝对不要重复问，直接从中断的地方接着聊${prior.submitted ? '。小结之前已经提交过：如果对方这次补充了新内容，结束时把新旧内容合并重新提交一次小结；如果只是闲聊没有新信息，不用重复提交' : ''}）\n${t}`
+      );
+    }
 
     parts.push(
       `你有两个工具可以在需要时调用：` +

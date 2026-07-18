@@ -11,6 +11,7 @@ import {
   Loader2,
   Link2Off,
   FlaskConical,
+  RotateCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -23,8 +24,12 @@ const { base: BASE, token: TOKEN } = resolveTokenAndBase();
 let nextId = 1;
 const nid = () => nextId++;
 
+// Auto-reconnect backoff after an unexpected drop; then a manual retry button.
+const RETRY_DELAYS = [1000, 3000, 6000];
+
 export default function TalkApp() {
-  // loading | invalid | idle | connecting | listening | speaking | done
+  // loading | invalid | idle | connecting | listening | speaking |
+  // reconnecting | disconnected | done
   const [phase, setPhase] = useState('loading');
   const [name, setName] = useState('');
   const [isTest, setIsTest] = useState(false);
@@ -36,6 +41,7 @@ export default function TalkApp() {
   const engineRef = useRef(null);
   const aiIdRef = useRef(null);
   const doneRef = useRef(false);
+  const reconnectRef = useRef({ attempts: 0, timer: null });
   const logRef = useRef(null);
   const summaryRef = useRef(null);
 
@@ -76,7 +82,10 @@ export default function TalkApp() {
     };
   }, [say]);
 
-  useEffect(() => () => engineRef.current?.destroy(), []);
+  useEffect(() => () => {
+    clearTimeout(reconnectRef.current.timer);
+    engineRef.current?.destroy();
+  }, []);
 
   // auto-scroll chat log
   useEffect(() => {
@@ -104,8 +113,10 @@ export default function TalkApp() {
         connecting: () => say('正在接通 Luna…'),
         ready: () => {
           if (doneRef.current) return;
+          const wasReconnect = reconnectRef.current.attempts > 0;
+          reconnectRef.current.attempts = 0;
           setPhase('listening');
-          say('Luna 正在跟你打招呼…');
+          say(wasReconnect ? '已重新接通，Luna 会接着刚才的继续' : 'Luna 正在跟你打招呼…');
         },
         error: (msg) => { setSubmitting(false); say(msg, true); },
         speechStarted: () => {
@@ -145,7 +156,21 @@ export default function TalkApp() {
           say('小结已保存，Luna 道别后可直接关闭页面');
           setTimeout(() => summaryRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
         },
-        closed: () => { setSubmitting(false); say('连接已断开，刷新页面可重试', true); },
+        closed: () => {
+          setSubmitting(false);
+          if (doneRef.current) return;
+          const r = reconnectRef.current;
+          if (r.attempts < RETRY_DELAYS.length) {
+            const delay = RETRY_DELAYS[r.attempts];
+            r.attempts++;
+            setPhase('reconnecting');
+            say(`连接断开，正在重连（第 ${r.attempts}/${RETRY_DELAYS.length} 次）…`, true);
+            r.timer = setTimeout(() => engineRef.current?.reconnect(), delay);
+          } else {
+            setPhase('disconnected');
+            say('连接断开，自动重连没成功', true);
+          }
+        },
       },
     });
     try {
@@ -156,6 +181,13 @@ export default function TalkApp() {
       say('无法获取麦克风权限，请在浏览器设置里允许后刷新', true);
     }
   }, [appendAiDelta, say]);
+
+  const retryNow = useCallback(() => {
+    reconnectRef.current.attempts = 0;
+    setPhase('reconnecting');
+    say('正在重连…');
+    engineRef.current?.reconnect();
+  }, [say]);
 
   const [submitting, setSubmitting] = useState(false);
   const endCall = useCallback(() => {
@@ -210,7 +242,7 @@ export default function TalkApp() {
     >
       {phase === 'done' ? (
         <Check className="h-[38px] w-[38px]" strokeWidth={1.6} />
-      ) : phase === 'connecting' ? (
+      ) : phase === 'connecting' || phase === 'reconnecting' ? (
         <Loader2 className="h-[38px] w-[38px] animate-spin" strokeWidth={1.6} />
       ) : (
         <Mic className="h-[38px] w-[38px]" strokeWidth={1.6} />
@@ -258,6 +290,12 @@ export default function TalkApp() {
           </p>
           <div className="mt-12 max-sm:mt-10">{orb}</div>
           <div className="mt-5">{statusLine}</div>
+          {phase === 'disconnected' && (
+            <Button variant="secondary" className="mt-3" onClick={retryNow}>
+              <RotateCw strokeWidth={1.75} />
+              重新连接
+            </Button>
+          )}
         </div>
       </div>
     );
@@ -304,6 +342,12 @@ export default function TalkApp() {
           <Button variant="secondary" className="mt-2.5" onClick={endCall} disabled={submitting}>
             {submitting ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : <Check strokeWidth={1.75} />}
             {submitting ? '正在生成小结…' : '结束并提交'}
+          </Button>
+        )}
+        {phase === 'disconnected' && (
+          <Button variant="secondary" className="mt-2.5" onClick={retryNow}>
+            <RotateCw strokeWidth={1.75} />
+            重新连接
           </Button>
         )}
       </div>

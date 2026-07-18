@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] - 2026-07-19
+
+### Added
+- **Auto-reconnect on the talk page.** An unexpected connection drop now
+  retries automatically (3 attempts with backoff, spinner + "重连中" status,
+  chat log retained); if all attempts fail a 重新连接 button appears. The
+  mic and audio graph stay alive across reconnects
+- **Same-cycle conversation continuation.** A new session whose cycle (day,
+  for the daily standup) already has archived transcript — from a dropped
+  connection, a page refresh, or a reopened finished call — feeds that
+  transcript back to the agent, which greets with a brief "接着刚才的继续"
+  and picks up where it left off instead of restarting the flow. If a
+  summary was already submitted, the agent merges new content into a
+  re-submit. Long transcripts inject only the most recent 4000 characters
+
 ## [0.8.1] - 2026-07-19
 
 ### Fixed

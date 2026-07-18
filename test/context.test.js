@@ -141,3 +141,28 @@ test('task-level probe_instruction overlays on top of global guidance', () => {
   assert.equal(s.getTask(task.id).probe_instruction, null);
   s.close();
 });
+
+test('prior transcript injects a continuation section', () => {
+  const s = tmpStore();
+  const ctx = new AgentContext(s);
+  const member = { name: 'Nick', context: '' };
+
+  // no prior — section absent
+  assert.doesNotMatch(ctx.buildInstructions(member), /【已聊过的内容】/);
+
+  // draft prior — continuation with the transcript, no submitted note
+  const draft = ctx.buildInstructions(member, null, { transcript: 'Nick: 昨天修了字幕', submitted: false });
+  assert.match(draft, /【已聊过的内容】[\s\S]*昨天修了字幕/);
+  assert.doesNotMatch(draft, /小结之前已经提交过/);
+
+  // submitted prior — asks for a merged re-submit
+  const done = ctx.buildInstructions(member, null, { transcript: 'Nick: 都聊完了', submitted: true });
+  assert.match(done, /小结之前已经提交过/);
+
+  // long transcripts keep only the tail
+  const long = ctx.buildInstructions(member, null, { transcript: 'A'.repeat(5000) + 'TAIL', submitted: false });
+  assert.match(long, /更早的内容略/);
+  assert.ok(!long.includes('A'.repeat(4001)));
+  assert.match(long, /TAIL/);
+  s.close();
+});

@@ -119,9 +119,9 @@ export class TalkEngine {
     this.ws.onclose = () => {
       if (!this.done) this.on.closed();
     };
-    this.ws.onerror = () => {
-      if (!this.done) this.on.error('连接出错，刷新页面重试');
-    };
+    // onerror is always followed by onclose — let closed() drive reconnection
+    // instead of flashing a competing error status.
+    this.ws.onerror = () => {};
     this.ws.onmessage = (e) => {
       let ev;
       try {
@@ -189,6 +189,26 @@ export class TalkEngine {
           break;
       }
     };
+  }
+
+  /**
+   * Re-open the relay WS after a drop, keeping mic + audio graph alive. The
+   * server starts a fresh upstream session but feeds it the archived
+   * transcript, so the conversation continues instead of restarting.
+   */
+  reconnect() {
+    if (this.done) return;
+    try {
+      if (this.ws) {
+        this.ws.onclose = null; // silence the stale socket — closed() belongs to the new one
+        this.ws.close();
+      }
+    } catch {
+      /* already closed */
+    }
+    this.flushPlayback();
+    this.curItemId = null;
+    this.connect();
   }
 
   /** User pressed 结束并提交. */
