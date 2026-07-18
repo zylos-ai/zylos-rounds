@@ -118,3 +118,26 @@ test('recallHistory / searchKnowledge formatting stays compact', () => {
   assert.ok(kn.results[0].content.length <= 601); // trimmed for the audio path
   s.close();
 });
+
+test('task-level probe_instruction overlays on top of global guidance', () => {
+  const s = tmpStore();
+  const ctx = new AgentContext(s);
+  s.setContext('probing_guidance', 'PG');
+  const task = s.createTask({ type: 'oneshot', title: 'Q2 复盘', probeInstruction: '- 延期要追影响面' });
+
+  const withTask = ctx.buildInstructions({ name: 'Nick', context: '' }, task);
+  assert.match(withTask, /【追问指引】[\s\S]*PG/);
+  assert.match(withTask, /【本任务的追问指引】[\s\S]*延期要追影响面/);
+
+  // without a task-level instruction the overlay section is absent
+  const plain = s.createTask({ type: 'oneshot', title: '无指引' });
+  const without = ctx.buildInstructions({ name: 'Nick', context: '' }, plain);
+  assert.doesNotMatch(without, /【本任务的追问指引】/);
+
+  // updateTask persists and clears the field
+  s.updateTask(task.id, { probeInstruction: '改后的指引' });
+  assert.equal(s.getTask(task.id).probe_instruction, '改后的指引');
+  s.updateTask(task.id, { probeInstruction: null });
+  assert.equal(s.getTask(task.id).probe_instruction, null);
+  s.close();
+});

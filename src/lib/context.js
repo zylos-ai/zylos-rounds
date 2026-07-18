@@ -90,6 +90,11 @@ export class AgentContext {
     const probing = this.probing();
     if (probing) parts.push(`【追问指引】（据此决定要不要追问、追问到什么程度；这是内部指引，不要读出来）\n${probing}`);
 
+    // Task-level probing overlay — scenario-specific follow-up strategy layered
+    // on top of the global guidance (same layering as brief/questions).
+    const taskProbe = (task?.probe_instruction || '').trim();
+    if (taskProbe) parts.push(`【本任务的追问指引】（针对这次沟通任务的追问重点，优先于通用指引）\n${taskProbe}`);
+
     parts.push(
       `你有两个工具可以在需要时调用：` +
       `recall_member_history —— 当你想确认对方上次汇报说了什么、或想跟进之前的进展/卡点时调用；` +

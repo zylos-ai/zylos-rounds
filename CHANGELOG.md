@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-07-19
+
+### Added
+- **Per-task 追问指引 (probe instruction).** Optional free-text follow-up
+  strategy on each task, layered on top of the global brain guidance in the
+  voice-session instructions (`【本任务的追问指引】` section). Editable in the
+  create form and via a dialog on the task detail page (works for the
+  built-in daily task too), `probe_instruction` over the API, and
+  `--probe-instruction` in the CLI. Migration v7
+
+### Changed
+- **成员管理 page layout.** The add-member entry moved to the top right of
+  the roster; the list is paginated (10 per page) instead of growing
+  unbounded; a member's task links collapse behind an "N 个任务链接" toggle
+  when they hold more than two
+
 ## [0.7.0] - 2026-07-18
 
 ### Changed

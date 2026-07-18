@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Copy, Check, ExternalLink, Trash2, Loader2, FlaskConical, NotebookPen, Repeat } from 'lucide-react';
+import { Copy, Check, ExternalLink, Trash2, Loader2, FlaskConical, NotebookPen, Repeat, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn, copyText } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -24,6 +24,8 @@ import { api } from '../api';
  * links a member currently holds. Daily-standup status lives in the daily
  * task's detail page, not here.
  */
+const PAGE_SIZE = 10;
+
 export default function MembersPage() {
   const [members, setMembers] = useState(null);
   const [testMember, setTestMember] = useState(null);
@@ -32,6 +34,7 @@ export default function MembersPage() {
   const [addError, setAddError] = useState('');
   const [busy, setBusy] = useState(false);
   const [copiedKey, setCopiedKey] = useState(null);
+  const [page, setPage] = useState(1);
   const copyTimer = useRef(null);
 
   const load = useCallback(async () => {
@@ -90,6 +93,10 @@ export default function MembersPage() {
     return <p className="text-sm text-muted-foreground">{loadError || '加载中…'}</p>;
   }
 
+  const totalPages = Math.max(1, Math.ceil(members.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageMembers = members.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
   return (
     <>
       <h1 className="text-4xl font-bold tracking-tight max-sm:text-3xl">成员管理</h1>
@@ -99,13 +106,32 @@ export default function MembersPage() {
 
       {loadError ? <p className="mt-6 text-sm text-destructive">{loadError}</p> : null}
 
-      <Card className="mt-8">
+      {/* add-member entry lives at the top right of the roster */}
+      <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
+        <span className="text-sm text-muted-foreground">共 {members.length} 位成员</span>
+        <form onSubmit={onAdd} className="flex items-center gap-2">
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="新成员姓名"
+            autoComplete="off"
+            className="h-9 w-[180px] max-sm:w-[150px]"
+          />
+          <Button type="submit" size="sm" className="h-9" disabled={busy || !name.trim()}>
+            {busy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
+            添加成员
+          </Button>
+        </form>
+      </div>
+      {addError ? <p className="mt-2 text-right text-sm text-destructive">{addError}</p> : null}
+
+      <Card className="mt-3">
         <CardContent className="px-5 py-2 max-sm:px-4">
           {members.length === 0 ? (
-            <p className="py-4 text-sm text-faint">暂无成员，先在下方添加</p>
+            <p className="py-4 text-sm text-faint">暂无成员，先在右上方添加</p>
           ) : (
             <div className="divide-y divide-border">
-              {members.map((m) => (
+              {pageMembers.map((m) => (
                 <div key={m.id} className="py-4">
                   <div className="flex items-center gap-2">
                     <p className="min-w-0 flex-1 truncate text-[0.95rem] font-semibold">{m.name}</p>
@@ -149,21 +175,19 @@ export default function MembersPage() {
         </CardContent>
       </Card>
 
-      {/* add member */}
-      <form onSubmit={onAdd} className="mt-6 flex items-center gap-3">
-        <Input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="新成员姓名"
-          autoComplete="off"
-          className="h-11 max-w-[300px] text-base"
-        />
-        <Button type="submit" className="h-11 px-6 text-[0.95rem]" disabled={busy || !name.trim()}>
-          {busy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
-          添加成员
-        </Button>
-      </form>
-      {addError ? <p className="mt-2 text-sm text-destructive">{addError}</p> : null}
+      {totalPages > 1 && (
+        <div className="mt-4 flex items-center justify-center gap-2">
+          <Button variant="ghost" size="icon" aria-label="上一页" disabled={safePage <= 1}
+            onClick={() => setPage(safePage - 1)}>
+            <ChevronLeft strokeWidth={1.75} />
+          </Button>
+          <span className="text-sm text-muted-foreground">第 {safePage} / {totalPages} 页</span>
+          <Button variant="ghost" size="icon" aria-label="下一页" disabled={safePage >= totalPages}
+            onClick={() => setPage(safePage + 1)}>
+            <ChevronRight strokeWidth={1.75} />
+          </Button>
+        </div>
+      )}
 
       {/* built-in try-it member — separate from the roster, never counted */}
       {testMember ? (
@@ -188,14 +212,39 @@ export default function MembersPage() {
   );
 }
 
-// one row per open task the member holds a link for
+// one row per open task the member holds a link for; more than two links
+// collapse behind a toggle so long rosters stay scannable
 function MemberLinks({ member, copiedKey, onCopy, idPrefix = '' }) {
   const links = member.links || [];
+  const [expanded, setExpanded] = useState(false);
+  const collapsible = links.length > 2;
   if (!links.length) {
     return <p className="mt-2 text-sm text-faint">还没有任务链接（加入任务后自动生成）</p>;
   }
+  if (collapsible && !expanded) {
+    return (
+      <button
+        type="button"
+        onClick={() => setExpanded(true)}
+        className="mt-2 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+      >
+        <ChevronRight className="h-4 w-4" strokeWidth={1.75} />
+        {links.length} 个任务链接
+      </button>
+    );
+  }
   return (
     <div className="mt-2 space-y-1.5">
+      {collapsible && (
+        <button
+          type="button"
+          onClick={() => setExpanded(false)}
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ChevronDown className="h-4 w-4" strokeWidth={1.75} />
+          收起
+        </button>
+      )}
       {links.map((l) => {
         const key = `${idPrefix}${member.id}:${l.task_id}`;
         return (

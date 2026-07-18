@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Plus, Loader2, Copy, Check, ExternalLink, Sparkles, RefreshCw,
   ChevronDown, ChevronRight, ArrowLeft, Trash2, CircleCheck, RotateCcw,
-  Repeat, FlaskConical,
+  Repeat, FlaskConical, NotebookPen,
 } from 'lucide-react';
 import { cn, copyText } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -139,6 +139,7 @@ function CreateTaskCard({ onDone }) {
   const [brief, setBrief] = useState('');
   const [questions, setQuestions] = useState('');
   const [digestInstruction, setDigestInstruction] = useState('');
+  const [probeInstruction, setProbeInstruction] = useState('');
   const [deadline, setDeadline] = useState('');
   const [autoAt, setAutoAt] = useState('');
   const [closeLinked, setCloseLinked] = useState(false);
@@ -184,6 +185,7 @@ function CreateTaskCard({ onDone }) {
       if (brief.trim()) body.brief = brief.trim();
       if (questions.trim()) body.questions = questions.trim();
       if (digestInstruction.trim()) body.digest_instruction = digestInstruction.trim();
+      if (probeInstruction.trim()) body.probe_instruction = probeInstruction.trim();
       if (type === 'oneshot') {
         if (deadline) body.deadline = deadline;
         if (autoAt) body.digest_auto_at = autoAt;
@@ -269,6 +271,11 @@ function CreateTaskCard({ onDone }) {
           <label className="text-sm font-medium">问题框架（要聊清楚的要点，自由文本）</label>
           <textarea className={TEXTAREA_CLASS} rows={4} value={questions} onChange={(e) => setQuestions(e.target.value)}
             placeholder={'- 这个季度你觉得做得最好和最遗憾的事\n- 团队协作里最卡的环节\n- 下季度最想推进的一件事'} />
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-medium">追问指引（可选，叠加在大脑的通用追问指引之上）</label>
+          <textarea className={TEXTAREA_CLASS} rows={3} value={probeInstruction} onChange={(e) => setProbeInstruction(e.target.value)}
+            placeholder={'这次沟通要重点追什么、追到什么深度。例如：\n- 提到延期时，追问影响面和新的时间点\n- 只聊结论不聊过程时，追一个具体例子'} />
         </div>
         <div className="space-y-2">
           <label className="text-sm font-medium">汇总 instruction（可选，不填用默认模板）</label>
@@ -432,22 +439,21 @@ export function TaskDetailPage({ id, cycle }) {
         )}
       </div>
 
-      {(task.brief || task.questions) && (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {task.brief && (
-            <Card><CardContent className="py-5">
-              <h2 className="mb-2 text-sm font-semibold text-muted-foreground">任务背景</h2>
-              <p className="whitespace-pre-wrap text-[0.95rem] leading-relaxed">{task.brief}</p>
-            </CardContent></Card>
-          )}
-          {task.questions && (
-            <Card><CardContent className="py-5">
-              <h2 className="mb-2 text-sm font-semibold text-muted-foreground">问题框架</h2>
-              <p className="whitespace-pre-wrap text-[0.95rem] leading-relaxed">{task.questions}</p>
-            </CardContent></Card>
-          )}
-        </div>
-      )}
+      <div className="grid gap-4 sm:grid-cols-2">
+        {task.brief && (
+          <Card><CardContent className="py-5">
+            <h2 className="mb-2 text-sm font-semibold text-muted-foreground">任务背景</h2>
+            <p className="whitespace-pre-wrap text-[0.95rem] leading-relaxed">{task.brief}</p>
+          </CardContent></Card>
+        )}
+        {task.questions && (
+          <Card><CardContent className="py-5">
+            <h2 className="mb-2 text-sm font-semibold text-muted-foreground">问题框架</h2>
+            <p className="whitespace-pre-wrap text-[0.95rem] leading-relaxed">{task.questions}</p>
+          </CardContent></Card>
+        )}
+        <ProbeInstructionCard task={task} onSaved={load} />
+      </div>
 
       {task.is_builtin ? (
         <>
@@ -637,6 +643,85 @@ function MemberLinksCard({ task, copied, copy, resetLink }) {
             </div>
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Task-level 追问指引 — scenario-specific follow-up strategy layered on top of
+// the global brain guidance. Editable here so the built-in daily task (which
+// has no create form) can set it too.
+function ProbeInstructionCard({ task, onSaved }) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(task.probe_instruction || '');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const has = Boolean((task.probe_instruction || '').trim());
+
+  const onOpenChange = (next) => {
+    if (next) { setValue(task.probe_instruction || ''); setErr(''); }
+    setOpen(next);
+  };
+
+  const save = async () => {
+    if (busy) return;
+    setBusy(true);
+    setErr('');
+    try {
+      await api(`api/tasks/${task.id}`, { method: 'PUT', body: { probe_instruction: value } });
+      setOpen(false);
+      onSaved();
+    } catch (e) {
+      if (e.status !== 401) setErr('保存失败，请重试');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardContent className="py-5">
+        <div className="mb-2 flex items-center gap-2">
+          <h2 className="text-sm font-semibold text-muted-foreground">追问指引（本任务）</h2>
+          <AlertDialog open={open} onOpenChange={onOpenChange}>
+            <Button
+              variant="ghost"
+              size="icon"
+              title={has ? '编辑本任务的追问指引' : '设置本任务的追问指引'}
+              aria-label="编辑本任务的追问指引"
+              className={cn('ml-auto -my-1 shrink-0', has && 'text-primary')}
+              onClick={() => onOpenChange(true)}
+            >
+              <NotebookPen strokeWidth={1.75} />
+            </Button>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>「{task.title}」的追问指引</AlertDialogTitle>
+                <AlertDialogDescription>
+                  写这次沟通要重点追什么、追到什么深度。叠加在大脑的通用追问指引之上生效，只作用于这个任务，改动即时生效。
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <textarea
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder={'例如：\n- 提到延期时，追问影响面和新的时间点\n- 只聊结论不聊过程时，追一个具体例子'}
+                rows={6}
+                className={TEXTAREA_CLASS}
+              />
+              {err ? <p className="-mt-1 text-sm text-destructive">{err}</p> : null}
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={busy}>取消</AlertDialogCancel>
+                <Button className="h-[34px] px-4" disabled={busy} onClick={save}>
+                  {busy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
+                  保存
+                </Button>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+        {has
+          ? <p className="whitespace-pre-wrap text-[0.95rem] leading-relaxed">{task.probe_instruction}</p>
+          : <p className="text-sm text-faint">未设置——只用大脑里的通用追问指引</p>}
       </CardContent>
     </Card>
   );

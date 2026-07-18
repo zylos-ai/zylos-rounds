@@ -348,6 +348,7 @@ export class Api {
       digest_auto_at: task.digest_auto_at || null,
       digest_close_linked: Boolean(task.digest_close_linked),
       digest_instruction: task.digest_instruction || '',
+      probe_instruction: task.probe_instruction || '',
       cadence_type: task.cadence_type || null,
       cadence_dow: task.cadence_dow || null,
       cadence_interval_days: task.cadence_interval_days || null,
@@ -458,7 +459,7 @@ export class Api {
       if (!t || t.length > 120) return { error: 'invalid_title' };
       out.title = t;
     }
-    for (const [k, camel] of [['brief', 'brief'], ['questions', 'questions'], ['digest_instruction', 'digestInstruction']]) {
+    for (const [k, camel] of [['brief', 'brief'], ['questions', 'questions'], ['digest_instruction', 'digestInstruction'], ['probe_instruction', 'probeInstruction']]) {
       if (body[k] === undefined) continue;
       const v = String(body[k] ?? '');
       if (v.length > 20000) return { error: `invalid_${k}` };

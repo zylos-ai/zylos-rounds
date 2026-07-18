@@ -49,12 +49,12 @@ Communication tasks (沟通任务)
   task create --title T --members 1,2,3|all [brief]
                                       create a task; brief from text arg or stdin;
                                       [--questions Q] [--deadline YYYY-MM-DD]
-                                      [--digest-instruction I]
+                                      [--digest-instruction I] [--probe-instruction P]
                                       oneshot only: [--auto-digest YYYY-MM-DDTHH:MM] [--close-on-digest true]
                                       recurring (implied by --cadence): --cadence daily|weekly|interval
                                                  [--dow 1,5] [--every N] [--anchor YYYY-MM-DD]
   task update <id> [--title T] [--questions Q] [--deadline D]
-                   [--digest-instruction I] [--auto-digest ISO|none]
+                   [--digest-instruction I] [--probe-instruction P] [--auto-digest ISO|none]
                    [--close-on-digest true|false] [--cadence ... --dow ... --every N] [brief]
   task links <id>                     per-member conversation links for a task
   task cycles <id>                    cycle keys a task has data/digests for
@@ -226,6 +226,7 @@ async function run(target, cmd, sub, args, flags) {
       if (flags.questions) body.questions = flags.questions;
       if (flags.deadline) body.deadline = flags.deadline;
       if (flags['digest-instruction'] !== undefined) body.digest_instruction = flags['digest-instruction'];
+      if (flags['probe-instruction'] !== undefined) body.probe_instruction = flags['probe-instruction'];
       if (flags['auto-digest']) body.digest_auto_at = flags['auto-digest'];
       if (flags['close-on-digest'] !== undefined) body.digest_close_linked = flags['close-on-digest'] !== 'false';
       return post('/api/tasks', body);
@@ -237,6 +238,7 @@ async function run(target, cmd, sub, args, flags) {
       if (flags.questions !== undefined) body.questions = flags.questions;
       if (flags.deadline !== undefined) body.deadline = flags.deadline;
       if (flags['digest-instruction'] !== undefined) body.digest_instruction = flags['digest-instruction'];
+      if (flags['probe-instruction'] !== undefined) body.probe_instruction = flags['probe-instruction'];
       if (flags['auto-digest'] !== undefined) body.digest_auto_at = flags['auto-digest'] === 'none' ? '' : flags['auto-digest'];
       if (flags['close-on-digest'] !== undefined) body.digest_close_linked = flags['close-on-digest'] !== 'false';
       if (flags.cadence) {

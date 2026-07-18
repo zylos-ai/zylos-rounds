@@ -175,6 +175,12 @@ export const MIGRATIONS = [
       );
     `,
   },
+  {
+    version: 7,
+    sql: `
+      ALTER TABLE tasks ADD COLUMN probe_instruction TEXT;
+    `,
+  },
 ];
 
 export class Store {
@@ -427,14 +433,14 @@ export class Store {
   }
 
   createTask({ type, title, brief, questions, deadline, digestAutoAt, digestCloseLinked,
-    cadenceType, cadenceDow, cadenceIntervalDays, cadenceAnchor, digestInstruction }) {
+    cadenceType, cadenceDow, cadenceIntervalDays, cadenceAnchor, digestInstruction, probeInstruction }) {
     const info = this.db.prepare(`
       INSERT INTO tasks(type,title,brief,questions,deadline,digest_auto_at,digest_close_linked,
-        cadence_type,cadence_dow,cadence_interval_days,cadence_anchor,digest_instruction)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+        cadence_type,cadence_dow,cadence_interval_days,cadence_anchor,digest_instruction,probe_instruction)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(type, title, brief ?? null, questions ?? null, deadline ?? null, digestAutoAt ?? null,
       digestCloseLinked ? 1 : 0, cadenceType ?? null, cadenceDow ?? null,
-      cadenceIntervalDays ?? null, cadenceAnchor ?? null, digestInstruction ?? null);
+      cadenceIntervalDays ?? null, cadenceAnchor ?? null, digestInstruction ?? null, probeInstruction ?? null);
     return this.getTask(Number(info.lastInsertRowid));
   }
 
@@ -442,7 +448,7 @@ export class Store {
     const cols = {
       title: 'title', brief: 'brief', questions: 'questions', deadline: 'deadline',
       digestAutoAt: 'digest_auto_at', digestCloseLinked: 'digest_close_linked',
-      digestInstruction: 'digest_instruction',
+      digestInstruction: 'digest_instruction', probeInstruction: 'probe_instruction',
       cadenceType: 'cadence_type', cadenceDow: 'cadence_dow',
       cadenceIntervalDays: 'cadence_interval_days', cadenceAnchor: 'cadence_anchor',
     };
