@@ -58,8 +58,11 @@ export default function TalkApp() {
         const data = await res.json();
         setName(data.name || '');
         setIsTest(Boolean(data.is_test));
-        setTask(data.task || null);
-        document.title = `Rounds · ${data.task ? data.task.title : (data.name || '')}`;
+        // v0.7: every link carries a task; the built-in daily keeps the
+        // standup wording, so only generic tasks flip the copy below
+        const generic = data.task && !data.task.is_builtin ? data.task : null;
+        setTask(generic);
+        document.title = `Rounds · ${generic ? generic.title : (data.name || '')}`;
         setPhase('idle');
         say('点击麦克风开始');
       } catch {

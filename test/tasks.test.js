@@ -35,11 +35,11 @@ test('oneshot task lifecycle: create, per-member tokens, submit, close kills rou
   assert.equal(resolved.task.id, task.id);
   assert.equal(resolved.member.id, m1);
 
-  s.submitTaskSummary(task.id, m1, JSON.stringify(['要点1']), JSON.stringify(['信号1']));
-  s.appendTaskTranscript(task.id, m1, '张三: 大家好', 60);
-  const rows = s.taskMembers(task.id);
+  s.submitCycleSummary(task.id, m1, '-', JSON.stringify(['要点1']), JSON.stringify(['信号1']));
+  s.appendCycleTranscript(task.id, m1, '-', '张三: 大家好', 60);
+  const rows = s.cycleRecords(task.id, '-');
   assert.equal(rows.find(r => r.member_id === m1).status, 'submitted');
-  assert.equal(rows.find(r => r.member_id === m2).status, 'pending');
+  assert.equal(rows.find(r => r.member_id === m2).status, null); // no record yet
   assert.match(rows.find(r => r.member_id === m1).transcript, /大家好/);
 
   // closing the task invalidates its links; reopening restores them
@@ -120,10 +120,10 @@ test('digest prompt includes per-member results and flags incomplete members', (
   const task = s.createTask({ type: 'oneshot', title: 'Q2 复盘', brief: 'brief内容', questions: '问题清单' });
   s.addTaskMember(task.id, m1, 'tt1');
   s.addTaskMember(task.id, m2, 'tt2');
-  s.submitTaskSummary(task.id, m1, JSON.stringify(['进展顺利']), JSON.stringify(['想换方向']));
+  s.submitCycleSummary(task.id, m1, '-', JSON.stringify(['进展顺利']), JSON.stringify(['想换方向']));
 
   const gen = new DigestGenerator(s, () => ({}), {}, { resolveKey: () => null });
-  const prompt = gen.buildPrompt(s.getTask(task.id), s.taskMembers(task.id));
+  const prompt = gen.buildPrompt(s.getTask(task.id), s.cycleRecords(task.id, '-'), '-');
   assert.match(prompt, /brief内容/);
   assert.match(prompt, /问题清单/);
   assert.match(prompt, /进展顺利/);
@@ -142,7 +142,7 @@ test('digest generate: no submissions -> null; trigger applies decoupled close l
   const gen = new DigestGenerator(s, () => ({}), {}, { resolveKey: () => 'k' });
   assert.equal(await gen.generate(task.id), null); // nothing submitted yet
 
-  s.submitTaskSummary(task.id, m1, JSON.stringify(['a']), JSON.stringify([]));
+  s.submitCycleSummary(task.id, m1, '-', JSON.stringify(['a']), JSON.stringify([]));
   // stub the model call — unit tests never hit the network
   gen.generate = async (id) => { s.setTaskDigest(id, '## 共识\n- a'); return '## 共识\n- a'; };
 

@@ -26,10 +26,9 @@ const HELP = `rounds CLI — manage the Rounds app via its admin API
 Usage: cli.js [--url U] [--key K] <command> [args]
 
 Members
-  member list                         roster with links, today's status, context/profile
-  member add <name>                   add (or re-activate) a member
-  member remove <id>                  deactivate a member (history kept, link dies)
-  member reset-link <id>              mint a fresh personal link
+  member list                         roster with per-task links, context/profile
+  member add <name>                   add (or re-activate) a member; mints their daily-task link
+  member remove <id>                  deactivate a member (history kept, links die)
   member set-context <id> [text]      set 基础背景 (text arg or stdin; empty clears)
   member set-profile <id> [text]      overwrite 动态画像 (text arg or stdin; empty clears)
 
@@ -45,17 +44,25 @@ Knowledge base
   knowledge remove <id>
 
 Communication tasks (沟通任务)
-  task list                           all tasks (built-in daily + oneshot) with progress
-  task show <id>                      detail: per-member links/status/summaries + digest
+  task list                           all tasks with current-cycle progress
+  task show <id> [--cycle KEY]        detail: per-member links/status/summaries + cycle digest
   task create --title T --members 1,2,3|all [brief]
-                                      create an oneshot task; brief from text arg or stdin;
+                                      create a task; brief from text arg or stdin;
                                       [--questions Q] [--deadline YYYY-MM-DD]
-                                      [--auto-digest YYYY-MM-DDTHH:MM] [--close-on-digest]
+                                      [--digest-instruction I]
+                                      oneshot only: [--auto-digest YYYY-MM-DDTHH:MM] [--close-on-digest true]
+                                      recurring (implied by --cadence): --cadence daily|weekly|interval
+                                                 [--dow 1,5] [--every N] [--anchor YYYY-MM-DD]
   task update <id> [--title T] [--questions Q] [--deadline D]
-                   [--auto-digest ISO|none] [--close-on-digest true|false] [brief]
-  task digest <id> [--close true|false]   generate/overwrite the digest (close is optional override)
-  task close <id> | task reopen <id>
-  task remove <id>                    delete an oneshot task and its links
+                   [--digest-instruction I] [--auto-digest ISO|none]
+                   [--close-on-digest true|false] [--cadence ... --dow ... --every N] [brief]
+  task links <id>                     per-member conversation links for a task
+  task cycles <id>                    cycle keys a task has data/digests for
+  task reset-link <taskId> <memberId> rotate one member's link for a task (old link dies)
+  task digest <id> [--cycle KEY] [--close true|false]
+                                      generate/overwrite a digest (recurring: per cycle)
+  task close <id> | task reopen <id>  (closing the built-in daily pauses the standup)
+  task remove <id>                    delete a non-builtin task and its links
 
 Reports & settings
   report today | report <YYYY-MM-DD>  day digest (structured + transcripts)
@@ -159,7 +166,6 @@ async function run(target, cmd, sub, args, flags) {
       return post('/api/members', { name: args[0] });
     }
     case 'member remove': return del(`/api/members/${id(args[0])}`).then(() => ({ ok: true, removed: id(args[0]) }));
-    case 'member reset-link': return post(`/api/members/${id(args[0])}/reset-token`);
     case 'member set-context': return put(`/api/members/${id(args[0])}/context`, { context: textInput(args[1]) });
     case 'member set-profile': return put(`/api/members/${id(args[0])}/profile`, { profile: textInput(args[1]) });
 
@@ -195,7 +201,10 @@ async function run(target, cmd, sub, args, flags) {
     case 'knowledge remove': return del(`/api/knowledge/${id(args[0])}`).then(() => ({ ok: true, removed: id(args[0]) }));
 
     case 'task list': return get('/api/tasks');
-    case 'task show': return get(`/api/tasks/${id(args[0])}`);
+    case 'task show': {
+      const q = flags.cycle ? `?cycle=${encodeURIComponent(flags.cycle)}` : '';
+      return get(`/api/tasks/${id(args[0])}${q}`);
+    }
     case 'task create': {
       if (!flags.title) fail('usage: task create --title T --members 1,2,3|all [brief]');
       let memberIds;
@@ -205,10 +214,18 @@ async function run(target, cmd, sub, args, flags) {
         memberIds = flags.members.split(',').map(s => Number(s.trim())).filter(Boolean);
       }
       const body = { title: flags.title, member_ids: memberIds };
+      if (flags.cadence) {
+        body.type = 'recurring';
+        body.cadence_type = flags.cadence;
+        if (flags.dow) body.cadence_dow = flags.dow;
+        if (flags.every) body.cadence_interval_days = Number(flags.every);
+        if (flags.anchor) body.cadence_anchor = flags.anchor;
+      }
       const brief = textInput(args[0]);
       if (brief) body.brief = brief;
       if (flags.questions) body.questions = flags.questions;
       if (flags.deadline) body.deadline = flags.deadline;
+      if (flags['digest-instruction'] !== undefined) body.digest_instruction = flags['digest-instruction'];
       if (flags['auto-digest']) body.digest_auto_at = flags['auto-digest'];
       if (flags['close-on-digest'] !== undefined) body.digest_close_linked = flags['close-on-digest'] !== 'false';
       return post('/api/tasks', body);
@@ -219,15 +236,39 @@ async function run(target, cmd, sub, args, flags) {
       if (flags.title) body.title = flags.title;
       if (flags.questions !== undefined) body.questions = flags.questions;
       if (flags.deadline !== undefined) body.deadline = flags.deadline;
+      if (flags['digest-instruction'] !== undefined) body.digest_instruction = flags['digest-instruction'];
       if (flags['auto-digest'] !== undefined) body.digest_auto_at = flags['auto-digest'] === 'none' ? '' : flags['auto-digest'];
       if (flags['close-on-digest'] !== undefined) body.digest_close_linked = flags['close-on-digest'] !== 'false';
+      if (flags.cadence) {
+        body.cadence_type = flags.cadence;
+        if (flags.dow) body.cadence_dow = flags.dow;
+        if (flags.every) body.cadence_interval_days = Number(flags.every);
+        if (flags.anchor) body.cadence_anchor = flags.anchor;
+      }
       const brief = textInput(args[1]);
       if (brief) body.brief = brief;
       if (!Object.keys(body).length) fail('nothing to update');
       return put(`/api/tasks/${tid}`, body);
     }
+    case 'task links': {
+      const t = await get(`/api/tasks/${id(args[0])}`);
+      return {
+        id: t.id, title: t.title, status: t.status, cycle_key: t.cycle_key,
+        links: (t.members || []).map(mb => ({ member_id: mb.member_id, name: mb.name, link: mb.link })),
+        test_member: t.test_member || undefined,
+      };
+    }
+    case 'task cycles': {
+      const t = await get(`/api/tasks/${id(args[0])}`);
+      return { id: t.id, title: t.title, current_cycle_key: t.current_cycle_key ?? t.cycle_key, cycles: t.cycles || [] };
+    }
+    case 'task reset-link': {
+      if (args.length < 2) fail('usage: task reset-link <taskId> <memberId>');
+      return post(`/api/tasks/${id(args[0])}/members/${id(args[1])}/reset-token`, {});
+    }
     case 'task digest': {
       const body = {};
+      if (flags.cycle) body.cycle = flags.cycle;
       if (flags.close !== undefined) body.close = flags.close !== 'false';
       return post(`/api/tasks/${id(args[0])}/digest`, body);
     }

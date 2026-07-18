@@ -15,6 +15,7 @@
 import { WebSocket, WebSocketServer } from 'ws';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { todayLocal } from './http-util.js';
+import { ONESHOT_CYCLE, currentCycleKey } from './cycle.js';
 
 const SUBMIT_TOOL = {
   type: 'function',
@@ -60,10 +61,11 @@ const KNOWLEDGE_TOOL = {
   },
 };
 
-// Oneshot communication tasks submit a generic summary instead of the
-// standup's four fixed buckets (the question frame is free text, so the
-// output shape stays generic: 分条要点 + 值得负责人注意的信号).
-const ONESHOT_SUBMIT_TOOL = {
+// Generic communication tasks (anything but the built-in daily standup)
+// submit a generic summary instead of the standup's four fixed buckets (the
+// question frame is free text, so the output shape stays generic:
+// 分条要点 + 值得负责人注意的信号).
+const GENERIC_SUBMIT_TOOL = {
   type: 'function',
   name: 'submit_conversation_summary',
   description: '在这次一对一沟通结束时提交结构化小结。当问题框架里的要点都聊到（或对方表示没有更多内容）时调用。',
@@ -78,7 +80,7 @@ const ONESHOT_SUBMIT_TOOL = {
 };
 
 const TOOLS = [SUBMIT_TOOL, RECALL_TOOL, KNOWLEDGE_TOOL];
-const ONESHOT_TOOLS = [ONESHOT_SUBMIT_TOOL, RECALL_TOOL, KNOWLEDGE_TOOL];
+const GENERIC_TOOLS = [GENERIC_SUBMIT_TOOL, RECALL_TOOL, KNOWLEDGE_TOOL];
 
 const ALLOWED_CLIENT_EVENTS = new Set([
   'input_audio_buffer.append', 'input_audio_buffer.commit', 'input_audio_buffer.clear',
@@ -102,13 +104,12 @@ export class Relay {
   }
 
   /**
-   * Link-driven routing (owner ruling 2026-07-18): the permanent member token
-   * routes to the built-in recurring standup; a per-(task, member) token routes
-   * to that oneshot task's conversation. Returns null for unknown tokens.
+   * Link-driven routing (owner v0.7 ruling 2026-07-18): every link is a
+   * per-(task, member) token — including the built-in daily standup. The old
+   * permanent member tokens no longer route anywhere. Returns null for
+   * unknown/expired tokens.
    */
   resolveToken(token) {
-    const member = this.store.getMemberByToken(token);
-    if (member) return { member, task: this.store.getDailyTask() || null };
     return this.store.getTaskSessionByToken(token);
   }
 
@@ -126,14 +127,14 @@ export class Relay {
 
   sessionUpdate(member, task) {
     const cfg = this.getConfig();
-    const oneshot = task && task.type === 'oneshot';
+    const generic = task && !task.is_builtin;
     return {
       type: 'session.update',
       session: {
         type: 'realtime',
         output_modalities: ['audio'],
         instructions: this.context.buildInstructions(member, task),
-        tools: oneshot ? ONESHOT_TOOLS : TOOLS,
+        tools: generic ? GENERIC_TOOLS : TOOLS,
         tool_choice: 'auto',
         audio: {
           input: {
@@ -151,7 +152,7 @@ export class Relay {
    * Dispatch a realtime function_call. submit_standup_summary ends the flow;
    * the retrieval tools return data and prompt the model to continue speaking.
    */
-  handleToolCall(fc, { client, upstream, member, task, reportDate, model, markSaved }) {
+  handleToolCall(fc, { client, upstream, member, task, cycleKey, reportDate, model, markSaved }) {
     const respond = output => {
       safeSend(upstream, {
         type: 'conversation.item.create',
@@ -177,7 +178,7 @@ export class Relay {
         try {
           const summary = JSON.stringify(Array.isArray(args.summary) ? args.summary : []);
           const highlights = JSON.stringify(Array.isArray(args.highlights) ? args.highlights : []);
-          this.store.submitTaskSummary(task.id, member.id, summary, highlights);
+          this.store.submitCycleSummary(task.id, member.id, cycleKey, summary, highlights);
           markSaved();
           safeSend(client, { type: 'app.saved', summary: args });
           respond({ ok: true, message: '已保存' });
@@ -211,15 +212,26 @@ export class Relay {
       client.close();
       return;
     }
-    const oneshot = task && task.type === 'oneshot';
+    const generic = task && !task.is_builtin;
     const model = this.settings.resolveModel();
     const maxSessionMs = cfg.maxSessionMs ?? 10 * 60 * 1000;
     const reportDate = todayLocal(cfg.timeZone);
+    // Conversations bind to the cycle current at connect time (lenient windows).
+    // A recurring task whose first cycle hasn't started yet has no cycle to
+    // record into — reject up front rather than losing the conversation.
+    const cycleKey = generic
+      ? (task.type === 'oneshot' ? ONESHOT_CYCLE : currentCycleKey(task, reportDate))
+      : reportDate;
+    if (!cycleKey) {
+      safeSend(client, { type: 'app.error', message: '这个任务的第一个周期还没开始，请稍后再来' });
+      client.close();
+      return;
+    }
     this.active++;
     const startedAt = Date.now();
     const transcript = [];
     let saved = false;
-    console.log(`[rounds] session start ${member.name}${oneshot ? ` (task #${task.id} ${task.title})` : ''}`);
+    console.log(`[rounds] session start ${member.name}${generic ? ` (task #${task.id} ${task.title}, cycle ${cycleKey})` : ''}`);
 
     const upstream = new WebSocket(`wss://api.openai.com/v1/realtime?model=${model}`, {
       agent: this.env.proxy ? new HttpsProxyAgent(this.env.proxy) : undefined,
@@ -239,13 +251,13 @@ export class Relay {
       self.active = Math.max(0, self.active - 1);
       const dur = Math.round((Date.now() - startedAt) / 1000);
       if (transcript.length) {
-        if (oneshot) store.appendTaskTranscript(task.id, member.id, transcript.join('\n'), dur);
+        if (generic) store.appendCycleTranscript(task.id, member.id, cycleKey, transcript.join('\n'), dur);
         else store.appendTranscript(member.id, reportDate, transcript.join('\n'), dur, model, saved);
       }
       console.log(`[rounds] session end ${member.name} (${reason}, ${dur}s, saved=${saved})`);
       // fire-and-forget: merge the submitted conversation into the member's 动态画像
       if (saved && self.profiles) {
-        if (oneshot) self.profiles.updateAfterTaskSession(member.id, task.id);
+        if (generic) self.profiles.updateAfterTaskSession(member.id, task.id, cycleKey);
         else self.profiles.updateAfterReport(member.id, reportDate);
       }
     }
@@ -269,7 +281,7 @@ export class Relay {
         return;
       }
       if (ev.type === 'app.end') {
-        const submitTool = oneshot ? 'submit_conversation_summary' : 'submit_standup_summary';
+        const submitTool = generic ? 'submit_conversation_summary' : 'submit_standup_summary';
         safeSend(upstream, { type: 'response.cancel' });
         safeSend(upstream, { type: 'response.create', response: { instructions: `对方要结束对话了。如果还没提交小结，现在立刻调用 ${submitTool}，然后简短道别。` } });
         return;
@@ -296,7 +308,7 @@ export class Relay {
           break;
         case 'response.done': {
           const calls = (ev.response?.output || []).filter(i => i.type === 'function_call');
-          for (const fc of calls) this.handleToolCall(fc, { client, upstream, member, task, reportDate, model, markSaved: () => { saved = true; } });
+          for (const fc of calls) this.handleToolCall(fc, { client, upstream, member, task, cycleKey, reportDate, model, markSaved: () => { saved = true; } });
           break;
         }
         case 'conversation.item.input_audio_transcription.failed':

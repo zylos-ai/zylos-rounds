@@ -1,18 +1,29 @@
 import { useEffect, useState } from 'react';
 
-/** Hash router: #/, #/report/:date, #/reports, #/login. No server rewrites. */
+/**
+ * Hash router (no server rewrites). v0.7 modules: 任务(home) / 成员 / 大脑 / 设置.
+ *   #/                     tasks home
+ *   #/tasks/:id            task detail (current cycle)
+ *   #/tasks/:id/c/:cycle   task detail at a specific cycle (date or '-')
+ *   #/members #/brain #/settings #/login
+ * Legacy hashes (#/reports, #/report/:date) redirect into the built-in
+ * daily task's detail — the old pages were absorbed there.
+ */
 export function parseHash() {
   const h = (location.hash || '').replace(/^#/, '') || '/';
   if (h === '/login') return { name: 'login' };
-  if (h === '/reports') return { name: 'history' };
+  if (h === '/' || h === '/tasks') return { name: 'tasks' };
+  let m = h.match(/^\/tasks\/(\d+)$/);
+  if (m) return { name: 'task', id: Number(m[1]), cycle: null };
+  m = h.match(/^\/tasks\/(\d+)\/c\/(\d{4}-\d{2}-\d{2}|-)$/);
+  if (m) return { name: 'task', id: Number(m[1]), cycle: m[2] };
+  if (h === '/members') return { name: 'members' };
   if (h === '/brain') return { name: 'brain' };
-  if (h === '/tasks') return { name: 'tasks' };
-  const tm = h.match(/^\/tasks\/(\d+)$/);
-  if (tm) return { name: 'task', id: Number(tm[1]) };
   if (h === '/settings') return { name: 'settings' };
-  const m = h.match(/^\/report\/(\d{4}-\d{2}-\d{2})$/);
-  if (m) return { name: 'report', date: m[1] };
-  return { name: 'roster' };
+  if (h === '/reports') return { name: 'legacyReport', date: null };
+  m = h.match(/^\/report\/(\d{4}-\d{2}-\d{2})$/);
+  if (m) return { name: 'legacyReport', date: m[1] };
+  return { name: 'tasks' };
 }
 
 export function useRoute() {

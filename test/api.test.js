@@ -27,12 +27,19 @@ async function boot() {
   const auth = new AuthGate(config, store, path.join(dir, 'config.json'));
   const settings = new Settings(store, getConfig, { openaiApiKey: '', proxy: null });
   const settingsStub = settings;
+  // mirror index.js startup: the built-in daily task exists before any request
+  store.ensureDailyTask('每日日报');
   const digests = new DigestGenerator(store, getConfig, {}, settingsStub);
   // unit tests never hit the model API — digest generation is stubbed
-  digests.generate = async (id) => {
-    const rows = store.taskMembers(id);
+  digests.generate = async (id, cycleKey = null) => {
+    const task = store.getTask(id);
+    const key = cycleKey ?? (task.type === 'oneshot'
+      ? '-'
+      : new Date().toLocaleDateString('sv', { timeZone: 'Asia/Shanghai' }));
+    const rows = store.cycleRecords(id, key);
     if (!rows.some(r => r.status === 'submitted')) return null;
-    store.setTaskDigest(id, '## 共识\n- stub');
+    if (task.type === 'oneshot') store.setTaskDigest(id, '## 共识\n- stub');
+    else store.setCycleDigest(id, key, '## 共识\n- stub');
     return '## 共识\n- stub';
   };
   const api = new Api(store, auth, getConfig, settings, new AgentContext(store), digests);
@@ -56,22 +63,29 @@ async function boot() {
 }
 
 test('bearer API key has full admin scope: roster, reports, settings', async () => {
-  const { call, close } = await boot();
+  const { store, call, close } = await boot();
   try {
-    // roster management via bearer (owner's 2026-07-18 ruling)
+    // roster management via bearer (owner's 2026-07-18 ruling); v0.7: adding a
+    // member mints their daily-task link
+    const daily = store.getDailyTask();
     const added = await call('POST', '/api/members', { name: '阿明' });
     assert.equal(added.status, 201);
     const id = added.data.id;
+    assert.equal(added.data.links.length, 1);
+    assert.equal(added.data.links[0].task_id, daily.id);
+    assert.match(added.data.links[0].link, /\/u\/[A-Za-z0-9_-]+$/);
 
     const list = await call('GET', '/api/members');
     assert.equal(list.status, 200);
     const me = list.data.members.find(m => m.id === id);
     assert.equal(me.name, '阿明');
     assert.ok('profile' in me && 'context' in me);
+    assert.equal(me.links[0].link, added.data.links[0].link);
 
-    const reset = await call('POST', `/api/members/${id}/reset-token`);
+    // link rotation is per (task, member) in v0.7
+    const reset = await call('POST', `/api/tasks/${daily.id}/members/${id}/reset-token`);
     assert.equal(reset.status, 200);
-    assert.notEqual(reset.data.link, added.data.link);
+    assert.notEqual(reset.data.link, added.data.links[0].link);
 
     assert.equal((await call('GET', '/api/reports/history')).status, 200);
     assert.equal((await call('GET', '/api/settings')).status, 200);
@@ -166,7 +180,7 @@ test('task endpoints: create with links, digest trigger/overwrite, decoupled clo
     assert.equal((await call('POST', `/api/tasks/${tid}/digest`, {})).status, 409);
 
     // submit one member, then trigger — task stays open (close decoupled)
-    store.submitTaskSummary(tid, a.data.id, JSON.stringify(['要点']), JSON.stringify([]));
+    store.submitCycleSummary(tid, a.data.id, '-', JSON.stringify(['要点']), JSON.stringify([]));
     const trig = await call('POST', `/api/tasks/${tid}/digest`, {});
     assert.equal(trig.status, 200);
     assert.match(trig.data.digest, /共识/);
@@ -192,9 +206,78 @@ test('task endpoints: create with links, digest trigger/overwrite, decoupled clo
     assert.equal((await call('GET', `/api/talk/session?token=${token}`, undefined, {})).status, 404);
 
     // built-in daily task is not deletable via API
-    store.ensureDailyTask('每日日报');
-    const daily = (await call('GET', '/api/tasks')).data.tasks.find(t => t.type === 'recurring');
-    assert.equal((await call('DELETE', `/api/tasks/${daily.id}`)).status, 404);
+    const daily = (await call('GET', '/api/tasks')).data.tasks.find(t => t.is_builtin);
+    assert.equal((await call('DELETE', `/api/tasks/${daily.id}`)).status, 400);
+  } finally {
+    close();
+  }
+});
+
+test('recurring task: create with cadence, cycle detail, per-cycle digest, custom instruction', async () => {
+  const { store, call, close } = await boot();
+  try {
+    const a = await call('POST', '/api/members', { name: '张三' });
+
+    // cadence is validated
+    assert.equal((await call('POST', '/api/tasks', {
+      title: 'X', member_ids: [a.data.id], type: 'recurring', cadence_type: 'weekly', cadence_dow: '',
+    })).status, 400);
+
+    const created = await call('POST', '/api/tasks', {
+      title: '团队周报', member_ids: [a.data.id],
+      type: 'recurring', cadence_type: 'weekly', cadence_dow: '1,5',
+      digest_instruction: '只列三条最重要的进展',
+    });
+    assert.equal(created.status, 200);
+    assert.equal(created.data.type, 'recurring');
+    assert.equal(created.data.cadence_dow, '1,5');
+    assert.match(created.data.cadence_label, /每周/);
+    assert.equal(created.data.digest_instruction, '只列三条最重要的进展');
+    assert.ok(created.data.cycle_key); // current cycle resolved
+    const tid = created.data.id;
+    const cycle = created.data.cycle_key;
+
+    // member holds links for daily + the new recurring task
+    const me = (await call('GET', '/api/members')).data.members.find(m => m.id === a.data.id);
+    assert.equal(me.links.length, 2);
+
+    // submit into the current cycle, trigger a per-cycle digest
+    store.submitCycleSummary(tid, a.data.id, cycle, JSON.stringify(['进展A']), JSON.stringify([]));
+    const trig = await call('POST', `/api/tasks/${tid}/digest`, { cycle });
+    assert.equal(trig.status, 200);
+    assert.match(trig.data.digest, /stub/);
+    assert.equal(trig.data.status, 'open'); // close linkage is oneshot-only
+
+    // cycle detail returns the same digest via ?cycle=
+    const detail = await call('GET', `/api/tasks/${tid}?cycle=${cycle}`);
+    assert.equal(detail.data.cycle_key, cycle);
+    assert.match(detail.data.digest, /stub/);
+    assert.equal(detail.data.members[0].status, 'submitted');
+    assert.ok(detail.data.cycles.includes(cycle));
+
+    // custom digest instruction lands in the real prompt builder
+    const prompt = new DigestGenerator(store, () => ({ timeZone: 'Asia/Shanghai' }), {}, { resolveKey: () => null })
+      .buildPrompt(store.getTask(tid), store.cycleRecords(tid, cycle), cycle);
+    assert.match(prompt, /只列三条最重要的进展/);
+    assert.doesNotMatch(prompt, /进展要点/); // default template replaced
+  } finally {
+    close();
+  }
+});
+
+test('talk session resolves only task tokens and flags the built-in daily', async () => {
+  const { store, call, close } = await boot();
+  try {
+    const a = await call('POST', '/api/members', { name: '王五' });
+    const daily = store.getDailyTask();
+    const token = store.getTaskMember(daily.id, a.data.id).token;
+    const sess = await call('GET', `/api/talk/session?token=${token}`, undefined, {});
+    assert.equal(sess.status, 200);
+    assert.equal(sess.data.task.is_builtin, true);
+    assert.equal(sess.data.name, '王五');
+    // a member-row token (legacy permanent link) no longer resolves
+    const memberRowToken = store.getMemberById(a.data.id).token;
+    assert.equal((await call('GET', `/api/talk/session?token=${memberRowToken}`, undefined, {})).status, 404);
   } finally {
     close();
   }

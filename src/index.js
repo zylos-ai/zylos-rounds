@@ -46,9 +46,15 @@ if (!settings.resolveKey()) {
 // Built-in try-it member: full talk flow, excluded from all rosters/digests.
 store.ensureTestMember('体验成员', crypto.randomBytes(8).toString('base64url'));
 
-// The daily standup is the single built-in recurring communication task;
-// permanent member tokens route to it. Oneshot tasks are created via API/UI.
-store.ensureDailyTask('每日日报');
+// The daily standup is the built-in recurring communication task. v0.7: every
+// link is a per-(task, member) token — mint missing daily links idempotently
+// (existing tokens are kept; rotation happens only via the reset API).
+const dailyTask = store.ensureDailyTask('每日日报');
+for (const mb of [...store.listActiveMembers(), store.getTestMember()].filter(Boolean)) {
+  if (!store.getTaskMember(dailyTask.id, mb.id)) {
+    store.addTaskMember(dailyTask.id, mb.id, crypto.randomBytes(8).toString('base64url'));
+  }
+}
 
 // The agent's maintainable brain (background + probing + knowledge). Seed the
 // default probing guidance once so the mechanism is useful out of the box.
@@ -95,10 +101,10 @@ const server = http.createServer(async (req, res) => {
     }
 
     // member talk page — token checked server-side before serving the app.
-    // Accepts both permanent member tokens (daily standup) and per-task tokens.
+    // v0.7: only per-(task, member) tokens resolve; closed tasks 404.
     const m = url.pathname.match(/^\/u\/([A-Za-z0-9_-]+)$/);
     if (m && req.method === 'GET') {
-      if (!store.getMemberByToken(m[1]) && !store.getTaskSessionByToken(m[1])) {
+      if (!store.getTaskSessionByToken(m[1])) {
         return sendText(res, 404, '链接无效或已失效', 'text/plain; charset=utf-8');
       }
       if (statics.serve(res, 'talk.html')) return;

@@ -9,6 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sendJson, readJsonBody, browserOrigin, todayLocal } from './http-util.js';
 import { MODEL_OPTIONS, VOICE_OPTIONS } from './settings.js';
+import { ONESHOT_CYCLE, currentCycleKey, cadenceLabel, parseDowSet } from './cycle.js';
 
 const SAMPLES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'assets', 'voice-samples');
 
@@ -76,17 +77,18 @@ export class Api {
       return true;
     }
 
-    // member endpoint (token auth, no session) — resolves both the permanent
-    // member token (daily standup) and per-task oneshot tokens
+    // member endpoint (token auth, no session). v0.7: every link is a
+    // per-(task, member) token — including the built-in daily standup.
     if (p === '/api/talk/session' && req.method === 'GET') {
       const token = url.searchParams.get('token') || '';
-      const member = this.store.getMemberByToken(token);
-      if (member) return sendJson(res, 200, { name: member.name, is_test: Boolean(member.is_test) }), true;
       const ts = this.store.getTaskSessionByToken(token);
       if (!ts) return sendJson(res, 404, { error: 'invalid_token' }), true;
       return sendJson(res, 200, {
-        name: ts.member.name, is_test: false,
-        task: { id: ts.task.id, title: ts.task.title },
+        name: ts.member.name, is_test: Boolean(ts.member.is_test),
+        task: {
+          id: ts.task.id, title: ts.task.title, type: ts.task.type,
+          is_builtin: Boolean(ts.task.is_builtin),
+        },
       }), true;
     }
 
@@ -136,15 +138,16 @@ export class Api {
     m = p.match(/^\/api\/members\/(\d+)$/);
     if (m && req.method === 'DELETE') return this.removeMember(res, Number(m[1])), true;
 
-    m = p.match(/^\/api\/members\/(\d+)\/reset-token$/);
-    if (m && req.method === 'POST') return this.resetToken(req, res, Number(m[1])), true;
-
     // ---- communication tasks ----
     if (p === '/api/tasks' && req.method === 'GET') return this.listTasks(req, res), true;
     if (p === '/api/tasks' && req.method === 'POST') return await this.createTask(req, res), true;
 
+    // per-(task, member) link rotation — the only reset-token surface in v0.7
+    m = p.match(/^\/api\/tasks\/(\d+)\/members\/(\d+)\/reset-token$/);
+    if (m && req.method === 'POST') return this.resetTaskToken(req, res, Number(m[1]), Number(m[2])), true;
+
     m = p.match(/^\/api\/tasks\/(\d+)$/);
-    if (m && req.method === 'GET') return this.taskDetail(req, res, Number(m[1])), true;
+    if (m && req.method === 'GET') return this.taskDetail(req, res, Number(m[1]), url.searchParams.get('cycle')), true;
     if (m && req.method === 'PUT') return await this.updateTask(req, res, Number(m[1])), true;
     if (m && req.method === 'DELETE') return this.deleteTask(res, Number(m[1])), true;
 
@@ -332,11 +335,11 @@ export class Api {
 
   // ---- communication tasks ----
 
-  taskJson(req, task, rows) {
-    const submitted = rows.filter(r => r.status === 'submitted').length;
+  taskJson(task) {
     return {
       id: task.id,
       type: task.type,
+      is_builtin: Boolean(task.is_builtin),
       title: task.title,
       brief: task.brief || '',
       questions: task.questions || '',
@@ -344,41 +347,96 @@ export class Api {
       deadline: task.deadline || null,
       digest_auto_at: task.digest_auto_at || null,
       digest_close_linked: Boolean(task.digest_close_linked),
-      digest: task.digest || '',
-      digest_updated_at: task.digest_updated_at || null,
+      digest_instruction: task.digest_instruction || '',
+      cadence_type: task.cadence_type || null,
+      cadence_dow: task.cadence_dow || null,
+      cadence_interval_days: task.cadence_interval_days || null,
+      cadence_label: cadenceLabel(task),
       created_at: task.created_at,
-      member_count: rows.length,
-      submitted_count: submitted,
     };
   }
 
   listTasks(req, res) {
+    const today = todayLocal(this.getConfig().timeZone);
     const tasks = this.store.listTasks().map(t => {
-      if (t.type === 'recurring') {
-        const date = todayLocal(this.getConfig().timeZone);
+      const base = this.taskJson(t);
+      if (t.is_builtin) {
         const members = this.store.listActiveMembers();
-        const done = this.store.submittedMemberIds(date);
-        return { ...this.taskJson(req, t, []), member_count: members.length, submitted_count: done.length };
+        const done = this.store.submittedMemberIds(today);
+        return { ...base, cycle_key: today, member_count: members.length, submitted_count: done.length };
       }
-      return this.taskJson(req, t, this.store.taskMembers(t.id));
+      const key = t.type === 'oneshot' ? ONESHOT_CYCLE : currentCycleKey(t, today);
+      const rows = (key ? this.store.cycleRecords(t.id, key) : this.store.taskMembers(t.id))
+        .filter(r => !r.is_test);
+      return {
+        ...base,
+        cycle_key: key,
+        member_count: rows.length,
+        submitted_count: rows.filter(r => r.status === 'submitted').length,
+      };
     });
     sendJson(res, 200, { tasks });
   }
 
-  taskDetail(req, res, id) {
+  /**
+   * Task detail, per cycle. `?cycle=` selects a past cycle (defaults to the
+   * current one). Built-in daily: reports-shaped day view + member links.
+   * Generic tasks: cycle_records + per-cycle digest (oneshot = fixed '-').
+   */
+  taskDetail(req, res, id, cycleParam = null) {
     const task = this.store.getTask(id);
     if (!task) return sendJson(res, 404, { error: 'not_found' });
-    if (task.type === 'recurring') {
-      // the built-in daily task's per-day data lives in the reports pages
-      return sendJson(res, 200, { ...this.taskJson(req, task, []), members: [] });
+    const today = todayLocal(this.getConfig().timeZone);
+    const requested = /^\d{4}-\d{2}-\d{2}$/.test(cycleParam || '') ? cycleParam : null;
+
+    if (task.is_builtin) {
+      const date = requested || today;
+      const members = this.store.listActiveMembers();
+      const links = new Map(this.store.taskMembers(id).map(r => [r.member_id, r.token]));
+      const report = this.dayReportJson(date);
+      const done = new Set(this.store.submittedMemberIds(date));
+      const test = this.store.getTestMember();
+      const testToken = test ? links.get(test.id) : null;
+      return sendJson(res, 200, {
+        ...this.taskJson(task),
+        cycle_key: date,
+        current_cycle_key: today,
+        cycles: [...new Set([today, ...this.store.reportHistory().map(d => d.report_date)])],
+        member_count: members.length,
+        submitted_count: members.filter(mb => done.has(mb.id)).length,
+        members: members.map(mb => ({
+          member_id: mb.id,
+          name: mb.name,
+          status: done.has(mb.id) ? 'submitted' : 'pending',
+          link: links.has(mb.id) ? this.memberLink(req, links.get(mb.id)) : null,
+        })),
+        test_member: test && testToken ? { name: test.name, link: this.memberLink(req, testToken) } : null,
+        report,
+        digest: '',
+        digest_updated_at: null,
+      });
     }
-    const rows = this.store.taskMembers(id);
+
+    const current = task.type === 'oneshot' ? ONESHOT_CYCLE : currentCycleKey(task, today);
+    const key = task.type === 'oneshot' ? ONESHOT_CYCLE : (requested || current);
+    const cycles = this.store.taskCycleKeys(id);
+    if (current && !cycles.includes(current)) cycles.unshift(current);
+    cycles.sort().reverse();
+    const rows = key ? this.store.cycleRecords(id, key).filter(r => !r.is_test) : [];
+    const digestRow = task.type === 'oneshot'
+      ? { content: task.digest, updated_at: task.digest_updated_at }
+      : (key ? this.store.getCycleDigest(id, key) : null);
     sendJson(res, 200, {
-      ...this.taskJson(req, task, rows),
+      ...this.taskJson(task),
+      cycle_key: key,
+      current_cycle_key: current,
+      cycles,
+      member_count: rows.length,
+      submitted_count: rows.filter(r => r.status === 'submitted').length,
       members: rows.map(r => ({
         member_id: r.member_id,
         name: r.name,
-        status: r.status,
+        status: r.status || 'pending',
         link: this.memberLink(req, r.token),
         summary: parseList(r.summary),
         highlights: parseList(r.highlights),
@@ -386,6 +444,8 @@ export class Api {
         duration_s: r.duration_s || 0,
         updated_at: r.updated_at || null,
       })),
+      digest: digestRow?.content || '',
+      digest_updated_at: digestRow?.updated_at || null,
     });
   }
 
@@ -398,11 +458,11 @@ export class Api {
       if (!t || t.length > 120) return { error: 'invalid_title' };
       out.title = t;
     }
-    for (const [k, max] of [['brief', 20000], ['questions', 20000]]) {
+    for (const [k, camel] of [['brief', 'brief'], ['questions', 'questions'], ['digest_instruction', 'digestInstruction']]) {
       if (body[k] === undefined) continue;
       const v = String(body[k] ?? '');
-      if (v.length > max) return { error: `invalid_${k}` };
-      out[k] = v.trim() || null;
+      if (v.length > 20000) return { error: `invalid_${k}` };
+      out[camel] = v.trim() || null;
     }
     if (body.deadline !== undefined) {
       const v = String(body.deadline ?? '').trim();
@@ -418,6 +478,28 @@ export class Api {
     return { fields: out };
   }
 
+  // Cadence per the owner's ruling: structured options only (no cron) —
+  // daily / weekly with an ISO dow set / every N days anchored on a date.
+  readCadence(body, today) {
+    const type = String(body.cadence_type || '').trim();
+    if (!['daily', 'weekly', 'interval'].includes(type)) return { error: 'invalid_cadence_type' };
+    const out = { cadenceType: type, cadenceDow: null, cadenceIntervalDays: null, cadenceAnchor: null };
+    if (type === 'weekly') {
+      const dows = parseDowSet(body.cadence_dow);
+      if (!dows.length) return { error: 'invalid_cadence_dow' };
+      out.cadenceDow = dows.join(',');
+    }
+    if (type === 'interval') {
+      const n = Number(body.cadence_interval_days);
+      if (!Number.isInteger(n) || n < 1 || n > 365) return { error: 'invalid_cadence_interval' };
+      out.cadenceIntervalDays = n;
+      const anchor = String(body.cadence_anchor || '').trim();
+      if (anchor && !/^\d{4}-\d{2}-\d{2}$/.test(anchor)) return { error: 'invalid_cadence_anchor' };
+      out.cadenceAnchor = anchor || today;
+    }
+    return { fields: out };
+  }
+
   async createTask(req, res) {
     let body;
     try {
@@ -429,12 +511,20 @@ export class Api {
     if (parsed.error) return sendJson(res, 400, { error: parsed.error });
     if (!parsed.fields.title) return sendJson(res, 400, { error: 'invalid_title' });
 
+    const type = body.type === 'recurring' ? 'recurring' : 'oneshot';
+    let cadence = {};
+    if (type === 'recurring') {
+      const c = this.readCadence(body, todayLocal(this.getConfig().timeZone));
+      if (c.error) return sendJson(res, 400, { error: c.error });
+      cadence = c.fields;
+    }
+
     const ids = Array.isArray(body.member_ids) ? body.member_ids.map(Number) : [];
     const roster = new Map(this.store.listActiveMembers().map(mb => [mb.id, mb]));
     const memberIds = [...new Set(ids)].filter(id => roster.has(id));
     if (!memberIds.length) return sendJson(res, 400, { error: 'no_members' });
 
-    const task = this.store.createTask({ type: 'oneshot', ...parsed.fields });
+    const task = this.store.createTask({ type, ...parsed.fields, ...cadence });
     for (const memberId of memberIds) this.store.addTaskMember(task.id, memberId, newToken());
     return this.taskDetail(req, res, task.id);
   }
@@ -450,64 +540,102 @@ export class Api {
     }
     const parsed = this.readTaskFields(body);
     if (parsed.error) return sendJson(res, 400, { error: parsed.error });
-    this.store.updateTask(id, parsed.fields);
+    let cadence = {};
+    if (body.cadence_type !== undefined) {
+      // cadence is only meaningful on user-created recurring tasks; the
+      // built-in daily stays daily
+      if (task.type !== 'recurring' || task.is_builtin) return sendJson(res, 400, { error: 'cadence_not_editable' });
+      const c = this.readCadence(body, todayLocal(this.getConfig().timeZone));
+      if (c.error) return sendJson(res, 400, { error: c.error });
+      cadence = c.fields;
+    }
+    this.store.updateTask(id, { ...parsed.fields, ...cadence });
     return this.taskDetail(req, res, id);
   }
 
   async triggerDigest(req, res, id) {
     const task = this.store.getTask(id);
-    if (!task || task.type !== 'oneshot') return sendJson(res, 404, { error: 'not_found' });
+    if (!task || task.is_builtin) return sendJson(res, 404, { error: 'not_found' });
     let body = {};
     try {
       body = await readJsonBody(req);
     } catch { /* empty body is fine */ }
+    const opts = {};
+    if (body.close !== undefined) opts.close = Boolean(body.close);
+    const cycle = String(body.cycle || '').trim();
+    if (cycle && (cycle === ONESHOT_CYCLE || /^\d{4}-\d{2}-\d{2}$/.test(cycle))) opts.cycleKey = cycle;
     try {
-      const result = await this.digests.trigger(id, body.close === undefined ? {} : { close: Boolean(body.close) });
+      const result = await this.digests.trigger(id, opts);
       if (!result.ok) return sendJson(res, 409, { error: result.error });
-      return this.taskDetail(req, res, id);
+      return this.taskDetail(req, res, id, opts.cycleKey || null);
     } catch (err) {
       console.error('[rounds] digest trigger failed', err.message);
       return sendJson(res, 502, { error: 'digest_failed', message: err.message });
     }
   }
 
+  // close/reopen applies to every task; closing the built-in daily pauses the
+  // standup (its links stop resolving) without deleting anything.
   setTaskStatus(res, id, action) {
     const task = this.store.getTask(id);
-    if (!task || task.type !== 'oneshot') return sendJson(res, 404, { error: 'not_found' });
+    if (!task) return sendJson(res, 404, { error: 'not_found' });
     this.store.setTaskStatus(id, action === 'close' ? 'closed' : 'open');
     sendJson(res, 200, { id, status: this.store.getTask(id).status });
   }
 
   deleteTask(res, id) {
-    const info = this.store.deleteTask(id);
-    if (!info.changes) return sendJson(res, 404, { error: 'not_found' });
+    const task = this.store.getTask(id);
+    if (!task) return sendJson(res, 404, { error: 'not_found' });
+    if (task.is_builtin) return sendJson(res, 400, { error: 'builtin_undeletable' });
+    this.store.deleteTask(id);
     sendJson(res, 204, {});
   }
 
+  resetTaskToken(req, res, taskId, memberId) {
+    const tm = this.store.getTaskMember(taskId, memberId);
+    if (!tm) return sendJson(res, 404, { error: 'not_found' });
+    const token = newToken();
+    this.store.resetTaskMemberToken(taskId, memberId, token);
+    sendJson(res, 200, { task_id: taskId, member_id: memberId, link: this.memberLink(req, token) });
+  }
+
+  /** Cross-task member entity: roster + one link per open task (v0.7). */
+  memberJson(req, mb) {
+    return {
+      id: mb.id,
+      name: mb.name,
+      active: Boolean(mb.active),
+      context: mb.context || '',
+      profile: mb.profile || '',
+      profile_updated_at: mb.profile_updated_at || null,
+      links: this.store.memberTaskLinks(mb.id).map(l => ({
+        task_id: l.task_id,
+        title: l.title,
+        type: l.type,
+        is_builtin: Boolean(l.is_builtin),
+        link: this.memberLink(req, l.token),
+      })),
+    };
+  }
+
   listMembers(req, res) {
-    const members = this.store.listActiveMembers();
-    const date = todayLocal(this.getConfig().timeZone);
-    const done = new Set(this.store.submittedMemberIds(date));
     const test = this.store.getTestMember();
     sendJson(res, 200, {
-      date,
-      members: members.map(mb => ({
-        id: mb.id,
-        name: mb.name,
-        active: Boolean(mb.active),
-        reported_today: done.has(mb.id),
-        link: this.memberLink(req, mb.token),
-        context: mb.context || '',
-        profile: mb.profile || '',
-        profile_updated_at: mb.profile_updated_at || null,
-      })),
+      members: this.store.listActiveMembers().map(mb => this.memberJson(req, mb)),
       // built-in try-it member: shares the same talk flow, never counted
-      test_member: test ? {
-        id: test.id,
-        name: test.name,
-        link: this.memberLink(req, test.token),
-      } : null,
+      test_member: test ? this.memberJson(req, test) : null,
     });
+  }
+
+  /** Every member gets a link for the built-in daily task; rotate invalidates the old one. */
+  mintDailyLink(memberId, { rotate = false } = {}) {
+    const daily = this.store.getDailyTask();
+    if (!daily) return;
+    if (this.store.getTaskMember(daily.id, memberId)) {
+      if (rotate) this.store.resetTaskMemberToken(daily.id, memberId, newToken());
+    } else {
+      this.store.addTaskMember(daily.id, memberId, newToken());
+    }
   }
 
   async addMember(req, res) {
@@ -519,30 +647,19 @@ export class Api {
     }
     const name = String(body.name || '').trim();
     if (!name || name.length > 64) return sendJson(res, 400, { error: 'invalid_name' });
-    const token = newToken();
     try {
-      const info = this.store.addMember(name, token);
-      sendJson(res, 201, {
-        id: Number(info.lastInsertRowid),
-        name,
-        active: true,
-        reported_today: false,
-        link: this.memberLink(req, token),
-      });
+      const info = this.store.addMember(name, newToken());
+      const id = Number(info.lastInsertRowid);
+      this.mintDailyLink(id);
+      sendJson(res, 201, this.memberJson(req, this.store.getMemberById(id)));
     } catch (err) {
       if (!String(err.message).includes('UNIQUE')) throw err;
       const inactive = this.store.getInactiveMemberByName(name);
       if (!inactive) return sendJson(res, 409, { error: 'duplicate_name' });
-      this.store.reactivateMember(inactive.id, token);
-      const date = todayLocal(this.getConfig().timeZone);
-      const done = new Set(this.store.submittedMemberIds(date));
-      sendJson(res, 201, {
-        id: inactive.id,
-        name,
-        active: true,
-        reported_today: done.has(inactive.id),
-        link: this.memberLink(req, token),
-      });
+      this.store.reactivateMember(inactive.id, newToken());
+      // returning member: fresh daily link — the pre-deactivation one stays dead
+      this.mintDailyLink(inactive.id, { rotate: true });
+      sendJson(res, 201, this.memberJson(req, this.store.getMemberById(inactive.id)));
     }
   }
 
@@ -552,14 +669,6 @@ export class Api {
     const info = this.store.deactivateMember(id);
     if (!info.changes) return sendJson(res, 404, { error: 'not_found' });
     sendJson(res, 204, {});
-  }
-
-  resetToken(req, res, id) {
-    const member = this.store.getMemberById(id);
-    if (!member || !member.active) return sendJson(res, 404, { error: 'not_found' });
-    const token = newToken();
-    this.store.resetMemberToken(id, token);
-    sendJson(res, 200, { id, link: this.memberLink(req, token) });
   }
 
   history(res) {
@@ -573,11 +682,12 @@ export class Api {
     sendJson(res, 200, { days });
   }
 
-  dayReport(res, date) {
+  /** Day view of the built-in daily standup — shared by /api/reports/:date and the builtin task detail. */
+  dayReportJson(date) {
     const rows = this.store.dayReports(date);
     const members = this.store.listActiveMembers();
     const doneIds = new Set(rows.map(r => r.member_id));
-    sendJson(res, 200, {
+    return {
       date,
       member_count: members.length,
       reports: rows.map(r => ({
@@ -592,6 +702,10 @@ export class Api {
       })),
       missing: members.filter(mb => !doneIds.has(mb.id)).map(mb => mb.name),
       topics: rows.flatMap(r => parseList(r.topics).map(t => ({ name: r.name, topic: t }))),
-    });
+    };
+  }
+
+  dayReport(res, date) {
+    sendJson(res, 200, this.dayReportJson(date));
   }
 }

@@ -21,18 +21,28 @@ test('migrations create schema and are idempotent on reopen', () => {
   s2.close();
 });
 
-test('member lifecycle: add, token lookup, deactivate, reset', () => {
+test('member lifecycle: add, task-link lookup, reset, deactivate (v0.7 task×member tokens)', () => {
   const s = tmpStore();
   const info = s.addMember('李四', 'tokA');
   const id = Number(info.lastInsertRowid);
-  assert.equal(s.getMemberByToken('tokA').name, '李四');
   assert.throws(() => s.addMember('李四', 'tokB'), /UNIQUE/); // name unique
-  s.resetMemberToken(id, 'tokC');
-  assert.equal(s.getMemberByToken('tokA'), undefined);
-  assert.equal(s.getMemberByToken('tokC').id, id);
+  const daily = s.ensureDailyTask('每日日报');
+  s.addTaskMember(daily.id, id, 'linkA');
+  // the permanent member token never routes; only the task link does
+  assert.equal(s.getTaskSessionByToken('tokA'), null);
+  assert.equal(s.getTaskSessionByToken('linkA').member.name, '李四');
+  assert.equal(s.getTaskSessionByToken('linkA').task.id, daily.id);
+  s.resetTaskMemberToken(daily.id, id, 'linkB');
+  assert.equal(s.getTaskSessionByToken('linkA'), null); // old link dies
+  assert.equal(s.getTaskSessionByToken('linkB').member.id, id);
   s.deactivateMember(id);
-  assert.equal(s.getMemberByToken('tokC'), undefined); // inactive token rejected
+  assert.equal(s.getTaskSessionByToken('linkB'), null); // inactive member rejected
   assert.equal(s.listActiveMembers().length, 0);
+  // closing the task kills routing too
+  s.reactivateMember(id, 'tokA2');
+  assert.ok(s.getTaskSessionByToken('linkB'));
+  s.setTaskStatus(daily.id, 'closed');
+  assert.equal(s.getTaskSessionByToken('linkB'), null);
   s.close();
 });
 
@@ -76,8 +86,6 @@ test('deactivate then reactivate with same name preserves history', () => {
   assert.equal(inactive.id, id);
   s.reactivateMember(id, 'tokNew');
   assert.equal(s.listActiveMembers().length, 1);
-  assert.equal(s.getMemberByToken('tokNew').id, id);
-  assert.equal(s.getMemberByToken('tokS'), undefined);
   const rows = s.dayReports('2026-07-17');
   assert.equal(rows.length, 1);
   assert.deepEqual(JSON.parse(rows[0].yesterday), ['old']);
@@ -161,7 +169,9 @@ test('test member is excluded from rosters, digests, and history', () => {
   assert.equal(days.length, 1);
   assert.equal(Number(days[0].submitted), 1);
   assert.equal(Number(days[0].topics_count), 0); // test topics not counted
-  // token lookup still works for the talk flow
-  assert.equal(s.getMemberByToken('tokT').is_test, 1);
+  // the talk flow reaches the test member via its daily task link
+  const daily = s.ensureDailyTask('每日日报');
+  s.addTaskMember(daily.id, t.id, 'linkT');
+  assert.equal(s.getTaskSessionByToken('linkT').member.is_test, 1);
   s.close();
 });

@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Mic, Users, FileText, History, LogOut, Brain, Settings as SettingsIcon, ClipboardList } from 'lucide-react';
-import { cn, today } from '@/lib/utils';
+import { Mic, Users, LogOut, Brain, Settings as SettingsIcon, ClipboardList } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { api } from './api';
 import { useRoute, navigate } from './router';
 import LoginPage from './pages/LoginPage';
-import RosterPage from './pages/RosterPage';
-import ReportPage from './pages/ReportPage';
-import HistoryPage from './pages/HistoryPage';
+import MembersPage from './pages/MembersPage';
 import BrainPage from './pages/BrainPage';
 import SettingsPage from './pages/SettingsPage';
 import { TasksPage, TaskDetailPage } from './pages/TasksPage';
@@ -15,13 +13,11 @@ import { TasksPage, TaskDetailPage } from './pages/TasksPage';
 export default function App() {
   const route = useRoute();
   const [authed, setAuthed] = useState(null); // null = checking
-  const [reportDate, setReportDate] = useState('');
 
   useEffect(() => {
     api('api/auth/me')
       .then((r) => {
-        if (r?.authenticated && r?.date) {
-          setReportDate(r.date);
+        if (r?.authenticated) {
           setAuthed(true);
         } else {
           setAuthed(false);
@@ -39,15 +35,14 @@ export default function App() {
     for (let i = 0; i < 2; i++) {
       try {
         const r = await api('api/auth/me');
-        if (r?.authenticated && r?.date) {
-          setReportDate(r.date);
+        if (r?.authenticated) {
           setAuthed(true);
           navigate('#/');
           return;
         }
       } catch { /* retry once */ }
     }
-    throw new Error('date_fetch_failed');
+    throw new Error('auth_check_failed');
   }, []);
 
   const onLogout = useCallback(async () => {
@@ -68,20 +63,35 @@ export default function App() {
   if (!authed) return null; // redirecting to #/login
 
   return (
-    <Layout route={route} onLogout={onLogout} reportDate={reportDate}>
-      {route.name === 'roster' && <RosterPage />}
-      {route.name === 'report' && <ReportPage date={route.date} />}
-      {route.name === 'history' && <HistoryPage />}
+    <Layout route={route} onLogout={onLogout}>
+      {route.name === 'tasks' && <TasksPage />}
+      {route.name === 'task' && <TaskDetailPage id={route.id} cycle={route.cycle} />}
+      {route.name === 'members' && <MembersPage />}
       {route.name === 'brain' && <BrainPage />}
       {route.name === 'settings' && <SettingsPage />}
-      {route.name === 'tasks' && <TasksPage />}
-      {route.name === 'task' && <TaskDetailPage id={route.id} />}
+      {route.name === 'legacyReport' && <LegacyDailyRedirect date={route.date} />}
     </Layout>
   );
 }
 
-function Layout({ route, onLogout, reportDate, children }) {
-  const t = reportDate || today();
+// The old 今日报告/历史 hashes land inside the built-in daily task's detail.
+function LegacyDailyRedirect({ date }) {
+  useEffect(() => {
+    let cancelled = false;
+    api('api/tasks')
+      .then((r) => {
+        if (cancelled) return;
+        const daily = (r.tasks || []).find((t) => t.is_builtin);
+        if (daily) navigate(`#/tasks/${daily.id}${date ? `/c/${date}` : ''}`);
+        else navigate('#/');
+      })
+      .catch(() => { if (!cancelled) navigate('#/'); });
+    return () => { cancelled = true; };
+  }, [date]);
+  return <p className="text-sm text-muted-foreground">跳转中…</p>;
+}
+
+function Layout({ route, onLogout, children }) {
   const navRef = useRef(null);
 
   // on narrow screens the nav scrolls horizontally — keep the active tab in view
@@ -92,16 +102,9 @@ function Layout({ route, onLogout, reportDate, children }) {
     }
   }, [route.name]);
   const nav = [
-    { label: '管理', hash: '#/', icon: Users, active: route.name === 'roster' },
-    { label: '任务', hash: '#/tasks', icon: ClipboardList, active: route.name === 'tasks' || route.name === 'task' },
-    { label: '今日报告', hash: `#/report/${t}`, icon: FileText, active: route.name === 'report' && route.date === t },
-    {
-      label: '历史',
-      hash: '#/reports',
-      icon: History,
-      active: route.name === 'history' || (route.name === 'report' && route.date !== t),
-    },
-    { label: '背景/追问', hash: '#/brain', icon: Brain, active: route.name === 'brain' },
+    { label: '任务', hash: '#/', icon: ClipboardList, active: route.name === 'tasks' || route.name === 'task' || route.name === 'legacyReport' },
+    { label: '成员', hash: '#/members', icon: Users, active: route.name === 'members' },
+    { label: '大脑', hash: '#/brain', icon: Brain, active: route.name === 'brain' },
     { label: '设置', hash: '#/settings', icon: SettingsIcon, active: route.name === 'settings' },
   ];
 

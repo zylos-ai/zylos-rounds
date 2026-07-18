@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-07-18
+
+### Changed
+- **Unified task model (统一任务模型).** Recurring is no longer hardcoded to
+  the built-in daily report — any task can be recurring with a cadence of
+  daily, weekly (pick a weekday), or every N days. The daily report remains a
+  protected built-in recurring task (cannot be deleted, cadence fixed)
+- **All links are now per-(task, member).** Permanent per-member links are
+  abolished; the built-in daily report mints task links for every member on
+  startup (idempotent). Old permanent tokens stop resolving — links must be
+  re-distributed. Per-link reset via `POST
+  /api/tasks/:id/members/:mid/reset-token` or `cli.js task reset-link`
+- **Data is organized by cycle.** Conversations land in `cycle_records`
+  keyed by the cycle the session started in; digests are per-cycle
+  (`cycle_digests`) with a cycle switcher in the task detail UI. Cycle-end
+  auto digest runs on a scheduler tick when the task's digest mode allows it
+- **Admin SPA reorganized into 4 modules** — 任务 (home, absorbs 今日报告 +
+  历史 into the built-in task's detail), 成员 (cross-task member entities
+  with all their task links), 大脑, 设置. Legacy hashes `#/reports` and
+  `#/report/:date` redirect into the daily task detail
+
+### Added
+- **Per-task digest instruction (汇总 instruction).** Free-text override of
+  the default digest template, editable at creation and in task detail;
+  digests are regenerated with the custom instruction and flagged in the UI
+- **CLI cadence & cycle surface** — `task add --cadence daily|weekly|everyN
+  --dow --every --anchor`, `--digest-instruction`, `task links`, `task
+  cycles`, `task reset-link`, `digest --cycle`
+- Migration v6 (cycle_records/cycle_digests, task_members token unification,
+  legacy report backfill) with a data-migration test replaying v1→v5 schemas
+  against real-shaped data
+
 ## [0.6.1] - 2026-07-18
 
 ### Fixed

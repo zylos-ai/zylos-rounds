@@ -85,27 +85,28 @@ export class ProfileUpdater {
   }
 
   /**
-   * Merge a submitted oneshot-task conversation into the member's profile.
-   * Same contract as updateAfterReport: fire-and-forget, never throws.
+   * Merge a submitted generic-task conversation (cycle record) into the
+   * member's profile. Same contract as updateAfterReport: fire-and-forget,
+   * never throws.
    */
-  async updateAfterTaskSession(memberId, taskId) {
+  async updateAfterTaskSession(memberId, taskId, cycleKey) {
     try {
       const member = this.store.getMemberById(memberId);
       if (!member || member.is_test) return false;
       const task = this.store.getTask(taskId);
-      const tm = this.store.taskMembers(taskId).find(r => r.member_id === memberId);
-      if (!task || !tm || tm.status !== 'submitted') return false;
+      const rec = this.store.getCycleRecord(taskId, memberId, cycleKey);
+      if (!task || !rec || rec.status !== 'submitted') return false;
       const key = this.settings.resolveKey();
       if (!key) return false;
 
       const today = new Date().toLocaleDateString('sv', { timeZone: this.getConfig().timeZone || 'Asia/Shanghai' });
-      let transcript = (tm.transcript || '').trim();
+      let transcript = (rec.transcript || '').trim();
       if (transcript.length > MAX_TRANSCRIPT_CHARS) transcript = `…${transcript.slice(-MAX_TRANSCRIPT_CHARS)}`;
       const prompt = [
         `你负责维护团队成员「${member.name}」的动态画像。画像是一份随沟通持续演化的备忘，帮助语音助手理解这个人的工作上下文。今天是 ${today}。`,
         (member.context || '').trim() ? `【人工填写的基础背景】（仅作参考，不要复制进画像）\n${member.context.trim()}` : null,
         (member.profile || '').trim() ? `【现有画像】\n${member.profile.trim()}` : `【现有画像】（还没有，今天是第一次生成）`,
-        `【今天的一对一沟通】主题：${task.title}\n${section('要点', parseList(tm.summary))}\n${section('重点信号', parseList(tm.highlights))}`,
+        `【今天的一对一沟通】主题：${task.title}\n${section('要点', parseList(rec.summary))}\n${section('重点信号', parseList(rec.highlights))}`,
         transcript ? `【今天的原始对话】\n${transcript}` : null,
         `请输出更新后的完整画像，要求：
 - 内容围绕：角色/职责、在做的项目及进展脉络、持续的关注点、反复出现的卡点、工作习惯，以及对话中透露的其他有助于沟通的信息。

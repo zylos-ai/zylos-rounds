@@ -1,46 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { MessageCircle, History, Target, TriangleAlert, Users, MessagesSquare, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { api } from '../api';
 
-export default function ReportPage({ date }) {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    let cancelled = false;
-    setData(null);
-    setError('');
-    api(`api/reports/${date}`)
-      .then((d) => {
-        if (!cancelled) setData(d);
-      })
-      .catch((err) => {
-        if (!cancelled && err.status !== 401) setError('加载失败，请刷新重试');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [date]);
-
-  if (error) return <p className="text-sm text-destructive">{error}</p>;
-  if (!data) return <p className="text-sm text-muted-foreground">加载中…</p>;
-
+/**
+ * Presentational day view of the built-in daily standup (topics highlight,
+ * per-member four-bucket cards, missing roster). Rendered inside the daily
+ * task's detail page — the successor of the old 今日报告/历史 pages.
+ */
+export default function DayReportView({ data }) {
   const reports = data.reports || [];
   const missing = data.missing || [];
   const topics = data.topics || [];
-  const total = reports.length + missing.length;
 
   return (
     <>
-      <p className="mb-2 text-sm font-medium text-muted-foreground">
-        已汇报 {reports.length}/{total} 人 · 由语音对话自动生成
-      </p>
-      <h1 className="text-4xl font-bold tracking-tight max-sm:text-3xl">日报汇总 · {data.date || date}</h1>
-
       {/* meeting focus highlight */}
-      <Card className="mb-4 mt-8 border-primary-line bg-gradient-to-b from-primary-soft to-card">
+      <Card className="border-primary-line bg-gradient-to-b from-primary-soft to-card">
         <CardHeader>
           <CardTitle className="text-lg">
             <MessageCircle className="h-5 w-5 text-primary" strokeWidth={1.75} />
@@ -60,7 +36,7 @@ export default function ReportPage({ date }) {
                 </li>
               ))
             ) : (
-              <li className="text-faint">今天没有待议题</li>
+              <li className="text-faint">这一天没有待议题</li>
             )}
           </ul>
         </CardContent>
@@ -91,7 +67,7 @@ export default function ReportPage({ date }) {
       </div>
 
       {/* missing */}
-      <Card className="mt-4">
+      <Card>
         <CardHeader>
           <CardTitle className="text-lg">
             <Users className="h-5 w-5 text-muted-foreground" strokeWidth={1.75} />

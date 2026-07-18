@@ -43,10 +43,10 @@ export default function BrainPage() {
 
   return (
     <>
-      <h1 className="text-4xl font-bold tracking-tight max-sm:text-3xl">背景与追问</h1>
+      <h1 className="text-4xl font-bold tracking-tight max-sm:text-3xl">大脑</h1>
       <p className="mt-3 max-w-[680px] text-base text-muted-foreground">
-        这里维护语音助手的「大脑」：团队背景和追问指引会在每次通话时注入给助手；知识库供助手在对话中按需检索。
-        改动即时生效，作用于下一次开始的通话。
+        这里维护语音助手的全局「大脑」：团队背景和追问指引会在每次通话（所有任务）时注入给助手；知识库供助手在对话中按需检索。
+        任务级的 brief / 问题框架在各任务里维护，作用域只有那个任务，会叠加在这里的全局内容之上。改动即时生效，作用于下一次开始的通话。
       </p>
 
       {loadError ? <p className="mt-6 text-sm text-destructive">{loadError}</p> : null}

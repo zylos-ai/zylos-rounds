@@ -9,7 +9,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-const MIGRATIONS = [
+// Exported for the migration test (which replays v1..v5 then upgrades).
+export const MIGRATIONS = [
   {
     version: 1,
     sql: `
@@ -122,6 +123,56 @@ const MIGRATIONS = [
         PRIMARY KEY(task_id, member_id)
       );
       ALTER TABLE reports ADD COLUMN task_id INTEGER;
+    `,
+  },
+  {
+    // v0.7 unified task model. Owner rulings 2026-07-18 (evening):
+    //   - recurring tasks are user-creatable with a cadence (daily / weekly
+    //     dow set / every-N-days); the built-in daily standup becomes a
+    //     protected instance (is_builtin=1) keeping its structured pipeline
+    //   - ALL links are per-(task, member): the permanent member token no
+    //     longer routes anywhere (task_members.token is the only credential)
+    //   - data is organized per cycle: generic conversation output lives in
+    //     cycle_records keyed (task, member, cycle_key); a oneshot task is the
+    //     degenerate single cycle '-'; the built-in daily keeps `reports`
+    //     (its four-bucket standup shape) with report_date as the cycle key
+    //   - per-cycle digests for recurring tasks live in cycle_digests; the
+    //     digest instruction is customizable per task (NULL = default template)
+    version: 6,
+    sql: `
+      ALTER TABLE tasks ADD COLUMN cadence_type TEXT;
+      ALTER TABLE tasks ADD COLUMN cadence_dow TEXT;
+      ALTER TABLE tasks ADD COLUMN cadence_interval_days INTEGER;
+      ALTER TABLE tasks ADD COLUMN cadence_anchor TEXT;
+      ALTER TABLE tasks ADD COLUMN digest_instruction TEXT;
+      ALTER TABLE tasks ADD COLUMN is_builtin INTEGER NOT NULL DEFAULT 0;
+      UPDATE tasks SET is_builtin=1, cadence_type='daily'
+        WHERE type='recurring' AND id=(SELECT MIN(id) FROM tasks WHERE type='recurring');
+
+      CREATE TABLE IF NOT EXISTS cycle_records (
+        task_id INTEGER NOT NULL REFERENCES tasks(id),
+        member_id INTEGER NOT NULL REFERENCES members(id),
+        cycle_key TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'draft',
+        summary TEXT, highlights TEXT, transcript TEXT, duration_s INTEGER,
+        created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+        PRIMARY KEY(task_id, member_id, cycle_key)
+      );
+      INSERT INTO cycle_records(task_id,member_id,cycle_key,status,summary,highlights,transcript,duration_s,updated_at)
+        SELECT task_id, member_id, '-', status, summary, highlights, transcript, duration_s,
+               COALESCE(updated_at, datetime('now','localtime'))
+        FROM task_members
+        WHERE status='submitted' OR summary IS NOT NULL OR transcript IS NOT NULL;
+
+      CREATE TABLE IF NOT EXISTS cycle_digests (
+        task_id INTEGER NOT NULL REFERENCES tasks(id),
+        cycle_key TEXT NOT NULL,
+        content TEXT,
+        auto_fired INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+        PRIMARY KEY(task_id, cycle_key)
+      );
     `,
   },
 ];
@@ -255,10 +306,6 @@ export class Store {
     `).all(memberId, excludeDate, limit);
   }
 
-  getMemberByToken(token) {
-    return this.db.prepare('SELECT * FROM members WHERE token=? AND active=1').get(token);
-  }
-
   /** Regular (non-test) active members — the roster all stats are counted against. */
   listActiveMembers() {
     return this.db.prepare('SELECT * FROM members WHERE active=1 AND is_test=0 ORDER BY id').all();
@@ -304,10 +351,6 @@ export class Store {
 
   deactivateMember(id) {
     return this.db.prepare('UPDATE members SET active=0 WHERE id=? AND active=1').run(id);
-  }
-
-  resetMemberToken(id, token) {
-    return this.db.prepare('UPDATE members SET token=? WHERE id=? AND active=1').run(token, id);
   }
 
   // ---- reports ----
@@ -363,16 +406,16 @@ export class Store {
 
   // ---- communication tasks (沟通任务) ----
 
-  /** Seed the single built-in recurring daily-standup task. Idempotent. */
+  /** Seed the built-in daily-standup task (is_builtin=1, cadence daily). Idempotent. */
   ensureDailyTask(title) {
-    const existing = this.db.prepare("SELECT * FROM tasks WHERE type='recurring' ORDER BY id LIMIT 1").get();
+    const existing = this.getDailyTask();
     if (existing) return existing;
-    this.db.prepare("INSERT INTO tasks(type,title) VALUES('recurring',?)").run(title);
-    return this.db.prepare("SELECT * FROM tasks WHERE type='recurring' ORDER BY id LIMIT 1").get();
+    this.db.prepare("INSERT INTO tasks(type,title,is_builtin,cadence_type) VALUES('recurring',?,1,'daily')").run(title);
+    return this.getDailyTask();
   }
 
   getDailyTask() {
-    return this.db.prepare("SELECT * FROM tasks WHERE type='recurring' ORDER BY id LIMIT 1").get();
+    return this.db.prepare('SELECT * FROM tasks WHERE is_builtin=1 ORDER BY id LIMIT 1').get();
   }
 
   getTask(id) {
@@ -383,11 +426,15 @@ export class Store {
     return this.db.prepare('SELECT * FROM tasks ORDER BY (type=\'recurring\') DESC, id DESC').all();
   }
 
-  createTask({ type, title, brief, questions, deadline, digestAutoAt, digestCloseLinked }) {
+  createTask({ type, title, brief, questions, deadline, digestAutoAt, digestCloseLinked,
+    cadenceType, cadenceDow, cadenceIntervalDays, cadenceAnchor, digestInstruction }) {
     const info = this.db.prepare(`
-      INSERT INTO tasks(type,title,brief,questions,deadline,digest_auto_at,digest_close_linked)
-      VALUES(?,?,?,?,?,?,?)
-    `).run(type, title, brief ?? null, questions ?? null, deadline ?? null, digestAutoAt ?? null, digestCloseLinked ? 1 : 0);
+      INSERT INTO tasks(type,title,brief,questions,deadline,digest_auto_at,digest_close_linked,
+        cadence_type,cadence_dow,cadence_interval_days,cadence_anchor,digest_instruction)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(type, title, brief ?? null, questions ?? null, deadline ?? null, digestAutoAt ?? null,
+      digestCloseLinked ? 1 : 0, cadenceType ?? null, cadenceDow ?? null,
+      cadenceIntervalDays ?? null, cadenceAnchor ?? null, digestInstruction ?? null);
     return this.getTask(Number(info.lastInsertRowid));
   }
 
@@ -395,6 +442,9 @@ export class Store {
     const cols = {
       title: 'title', brief: 'brief', questions: 'questions', deadline: 'deadline',
       digestAutoAt: 'digest_auto_at', digestCloseLinked: 'digest_close_linked',
+      digestInstruction: 'digest_instruction',
+      cadenceType: 'cadence_type', cadenceDow: 'cadence_dow',
+      cadenceIntervalDays: 'cadence_interval_days', cadenceAnchor: 'cadence_anchor',
     };
     const sets = [];
     const vals = [];
@@ -436,23 +486,54 @@ export class Store {
     `).all(nowLocalIso);
   }
 
+  /** Delete a non-builtin task and everything keyed to it. */
   deleteTask(id) {
+    const task = this.getTask(id);
+    if (!task || task.is_builtin) return { changes: 0 };
     this.db.prepare('DELETE FROM task_members WHERE task_id=?').run(id);
-    return this.db.prepare("DELETE FROM tasks WHERE id=? AND type='oneshot'").run(id);
+    this.db.prepare('DELETE FROM cycle_records WHERE task_id=?').run(id);
+    this.db.prepare('DELETE FROM cycle_digests WHERE task_id=?').run(id);
+    return this.db.prepare('DELETE FROM tasks WHERE id=?').run(id);
   }
 
   addTaskMember(taskId, memberId, token) {
-    this.db.prepare('INSERT INTO task_members(task_id,member_id,token) VALUES(?,?,?)').run(taskId, memberId, token);
+    this.db.prepare(`
+      INSERT INTO task_members(task_id,member_id,token) VALUES(?,?,?)
+      ON CONFLICT(task_id,member_id) DO NOTHING
+    `).run(taskId, memberId, token);
+  }
+
+  removeTaskMember(taskId, memberId) {
+    this.db.prepare('DELETE FROM task_members WHERE task_id=? AND member_id=?').run(taskId, memberId);
+  }
+
+  getTaskMember(taskId, memberId) {
+    return this.db.prepare('SELECT * FROM task_members WHERE task_id=? AND member_id=?').get(taskId, memberId);
+  }
+
+  resetTaskMemberToken(taskId, memberId, token) {
+    return this.db.prepare('UPDATE task_members SET token=? WHERE task_id=? AND member_id=?').run(token, taskId, memberId);
   }
 
   taskMembers(taskId) {
     return this.db.prepare(`
-      SELECT tm.*, m.name, m.active FROM task_members tm JOIN members m ON m.id=tm.member_id
+      SELECT tm.task_id, tm.member_id, tm.token, m.name, m.active, m.is_test
+      FROM task_members tm JOIN members m ON m.id=tm.member_id
       WHERE tm.task_id=? ORDER BY m.id
     `).all(taskId);
   }
 
-  /** Resolve a per-task link token → { task, member } for open tasks only. */
+  /** All open-task link rows for one member — the member page's link list. */
+  memberTaskLinks(memberId) {
+    return this.db.prepare(`
+      SELECT tm.task_id, tm.token, t.title, t.type, t.is_builtin
+      FROM task_members tm JOIN tasks t ON t.id=tm.task_id
+      WHERE tm.member_id=? AND t.status='open'
+      ORDER BY t.is_builtin DESC, t.id DESC
+    `).all(memberId);
+  }
+
+  /** Resolve a per-(task, member) link token → { task, member } for open tasks only. */
   getTaskSessionByToken(token) {
     const row = this.db.prepare(`
       SELECT tm.task_id, tm.member_id FROM task_members tm
@@ -464,21 +545,78 @@ export class Store {
     return { task: this.getTask(row.task_id), member: this.getMemberById(row.member_id) };
   }
 
-  submitTaskSummary(taskId, memberId, summary, highlights) {
-    this.db.prepare(`
-      UPDATE task_members SET status='submitted', summary=?, highlights=?,
-        updated_at=datetime('now','localtime') WHERE task_id=? AND member_id=?
-    `).run(summary ?? null, highlights ?? null, taskId, memberId);
+  // ---- per-cycle conversation records (generic shape; oneshot cycle_key='-') ----
+
+  cycleRecords(taskId, cycleKey) {
+    return this.db.prepare(`
+      SELECT tm.member_id, tm.token, m.name, m.active, m.is_test,
+        cr.status, cr.summary, cr.highlights, cr.transcript, cr.duration_s, cr.updated_at
+      FROM task_members tm
+      JOIN members m ON m.id=tm.member_id
+      LEFT JOIN cycle_records cr ON cr.task_id=tm.task_id AND cr.member_id=tm.member_id AND cr.cycle_key=?
+      WHERE tm.task_id=? ORDER BY m.id
+    `).all(cycleKey, taskId);
   }
 
-  appendTaskTranscript(taskId, memberId, transcript, durationS) {
+  getCycleRecord(taskId, memberId, cycleKey) {
+    return this.db.prepare(`
+      SELECT * FROM cycle_records WHERE task_id=? AND member_id=? AND cycle_key=?
+    `).get(taskId, memberId, cycleKey);
+  }
+
+  /** Distinct cycle keys a task has data or a digest for (newest first). */
+  taskCycleKeys(taskId) {
+    return this.db.prepare(`
+      SELECT cycle_key FROM (
+        SELECT cycle_key FROM cycle_records WHERE task_id=?
+        UNION SELECT cycle_key FROM cycle_digests WHERE task_id=?
+      ) ORDER BY cycle_key DESC
+    `).all(taskId, taskId).map(r => r.cycle_key);
+  }
+
+  submitCycleSummary(taskId, memberId, cycleKey, summary, highlights) {
     this.db.prepare(`
-      UPDATE task_members SET
-        transcript=COALESCE(transcript,'')||CASE WHEN transcript IS NULL THEN '' ELSE char(10) END||?,
-        duration_s=COALESCE(duration_s,0)+?,
+      INSERT INTO cycle_records(task_id,member_id,cycle_key,status,summary,highlights)
+      VALUES(?,?,?,'submitted',?,?)
+      ON CONFLICT(task_id,member_id,cycle_key) DO UPDATE SET status='submitted',
+        summary=excluded.summary, highlights=excluded.highlights,
         updated_at=datetime('now','localtime')
-      WHERE task_id=? AND member_id=?
-    `).run(transcript, durationS, taskId, memberId);
+    `).run(taskId, memberId, cycleKey, summary ?? null, highlights ?? null);
+  }
+
+  appendCycleTranscript(taskId, memberId, cycleKey, transcript, durationS) {
+    this.db.prepare(`
+      INSERT INTO cycle_records(task_id,member_id,cycle_key,status,transcript,duration_s)
+      VALUES(?,?,?,'draft',?,?)
+      ON CONFLICT(task_id,member_id,cycle_key) DO UPDATE SET
+        transcript=COALESCE(cycle_records.transcript,'')||CASE WHEN cycle_records.transcript IS NULL THEN '' ELSE char(10) END||excluded.transcript,
+        duration_s=COALESCE(cycle_records.duration_s,0)+excluded.duration_s,
+        updated_at=datetime('now','localtime')
+    `).run(taskId, memberId, cycleKey, transcript, durationS);
+  }
+
+  // ---- per-cycle digests (recurring tasks; oneshot keeps tasks.digest) ----
+
+  getCycleDigest(taskId, cycleKey) {
+    return this.db.prepare('SELECT * FROM cycle_digests WHERE task_id=? AND cycle_key=?').get(taskId, cycleKey);
+  }
+
+  setCycleDigest(taskId, cycleKey, content, { autoFired } = {}) {
+    this.db.prepare(`
+      INSERT INTO cycle_digests(task_id,cycle_key,content,auto_fired)
+      VALUES(?,?,?,?)
+      ON CONFLICT(task_id,cycle_key) DO UPDATE SET
+        content=COALESCE(excluded.content, cycle_digests.content),
+        auto_fired=MAX(cycle_digests.auto_fired, excluded.auto_fired),
+        updated_at=datetime('now','localtime')
+    `).run(taskId, cycleKey, content ?? null, autoFired ? 1 : 0);
+  }
+
+  /** Open, non-builtin recurring tasks — the auto cycle-digest scheduler's scan set. */
+  openRecurringTasks() {
+    return this.db.prepare(`
+      SELECT * FROM tasks WHERE status='open' AND type='recurring' AND is_builtin=0
+    `).all();
   }
 
   // ---- auth sessions ----
