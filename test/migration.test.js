@@ -66,3 +66,35 @@ test('v6 migration: builtin flag + task_members payloads copied to cycle_records
   assert.equal(s2.getCycleRecord(2, 1, '-').status, 'submitted');
   s2.close();
 });
+
+/**
+ * v8 migration: providers table seeded with the builtin, and a legacy
+ * DB-stored OpenAI key moves onto the builtin row.
+ */
+test('v8 migration: builtin provider seeded, legacy openai_api_key migrates onto it', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rounds-mig8-'));
+  const dbPath = path.join(dir, 'test.db');
+
+  const db = new DatabaseSync(dbPath);
+  db.exec(`CREATE TABLE schema_migrations (
+    version INTEGER PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+  )`);
+  for (const m of MIGRATIONS.filter(x => x.version <= 7)) {
+    db.exec(m.sql);
+    db.prepare('INSERT INTO schema_migrations(version) VALUES(?)').run(m.version);
+  }
+  db.prepare("INSERT INTO settings(key,value) VALUES('openai_api_key','sk-legacy-db-key')").run();
+  db.close();
+
+  const s = new Store(dbPath);
+  const p = s.getProvider('openai');
+  assert.equal(p.is_builtin, 1);
+  assert.equal(p.base_url, 'https://api.openai.com');
+  assert.equal(p.cap_realtime, 1);
+  assert.equal(p.cap_models, 1);
+  assert.equal(p.api_key, 'sk-legacy-db-key');
+  // the legacy settings row is gone — the provider row is the single source
+  assert.equal(s.getSetting('openai_api_key'), null);
+  s.close();
+});

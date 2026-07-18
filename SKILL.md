@@ -1,6 +1,6 @@
 ---
 name: rounds
-version: 0.7.3
+version: 0.8.0
 description: >-
   Rounds (formerly standup) — delegated 1:1 structured voice conversations for
   teams. An AI agent (OpenAI Realtime, Chinese voice) talks to each member via
@@ -101,6 +101,15 @@ surfaces (roster, daily digest, history) sit behind password login
 
 `OPENAI_API_KEY` and `HTTPS_PROXY` are read from `~/zylos/.env` (process.env
 wins) — they are never stored in config.json.
+
+Since v0.8 model connections are managed as **providers** (settings page or
+CLI): each provider carries a base URL + write-only API key + capability
+flags (Realtime voice / models listing), all spoken over the
+OpenAI-compatible protocol. The builtin `openai` provider maps to the .env
+key; voice / profile / digest each select a provider + model
+(`settings set --voice-provider/--profile-provider/--digest-provider`,
+`provider list/add/set/remove/models/test`). config.json model keys remain
+the fallback layer under the settings DB.
 
 To reset the admin password: write a plaintext value into `auth.password`,
 restart the service — it is migrated to a scrypt hash on startup and printed

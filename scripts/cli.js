@@ -69,7 +69,16 @@ Reports & settings
   report history                      per-day submission counts
   settings get
   settings set [--model M] [--voice V] [--profile-model M] [--digest-model M]
-                                      profile/digest = text models for 画像/汇总; '' reverts to default
+               [--voice-provider S] [--profile-provider S] [--digest-provider S]
+                                      models for 画像/汇总 + provider slug per slot; '' reverts to default
+
+Providers (v0.8)
+  provider list
+  provider add <name> --base-url URL [--slug S] [--api-key K] [--realtime true] [--models true]
+  provider set <slug> [--name N] [--base-url URL] [--api-key K|--clear-api-key] [--realtime B] [--models B]
+  provider remove <slug>              refused while referenced by a slot or builtin
+  provider models <slug>              fetch the provider's /v1/models list
+  provider test <slug> [--model M]    connectivity probe (with --model: one minimal completion)
 
 All output is JSON. Long text is best piped via stdin:
   cat notes.md | cli.js member set-context 3
@@ -292,8 +301,40 @@ async function run(target, cmd, sub, args, flags) {
       if (flags.voice) body.voice = flags.voice;
       if (flags['profile-model'] !== undefined) body.profile_model = flags['profile-model'];
       if (flags['digest-model'] !== undefined) body.digest_model = flags['digest-model'];
-      if (!Object.keys(body).length) fail('usage: settings set [--model M] [--voice V] [--profile-model M] [--digest-model M]');
+      for (const slot of ['voice', 'profile', 'digest']) {
+        if (flags[`${slot}-provider`] !== undefined) body[`${slot}_provider`] = flags[`${slot}-provider`];
+      }
+      if (!Object.keys(body).length) fail('usage: settings set [--model M] [--voice V] [--profile-model M] [--digest-model M] [--voice-provider S] [--profile-provider S] [--digest-provider S]');
       return put('/api/settings', body);
+    }
+
+    case 'provider list': return get('/api/providers');
+    case 'provider add': {
+      const body = { name: args[0] };
+      if (!body.name) fail('usage: provider add <name> --base-url URL [--slug S] [--api-key K] [--realtime true] [--models true]');
+      if (flags['base-url']) body.base_url = flags['base-url'];
+      if (flags.slug) body.slug = flags.slug;
+      if (flags['api-key']) body.api_key = flags['api-key'];
+      if (flags.realtime !== undefined) body.cap_realtime = flags.realtime !== 'false';
+      if (flags.models !== undefined) body.cap_models = flags.models !== 'false';
+      return post('/api/providers', body);
+    }
+    case 'provider set': {
+      const slug = args[0] || fail('usage: provider set <slug> [--name N] [--base-url URL] [--api-key K|--clear-api-key] [--realtime true|false] [--models true|false]');
+      const body = {};
+      if (flags.name) body.name = flags.name;
+      if (flags['base-url']) body.base_url = flags['base-url'];
+      if (flags['clear-api-key'] !== undefined) body.clear_api_key = true;
+      else if (flags['api-key'] !== undefined) body.api_key = flags['api-key'];
+      if (flags.realtime !== undefined) body.cap_realtime = flags.realtime !== 'false';
+      if (flags.models !== undefined) body.cap_models = flags.models !== 'false';
+      return put(`/api/providers/${slug}`, body);
+    }
+    case 'provider remove': return del(`/api/providers/${args[0] || fail('usage: provider remove <slug>')}`).then(() => ({ ok: true, removed: args[0] }));
+    case 'provider models': return get(`/api/providers/${args[0] || fail('usage: provider models <slug>')}/models`);
+    case 'provider test': {
+      const slug = args[0] || fail('usage: provider test <slug> [--model M]');
+      return post(`/api/providers/${slug}/test`, flags.model ? { model: flags.model } : {});
     }
 
     default:

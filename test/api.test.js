@@ -328,3 +328,60 @@ test('text models: DB > config > default layering, digest follows profile, blank
     close();
   }
 });
+
+test('providers: builtin seeded, CRUD, builtin guard, in-use delete guard, slot validation', async () => {
+  const { call, close } = await boot();
+  try {
+    // builtin present and effectively serving all three slots
+    let list = (await call('GET', '/api/providers')).data.providers;
+    assert.equal(list.length, 1);
+    const builtin = list[0];
+    assert.equal(builtin.slug, 'openai');
+    assert.equal(builtin.is_builtin, true);
+    assert.deepEqual(builtin.in_use.sort(), ['digest', 'profile', 'voice']);
+    assert.equal(builtin.key_source, 'none');
+
+    // legacy key card still works — now backed by the builtin provider row
+    let s = (await call('PUT', '/api/settings', { openai_key: 'sk-db-key' })).data;
+    assert.equal(s.openai_key_source, 'db');
+    s = (await call('PUT', '/api/settings', { clear_openai_key: true })).data;
+    assert.equal(s.openai_key_source, 'none');
+
+    // create a custom text-only provider (slug generated from the name)
+    const created = await call('POST', '/api/providers', {
+      name: 'My Gateway', base_url: 'https://gw.example.com/', api_key: 'sk-gw', cap_models: true,
+    });
+    assert.equal(created.status, 201);
+    assert.equal(created.data.slug, 'my-gateway');
+    assert.equal(created.data.base_url, 'https://gw.example.com'); // trailing slash stripped
+    assert.equal(created.data.key_source, 'db');
+    assert.equal(created.data.cap_realtime, false);
+
+    // builtin identity is fixed; its key is the only editable field
+    assert.equal((await call('PUT', '/api/providers/openai', { base_url: 'https://evil.example.com' })).status, 400);
+    assert.equal((await call('PUT', '/api/providers/openai', { api_key: 'sk-x' })).status, 200);
+
+    // voice slot refuses non-realtime providers; text slots accept them
+    assert.equal((await call('PUT', '/api/settings', { voice_provider: 'my-gateway' })).status, 400);
+    assert.equal((await call('PUT', '/api/settings', { profile_provider: 'nope' })).status, 400);
+    s = (await call('PUT', '/api/settings', { profile_provider: 'my-gateway' })).data;
+    assert.equal(s.profile_provider_effective, 'my-gateway');
+    assert.equal(s.digest_provider_effective, 'openai');
+
+    // referenced provider cannot be deleted; clearing the slot frees it
+    const denied = await call('DELETE', '/api/providers/my-gateway');
+    assert.equal(denied.status, 400);
+    assert.deepEqual(denied.data, { error: 'in_use', slots: ['profile'] });
+    await call('PUT', '/api/settings', { profile_provider: '' });
+    assert.equal((await call('DELETE', '/api/providers/my-gateway')).status, 204);
+
+    // builtin cannot be deleted
+    assert.equal((await call('DELETE', '/api/providers/openai')).status, 400);
+
+    // voice model is free text since v0.8 (custom realtime-capable endpoints)
+    s = (await call('PUT', '/api/settings', { model: 'my-realtime-model' })).data;
+    assert.equal(s.model, 'my-realtime-model');
+  } finally {
+    close();
+  }
+});

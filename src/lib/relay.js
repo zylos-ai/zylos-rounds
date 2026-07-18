@@ -206,14 +206,15 @@ export class Relay {
 
   session(client, member, task = null) {
     const cfg = this.getConfig();
-    const apiKey = this.settings.resolveKey();
+    const conn = this.settings.voiceConnection();
+    const apiKey = conn.key;
     if (!apiKey) {
-      safeSend(client, { type: 'app.error', message: '尚未配置 OpenAI API Key，请管理员在设置页配置' });
+      safeSend(client, { type: 'app.error', message: '尚未配置语音 provider 的 API Key，请管理员在设置页配置' });
       client.close();
       return;
     }
     const generic = task && !task.is_builtin;
-    const model = this.settings.resolveModel();
+    const model = conn.model;
     const maxSessionMs = cfg.maxSessionMs ?? 10 * 60 * 1000;
     const reportDate = todayLocal(cfg.timeZone);
     // Conversations bind to the cycle current at connect time (lenient windows).
@@ -233,8 +234,8 @@ export class Relay {
     let saved = false;
     console.log(`[rounds] session start ${member.name}${generic ? ` (task #${task.id} ${task.title}, cycle ${cycleKey})` : ''}`);
 
-    const upstream = new WebSocket(`wss://api.openai.com/v1/realtime?model=${model}`, {
-      agent: this.env.proxy ? new HttpsProxyAgent(this.env.proxy) : undefined,
+    const upstream = new WebSocket(`${conn.wsUrl}?model=${model}`, {
+      agent: this.env.proxy && conn.wsUrl.startsWith('wss:') ? new HttpsProxyAgent(this.env.proxy) : undefined,
       headers: { Authorization: `Bearer ${apiKey}` },
     });
 

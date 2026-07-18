@@ -181,6 +181,31 @@ export const MIGRATIONS = [
       ALTER TABLE tasks ADD COLUMN probe_instruction TEXT;
     `,
   },
+  {
+    // v0.8 provider framework: providers own connection info (base URL, key,
+    // capability flags); usage slots in settings reference them by slug.
+    // The builtin 'openai' row replaces the implicit global OpenAI connection;
+    // a legacy DB-stored key migrates onto it (env key still wins at runtime).
+    version: 8,
+    sql: `
+      CREATE TABLE IF NOT EXISTS providers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        slug TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        base_url TEXT NOT NULL,
+        api_key TEXT,
+        cap_realtime INTEGER NOT NULL DEFAULT 0,
+        cap_models INTEGER NOT NULL DEFAULT 0,
+        is_builtin INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+      );
+      INSERT INTO providers(slug,name,base_url,cap_realtime,cap_models,is_builtin)
+        VALUES ('openai','OpenAI 官方','https://api.openai.com',1,1,1);
+      UPDATE providers SET api_key=(SELECT value FROM settings WHERE key='openai_api_key')
+        WHERE slug='openai';
+      DELETE FROM settings WHERE key='openai_api_key';
+    `,
+  },
 ];
 
 export class Store {
@@ -220,6 +245,43 @@ export class Store {
 
   deleteSetting(key) {
     this.db.prepare('DELETE FROM settings WHERE key=?').run(key);
+  }
+
+  // ---- providers (v0.8 model provider framework) ----
+  listProviders() {
+    return this.db.prepare('SELECT * FROM providers ORDER BY is_builtin DESC, id').all();
+  }
+
+  getProvider(slug) {
+    return this.db.prepare('SELECT * FROM providers WHERE slug=?').get(slug) ?? null;
+  }
+
+  createProvider({ slug, name, baseUrl, apiKey, capRealtime, capModels }) {
+    this.db.prepare(`
+      INSERT INTO providers(slug,name,base_url,api_key,cap_realtime,cap_models,is_builtin)
+      VALUES(?,?,?,?,?,?,0)
+    `).run(slug, name, baseUrl, apiKey || null, capRealtime ? 1 : 0, capModels ? 1 : 0);
+    return this.getProvider(slug);
+  }
+
+  updateProvider(slug, patch) {
+    const cur = this.getProvider(slug);
+    if (!cur) return null;
+    const next = {
+      name: patch.name ?? cur.name,
+      base_url: patch.baseUrl ?? cur.base_url,
+      api_key: patch.apiKey !== undefined ? (patch.apiKey || null) : cur.api_key,
+      cap_realtime: patch.capRealtime !== undefined ? (patch.capRealtime ? 1 : 0) : cur.cap_realtime,
+      cap_models: patch.capModels !== undefined ? (patch.capModels ? 1 : 0) : cur.cap_models,
+    };
+    this.db.prepare(`
+      UPDATE providers SET name=?, base_url=?, api_key=?, cap_realtime=?, cap_models=? WHERE slug=?
+    `).run(next.name, next.base_url, next.api_key, next.cap_realtime, next.cap_models, slug);
+    return this.getProvider(slug);
+  }
+
+  deleteProvider(slug) {
+    this.db.prepare('DELETE FROM providers WHERE slug=? AND is_builtin=0').run(slug);
   }
 
   // ---- agent context (background + probing guidance containers) ----

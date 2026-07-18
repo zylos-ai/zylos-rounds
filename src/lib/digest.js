@@ -102,14 +102,13 @@ export class DigestGenerator {
     if (!key) return null;
     const rows = this.store.cycleRecords(taskId, key);
     if (!rows.some(r => r.status === 'submitted')) return null;
-    const apiKey = this.settings.resolveKey();
-    if (!apiKey) return null;
+    const conn = this.settings.textConnection('digest');
+    if (!conn.key) return null;
 
-    const cfg = this.getConfig();
     const text = await callChatModel({
-      base: cfg.profileApiBase,
-      model: this.settings.resolveDigestModel(),
-      key: apiKey,
+      base: conn.base,
+      model: conn.model,
+      key: conn.key,
       prompt: this.buildPrompt(task, rows, key),
       proxy: this.env.proxy,
       timeoutMs: 120_000,

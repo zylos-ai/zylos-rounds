@@ -4,9 +4,10 @@
  * e.g. /standup/), so never start a path with '/'.
  */
 export class ApiError extends Error {
-  constructor(status, message) {
+  constructor(status, message, data = null) {
     super(message || `HTTP ${status}`);
     this.status = status;
+    this.data = data; // parsed error body (e.g. { error, slots }) when JSON
   }
 }
 
@@ -22,13 +23,13 @@ export async function api(path, { method = 'GET', body } = {}) {
     throw new ApiError(401, 'unauthorized');
   }
   if (!res.ok) {
-    let msg = '';
+    let data = null;
     try {
-      msg = (await res.json()).error || '';
+      data = await res.json();
     } catch {
       /* non-JSON error body */
     }
-    throw new ApiError(res.status, msg);
+    throw new ApiError(res.status, data?.error || '', data);
   }
   if (res.status === 204) return null;
   try {

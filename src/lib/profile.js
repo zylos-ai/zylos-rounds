@@ -34,7 +34,7 @@ export class ProfileUpdater {
     this.store = store;
     this.getConfig = getConfig;
     this.env = env;       // { openaiApiKey, proxy }
-    this.settings = settings; // resolveKey(): env > DB > none
+    this.settings = settings; // textConnection('profile'): provider + key + model
   }
 
   buildPrompt(member, report, todayDate) {
@@ -68,11 +68,11 @@ export class ProfileUpdater {
       if (!member || member.is_test) return false;
       const report = this.store.getReport(memberId, reportDate);
       if (!report || report.status !== 'submitted') return false;
-      const key = this.settings.resolveKey();
-      if (!key) return false;
+      const conn = this.settings.textConnection('profile');
+      if (!conn.key) return false;
 
       const prompt = this.buildPrompt(member, report, reportDate);
-      const text = await this.callModel(key, prompt);
+      const text = await this.callModel(conn, prompt);
       const profile = String(text || '').trim().slice(0, MAX_PROFILE_CHARS);
       if (!profile) return false;
       this.store.setMemberProfile(member.id, profile);
@@ -96,8 +96,8 @@ export class ProfileUpdater {
       const task = this.store.getTask(taskId);
       const rec = this.store.getCycleRecord(taskId, memberId, cycleKey);
       if (!task || !rec || rec.status !== 'submitted') return false;
-      const key = this.settings.resolveKey();
-      if (!key) return false;
+      const conn = this.settings.textConnection('profile');
+      if (!conn.key) return false;
 
       const today = new Date().toLocaleDateString('sv', { timeZone: this.getConfig().timeZone || 'Asia/Shanghai' });
       let transcript = (rec.transcript || '').trim();
@@ -116,7 +116,7 @@ export class ProfileUpdater {
 - 总长不超过 500 字。只输出画像条目本身，不要任何解释、标题或多余文字。`,
       ].filter(Boolean).join('\n\n');
 
-      const text = await this.callModel(key, prompt);
+      const text = await this.callModel(conn, prompt);
       const profile = String(text || '').trim().slice(0, MAX_PROFILE_CHARS);
       if (!profile) return false;
       this.store.setMemberProfile(member.id, profile);
@@ -128,12 +128,12 @@ export class ProfileUpdater {
     }
   }
 
-  /** One chat-completions call. profileApiBase override exists for E2E mocks. */
-  callModel(key, prompt) {
+  /** One chat-completions call on the profile slot's resolved connection. */
+  callModel(conn, prompt) {
     return callChatModel({
-      base: this.getConfig().profileApiBase,
-      model: this.settings.resolveProfileModel(),
-      key,
+      base: conn.base,
+      model: conn.model,
+      key: conn.key,
       prompt,
       proxy: this.env.proxy,
     });

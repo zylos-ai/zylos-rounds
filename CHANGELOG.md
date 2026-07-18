@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-07-19
+
+### Added
+- **Model provider framework (模型 Provider 框架).** Providers are now
+  first-class entities: each holds a name, base URL, write-only API key and
+  capability flags (Realtime voice / models listing), all accessed through
+  the OpenAI-compatible protocol. The builtin "OpenAI 官方" provider replaces
+  the old implicit global connection; an `OPENAI_API_KEY` in `.env` still
+  overrides its key
+- **Per-use-slot provider + model selection.** Voice conversation, profile
+  updater (画像) and task digest (汇总) each pick a provider and model
+  independently; the voice slot only accepts Realtime-capable providers.
+  Unset slots fall back to the builtin — upgrading changes nothing
+- **Model list refresh.** Providers supporting `/v1/models` get a one-click
+  list refresh feeding the model input's suggestions; others take a free
+  model name plus the connectivity test. The voice model whitelist is gone —
+  the old three options remain as suggestions only
+- **Settings page rework**: provider management card (add / edit / delete /
+  connectivity probe; deleting a referenced or builtin provider is refused
+  with the referencing slots named), voice and text model cards gain
+  provider dropdowns and refresh buttons
+- **API**: `GET/POST /api/providers`, `PUT/DELETE /api/providers/:slug`,
+  `GET /api/providers/:slug/models`, `POST /api/providers/:slug/test`;
+  `/api/settings` gains `{voice,profile,digest}_provider` (+`_effective`);
+  `test-text-model` accepts a `provider` slug
+- **CLI**: `provider list/add/set/remove/models/test`, plus
+  `settings set --voice-provider/--profile-provider/--digest-provider`
+
+### Changed
+- DB migration v8: `providers` table seeded with the builtin; a legacy
+  DB-stored OpenAI key migrates onto it (single source of truth)
+
 ## [0.7.3] - 2026-07-19
 
 ### Added

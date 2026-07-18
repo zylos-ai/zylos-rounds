@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sendJson, readJsonBody, browserOrigin, todayLocal } from './http-util.js';
-import { MODEL_OPTIONS, VOICE_OPTIONS } from './settings.js';
+import { MODEL_OPTIONS, VOICE_OPTIONS, SLOTS } from './settings.js';
 import { ONESHOT_CYCLE, currentCycleKey, cadenceLabel, parseDowSet } from './cycle.js';
 
 const SAMPLES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'assets', 'voice-samples');
@@ -162,6 +162,19 @@ export class Api {
     m = p.match(/^\/api\/reports\/(\d{4}-\d{2}-\d{2})$/);
     if (m && req.method === 'GET') return this.dayReport(res, m[1]), true;
 
+    if (p === '/api/providers' && req.method === 'GET') return this.listProviders(res), true;
+    if (p === '/api/providers' && req.method === 'POST') return await this.createProvider(req, res), true;
+
+    m = p.match(/^\/api\/providers\/([a-z0-9-]+)$/);
+    if (m && req.method === 'PUT') return await this.updateProvider(req, res, m[1]), true;
+    if (m && req.method === 'DELETE') return this.deleteProvider(res, m[1]), true;
+
+    m = p.match(/^\/api\/providers\/([a-z0-9-]+)\/models$/);
+    if (m && req.method === 'GET') return await this.providerModels(res, m[1]), true;
+
+    m = p.match(/^\/api\/providers\/([a-z0-9-]+)\/test$/);
+    if (m && req.method === 'POST') return await this.testProvider(req, res, m[1]), true;
+
     if (p === '/api/settings' && req.method === 'GET') return this.getSettings(res), true;
     if (p === '/api/settings' && req.method === 'PUT') return await this.putSettings(req, res), true;
     if (p === '/api/settings/test-connection' && req.method === 'POST') {
@@ -197,14 +210,147 @@ export class Api {
     res.end(data);
   }
 
+  // ---- providers (v0.8) ----
+
+  // Keys are write-only: the view exposes only where a key comes from.
+  providerView(p) {
+    return {
+      slug: p.slug,
+      name: p.name,
+      base_url: p.base_url,
+      key_source: this.settings.providerKeySource(p), // 'env' | 'db' | 'none'
+      cap_realtime: Boolean(p.cap_realtime),
+      cap_models: Boolean(p.cap_models),
+      is_builtin: Boolean(p.is_builtin),
+      in_use: SLOTS.filter(s => this.settings.slotProvider(s)?.slug === p.slug),
+    };
+  }
+
+  listProviders(res) {
+    sendJson(res, 200, { providers: this.store.listProviders().map(p => this.providerView(p)) });
+  }
+
+  /** Validate + normalize provider body fields shared by create/update. */
+  providerFields(body) {
+    const out = {};
+    if (body.name !== undefined) {
+      const name = String(body.name).trim();
+      if (!name || name.length > 64) return { error: 'invalid_name' };
+      out.name = name;
+    }
+    if (body.base_url !== undefined) {
+      const baseUrl = String(body.base_url).trim().replace(/\/+$/, '');
+      if (!/^https?:\/\/\S+$/.test(baseUrl) || baseUrl.length > 256) return { error: 'invalid_base_url' };
+      out.baseUrl = baseUrl;
+    }
+    if (body.clear_api_key === true) out.apiKey = '';
+    else if (body.api_key !== undefined) {
+      const key = String(body.api_key).trim();
+      if (key.length > 512) return { error: 'invalid_key' };
+      out.apiKey = key;
+    }
+    if (body.cap_realtime !== undefined) out.capRealtime = Boolean(body.cap_realtime);
+    if (body.cap_models !== undefined) out.capModels = Boolean(body.cap_models);
+    return { fields: out };
+  }
+
+  async createProvider(req, res) {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      return sendJson(res, 400, { error: 'bad_request' });
+    }
+    const { fields, error } = this.providerFields(body);
+    if (error) return sendJson(res, 400, { error });
+    if (!fields.name || !fields.baseUrl) return sendJson(res, 400, { error: fields.name ? 'invalid_base_url' : 'invalid_name' });
+
+    let slug;
+    if (body.slug !== undefined) {
+      slug = String(body.slug).trim();
+      if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(slug)) return sendJson(res, 400, { error: 'invalid_slug' });
+      if (this.store.getProvider(slug)) return sendJson(res, 409, { error: 'slug_taken' });
+    } else {
+      const base = fields.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'provider';
+      slug = base;
+      for (let n = 2; this.store.getProvider(slug); n++) slug = `${base}-${n}`;
+    }
+    const created = this.store.createProvider({ slug, ...fields });
+    return sendJson(res, 201, this.providerView(created));
+  }
+
+  async updateProvider(req, res, slug) {
+    const provider = this.store.getProvider(slug);
+    if (!provider) return sendJson(res, 404, { error: 'not_found' });
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      return sendJson(res, 400, { error: 'bad_request' });
+    }
+    const { fields, error } = this.providerFields(body);
+    if (error) return sendJson(res, 400, { error });
+    // The builtin's identity is fixed; only its key is editable.
+    if (provider.is_builtin && (fields.name !== undefined || fields.baseUrl !== undefined
+      || fields.capRealtime !== undefined || fields.capModels !== undefined)) {
+      return sendJson(res, 400, { error: 'builtin_readonly' });
+    }
+    const updated = this.store.updateProvider(slug, fields);
+    return sendJson(res, 200, this.providerView(updated));
+  }
+
+  // Owner's ruling: a referenced provider cannot be deleted — change the
+  // referencing slots first. The response names them.
+  deleteProvider(res, slug) {
+    const provider = this.store.getProvider(slug);
+    if (!provider) return sendJson(res, 404, { error: 'not_found' });
+    if (provider.is_builtin) return sendJson(res, 400, { error: 'builtin' });
+    const slots = SLOTS.filter(s => this.settings.storedSlotProvider(s) === slug);
+    if (slots.length) return sendJson(res, 400, { error: 'in_use', slots });
+    this.store.deleteProvider(slug);
+    res.writeHead(204);
+    res.end();
+  }
+
+  async providerModels(res, slug) {
+    const provider = this.store.getProvider(slug);
+    if (!provider) return sendJson(res, 404, { error: 'not_found' });
+    if (!provider.cap_models) return sendJson(res, 400, { error: 'not_supported' });
+    return sendJson(res, 200, await this.settings.listModels(provider));
+  }
+
+  /** body.model: probe that model; without one, probe the models endpoint. */
+  async testProvider(req, res, slug) {
+    const provider = this.store.getProvider(slug);
+    if (!provider) return sendJson(res, 404, { error: 'not_found' });
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      return sendJson(res, 400, { error: 'bad_request' });
+    }
+    const model = String(body.model || '').trim();
+    if (model.length > 128) return sendJson(res, 400, { error: 'invalid_model' });
+    if (model) return sendJson(res, 200, await this.settings.testTextModel(model, provider));
+    if (!provider.cap_models) return sendJson(res, 400, { error: 'model_required' });
+    return sendJson(res, 200, await this.settings.testConnection(provider));
+  }
+
   // The key itself is write-only: GET exposes only whether/where one is set.
   getSettings(res) {
     sendJson(res, 200, {
-      openai_key_source: this.settings.keySource(), // 'env' | 'db' | 'none'
+      openai_key_source: this.settings.keySource(), // builtin provider: 'env' | 'db' | 'none'
       model: this.settings.resolveModel(),
       voice: this.settings.resolveVoice(),
-      model_options: MODEL_OPTIONS,
+      model_options: MODEL_OPTIONS, // suggestions only since v0.8
       voice_options: VOICE_OPTIONS,
+      // usage slots: stored provider slug ('' = default builtin) + effective slug
+      voice_provider: this.settings.storedSlotProvider('voice'),
+      profile_provider: this.settings.storedSlotProvider('profile'),
+      digest_provider: this.settings.storedSlotProvider('digest'),
+      voice_provider_effective: this.settings.slotProvider('voice')?.slug,
+      profile_provider_effective: this.settings.slotProvider('profile')?.slug,
+      digest_provider_effective: this.settings.slotProvider('digest')?.slug,
       // text models: stored value ('' = unset, defaults apply) + what applies then
       profile_model: this.settings.storedProfileModel(),
       digest_model: this.settings.storedDigestModel(),
@@ -223,12 +369,25 @@ export class Api {
       return sendJson(res, 400, { error: 'bad_request' });
     }
     if (body.model !== undefined) {
-      if (!MODEL_OPTIONS.includes(body.model)) return sendJson(res, 400, { error: 'invalid_model' });
-      this.settings.setModel(body.model);
+      const v = String(body.model).trim();
+      if (!v || v.length > 128) return sendJson(res, 400, { error: 'invalid_model' });
+      this.settings.setModel(v);
     }
     if (body.voice !== undefined) {
       if (!VOICE_OPTIONS.includes(body.voice)) return sendJson(res, 400, { error: 'invalid_voice' });
       this.settings.setVoice(body.voice);
+    }
+    // usage slots: '' reverts to the default (builtin) provider
+    for (const slot of SLOTS) {
+      const field = `${slot}_provider`;
+      if (body[field] === undefined) continue;
+      const slug = String(body[field]).trim();
+      if (slug) {
+        const provider = this.store.getProvider(slug);
+        if (!provider) return sendJson(res, 400, { error: 'unknown_provider' });
+        if (slot === 'voice' && !provider.cap_realtime) return sendJson(res, 400, { error: 'not_realtime_capable' });
+      }
+      this.settings.setSlotProvider(slot, slug);
     }
     if (body.profile_model !== undefined) {
       const v = String(body.profile_model).trim();
@@ -250,7 +409,10 @@ export class Api {
     return this.getSettings(res);
   }
 
-  /** Probe a text model with one minimal completion; body.model defaults to the effective profile model. */
+  /**
+   * Probe a text model with one minimal completion. body.model defaults to
+   * the effective profile model; body.provider (slug) to the builtin.
+   */
   async testTextModel(req, res) {
     let body;
     try {
@@ -260,7 +422,12 @@ export class Api {
     }
     const model = String(body.model || '').trim() || this.settings.resolveProfileModel();
     if (model.length > 128) return sendJson(res, 400, { error: 'invalid_model' });
-    return sendJson(res, 200, await this.settings.testTextModel(model));
+    let provider;
+    if (body.provider !== undefined && String(body.provider).trim()) {
+      provider = this.store.getProvider(String(body.provider).trim());
+      if (!provider) return sendJson(res, 400, { error: 'unknown_provider' });
+    }
+    return sendJson(res, 200, await this.settings.testTextModel(model, provider ?? undefined));
   }
 
   // ---- agent context containers (background + probing guidance) ----

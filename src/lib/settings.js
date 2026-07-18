@@ -1,23 +1,30 @@
 /**
- * Runtime settings resolved from three layers:
+ * Runtime settings over the v0.8 provider framework.
  *
- *   OpenAI API key:  ~/zylos/.env (or process.env)  >  settings DB  >  none
- *   model / voice:   settings DB (admin UI)  >  config.json  >  defaults
+ * Providers (DB table) own connection info: base URL, API key (write-only at
+ * the API surface), capability flags (realtime WS / models listing). The
+ * builtin 'openai' provider replaces the old implicit global connection; for
+ * it — and only it — an OPENAI_API_KEY in ~/zylos/.env overrides the DB key,
+ * keeping existing key-in-.env deployments working untouched.
  *
- * The env layer keeps existing key-in-.env deployments working untouched;
- * the DB layer lets a fresh install be configured entirely from the admin
- * page. The key is write-only at the API surface — GET never returns it.
+ * Usage slots (voice / profile / digest) reference a provider by slug via the
+ * settings DB and fall back to the builtin. Model / voice resolution keeps
+ * the existing layering: settings DB > config.json > defaults; the digest
+ * model additionally falls back to the profile model.
  */
 
 import { request as httpsRequest } from 'node:https';
+import { request as httpRequest } from 'node:http';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { callChatModel } from './llm.js';
 import { DEFAULT_PROFILE_MODEL } from './profile.js';
 
+export const BUILTIN_PROVIDER = 'openai';
+// Suggestions (datalist) — no longer a validation whitelist since v0.8.
 export const MODEL_OPTIONS = ['gpt-realtime-2.1', 'gpt-realtime', 'gpt-realtime-mini'];
 export const VOICE_OPTIONS = ['marin', 'cedar', 'coral', 'sage', 'shimmer', 'alloy', 'ash', 'ballad', 'echo', 'verse'];
 
-const KEY_SETTING = 'openai_api_key';
+export const SLOTS = ['voice', 'profile', 'digest'];
 
 export class Settings {
   constructor(store, getConfig, env) {
@@ -26,23 +33,61 @@ export class Settings {
     this.env = env; // loadEnvSecrets() result: { openaiApiKey, proxy }
   }
 
+  // ---- providers ----
+
+  builtinProvider() {
+    return this.store.getProvider(BUILTIN_PROVIDER);
+  }
+
+  /** Effective key for a provider. Env key applies to the builtin only. */
+  providerKey(provider) {
+    if (!provider) return '';
+    if (provider.is_builtin) return this.env.openaiApiKey || provider.api_key || '';
+    return provider.api_key || '';
+  }
+
+  /** 'env' | 'db' | 'none' — where a provider's effective key comes from. */
+  providerKeySource(provider) {
+    if (!provider) return 'none';
+    if (provider.is_builtin && this.env.openaiApiKey) return 'env';
+    return provider.api_key ? 'db' : 'none';
+  }
+
+  // Legacy surface (builtin provider's key) — startup check + settings card.
   keySource() {
-    if (this.env.openaiApiKey) return 'env';
-    if (this.store.getSetting(KEY_SETTING)) return 'db';
-    return 'none';
+    return this.providerKeySource(this.builtinProvider());
   }
 
   resolveKey() {
-    return this.env.openaiApiKey || this.store.getSetting(KEY_SETTING) || '';
+    return this.providerKey(this.builtinProvider());
   }
 
   setKey(value) {
-    this.store.setSetting(KEY_SETTING, value);
+    this.store.updateProvider(BUILTIN_PROVIDER, { apiKey: value });
   }
 
   clearKey() {
-    this.store.deleteSetting(KEY_SETTING);
+    this.store.updateProvider(BUILTIN_PROVIDER, { apiKey: '' });
   }
+
+  // ---- usage slots ----
+
+  storedSlotProvider(slot) {
+    return this.store.getSetting(`${slot}_provider`) || '';
+  }
+
+  setSlotProvider(slot, slug) {
+    if (slug) this.store.setSetting(`${slot}_provider`, slug);
+    else this.store.deleteSetting(`${slot}_provider`);
+  }
+
+  /** Provider row for a slot; unset or dangling references fall back to the builtin. */
+  slotProvider(slot) {
+    const slug = this.storedSlotProvider(slot);
+    return (slug && this.store.getProvider(slug)) || this.builtinProvider();
+  }
+
+  // ---- models / voice (layering unchanged: DB > config.json > defaults) ----
 
   resolveModel() {
     return this.store.getSetting('model') || this.getConfig().model || MODEL_OPTIONS[0];
@@ -59,10 +104,6 @@ export class Settings {
   setVoice(value) {
     this.store.setSetting('voice', value);
   }
-
-  // ---- text models (profile updater 画像 / task digest 汇总) ----
-  // Same layering as model/voice: settings DB > config.json > defaults.
-  // The digest model falls back to the profile model when unset anywhere.
 
   storedProfileModel() {
     return this.store.getSetting('profile_model') || '';
@@ -98,16 +139,101 @@ export class Settings {
     else this.store.deleteSetting('digest_model');
   }
 
+  // ---- resolved connections ----
+
+  /** Everything the realtime relay needs to dial the voice session. */
+  voiceConnection() {
+    const provider = this.slotProvider('voice');
+    const base = (provider?.base_url || 'https://api.openai.com').replace(/\/+$/, '');
+    return {
+      provider,
+      key: this.providerKey(provider),
+      wsUrl: `${base.replace(/^http/i, 'ws')}/v1/realtime`,
+      model: this.resolveModel(),
+      voice: this.resolveVoice(),
+    };
+  }
+
+  /** Connection for one-shot text calls. kind: 'profile' | 'digest'. */
+  textConnection(kind) {
+    const provider = this.slotProvider(kind);
+    return {
+      provider,
+      key: this.providerKey(provider),
+      // profileApiBase remains a global test/E2E override for text calls
+      base: this.getConfig().profileApiBase || provider?.base_url,
+      model: kind === 'digest' ? this.resolveDigestModel() : this.resolveProfileModel(),
+    };
+  }
+
+  // ---- probes ----
+
+  /** Cheap key + connectivity probe against a provider's models endpoint. */
+  testConnection(provider = this.builtinProvider()) {
+    const key = this.providerKey(provider);
+    if (!key) return Promise.resolve({ ok: false, error: 'no_key' });
+    const base = (provider.base_url || '').replace(/\/+$/, '');
+    return new Promise(resolve => {
+      const doRequest = base.startsWith('https:') ? httpsRequest : httpRequest;
+      const req = doRequest(`${base}/v1/models`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${key}` },
+        agent: base.startsWith('https:') && this.env.proxy ? new HttpsProxyAgent(this.env.proxy) : undefined,
+        timeout: 10_000,
+      }, res => {
+        res.resume(); // drain — only the status matters
+        if (res.statusCode >= 200 && res.statusCode < 300) resolve({ ok: true });
+        else resolve({ ok: false, error: res.statusCode === 401 ? 'invalid_key' : `http_${res.statusCode}` });
+      });
+      req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: 'timeout' }); });
+      req.on('error', () => resolve({ ok: false, error: 'network' }));
+      req.end();
+    });
+  }
+
+  /** Fetch a provider's model list via GET /v1/models. */
+  listModels(provider) {
+    const key = this.providerKey(provider);
+    if (!key) return Promise.resolve({ ok: false, error: 'no_key' });
+    const base = (provider.base_url || '').replace(/\/+$/, '');
+    return new Promise(resolve => {
+      const doRequest = base.startsWith('https:') ? httpsRequest : httpRequest;
+      const req = doRequest(`${base}/v1/models`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${key}` },
+        agent: base.startsWith('https:') && this.env.proxy ? new HttpsProxyAgent(this.env.proxy) : undefined,
+        timeout: 15_000,
+      }, res => {
+        let data = '';
+        res.on('data', c => { data += c; });
+        res.on('end', () => {
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            return resolve({ ok: false, error: res.statusCode === 401 ? 'invalid_key' : `http_${res.statusCode}` });
+          }
+          try {
+            const ids = (JSON.parse(data).data || []).map(m => m.id).filter(Boolean).sort();
+            resolve({ ok: true, models: ids });
+          } catch {
+            resolve({ ok: false, error: 'bad_response' });
+          }
+        });
+      });
+      req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: 'timeout' }); });
+      req.on('error', () => resolve({ ok: false, error: 'network' }));
+      req.end();
+    });
+  }
+
   /**
-   * Verify a text model actually answers: one minimal chat-completions call
-   * with the resolved key. Honors profileApiBase (E2E mocks / custom base).
+   * Verify a text model actually answers on a given provider: one minimal
+   * chat-completions call. Honors the global profileApiBase E2E override.
    */
-  async testTextModel(model) {
-    const key = this.resolveKey();
+  async testTextModel(model, provider = this.builtinProvider()) {
+    const key = this.providerKey(provider);
     if (!key) return { ok: false, error: 'no_key' };
     try {
       await callChatModel({
-        base: this.getConfig().profileApiBase,
+        base: this.getConfig().profileApiBase || provider?.base_url,
         model,
         key,
         prompt: '只回复两个字符：OK',
@@ -122,26 +248,5 @@ export class Settings {
       if (m.includes('timeout')) return { ok: false, error: 'timeout' };
       return { ok: false, error: 'network' };
     }
-  }
-
-  /** Cheap key + connectivity probe: GET /v1/models with the resolved key. */
-  testConnection() {
-    const key = this.resolveKey();
-    if (!key) return Promise.resolve({ ok: false, error: 'no_key' });
-    return new Promise(resolve => {
-      const req = httpsRequest('https://api.openai.com/v1/models?limit=1', {
-        method: 'GET',
-        headers: { Authorization: `Bearer ${key}` },
-        agent: this.env.proxy ? new HttpsProxyAgent(this.env.proxy) : undefined,
-        timeout: 10_000,
-      }, res => {
-        res.resume(); // drain — only the status matters
-        if (res.statusCode >= 200 && res.statusCode < 300) resolve({ ok: true });
-        else resolve({ ok: false, error: res.statusCode === 401 ? 'invalid_key' : `http_${res.statusCode}` });
-      });
-      req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: 'timeout' }); });
-      req.on('error', () => resolve({ ok: false, error: 'network' }));
-      req.end();
-    });
   }
 }

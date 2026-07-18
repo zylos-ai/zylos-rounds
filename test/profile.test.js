@@ -13,7 +13,7 @@ function setup() {
     store,
     () => ({}),
     { openaiApiKey: 'sk-test', proxy: null },
-    { resolveKey: () => 'sk-test' },
+    { textConnection: () => ({ key: 'sk-test', base: null, model: 'model-x' }) },
   );
   return { store, updater };
 }
