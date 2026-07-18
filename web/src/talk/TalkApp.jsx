@@ -122,7 +122,17 @@ export default function TalkApp() {
         aiDone: () => {
           aiIdRef.current = null;
         },
-        userText: (t) => setMessages((ms) => [...ms, { id: nid(), role: 'me', text: t }]),
+        userPending: (itemId) => setMessages((ms) => (
+          ms.some((m) => m.key === itemId) ? ms : [...ms, { id: nid(), key: itemId, role: 'me', text: '', pending: true }]
+        )),
+        userText: (t, itemId) => setMessages((ms) => {
+          if (itemId && ms.some((m) => m.key === itemId)) {
+            return t
+              ? ms.map((m) => (m.key === itemId ? { ...m, text: t, pending: false } : m))
+              : ms.filter((m) => m.key !== itemId);
+          }
+          return t ? [...ms, { id: nid(), key: itemId, role: 'me', text: t }] : ms;
+        }),
         responseDone: () => {
           if (doneRef.current) return;
           setPhase('listening');
@@ -254,8 +264,8 @@ export default function TalkApp() {
   }
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-[640px] flex-col px-5 pb-[calc(16px+env(safe-area-inset-bottom))]">
-      <header className="flex items-center gap-2.5 pb-2 pt-5">
+    <div className="mx-auto flex h-dvh w-full max-w-[640px] flex-col overflow-hidden px-5 pb-[calc(16px+env(safe-area-inset-bottom))]">
+      <header className="flex shrink-0 items-center gap-2.5 pb-2 pt-5">
         <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
           <Mic className="h-[18px] w-[18px]" strokeWidth={2} />
         </span>
@@ -280,8 +290,8 @@ export default function TalkApp() {
         </div>
       </header>
 
-      {/* stage */}
-      <div className="flex flex-col items-center pb-1.5 pt-4">
+      {/* stage — fixed; only the chat log below scrolls */}
+      <div className="flex shrink-0 flex-col items-center pb-1.5 pt-4">
         {orb}
 
         <div className={cn('mt-3 flex h-9 items-center justify-center', !inCall && 'invisible')}>
@@ -298,25 +308,27 @@ export default function TalkApp() {
         )}
       </div>
 
-      {/* chat log */}
-      <div ref={logRef} className="mt-4 flex flex-1 flex-col gap-2 overflow-y-auto pb-2">
-        {messages.map((m) => (
-          <div
-            key={m.id}
-            className={cn(
-              'max-w-[86%] whitespace-pre-wrap rounded-lg border px-3.5 py-2.5 text-[0.92rem] leading-relaxed',
-              m.role === 'ai'
-                ? 'self-start border-border-strong bg-card shadow-xs'
-                : 'self-end border-primary-line bg-primary-soft'
-            )}
-          >
-            {m.text}
-          </div>
-        ))}
-      </div>
+      {/* chat log — the page's only scroll region; the stage above stays put */}
+      <div ref={logRef} className="mt-4 min-h-0 flex-1 overflow-y-auto">
+        <div className="flex flex-col gap-2 pb-2">
+          {messages.map((m) => (
+            <div
+              key={m.id}
+              className={cn(
+                'max-w-[86%] whitespace-pre-wrap rounded-lg border px-3.5 py-2.5 text-[0.92rem] leading-relaxed',
+                m.role === 'ai'
+                  ? 'self-start border-border-strong bg-card shadow-xs'
+                  : 'self-end border-primary-line bg-primary-soft',
+                m.pending && 'text-muted-foreground'
+              )}
+            >
+              {m.text || (m.pending ? '…' : '')}
+            </div>
+          ))}
+        </div>
 
-      {/* submitted summary */}
-      {summary && (
+        {/* submitted summary — lives inside the scroll region */}
+        {summary && (
         <div ref={summaryRef} className="mb-1.5 mt-3.5">
           <Card>
             <CardContent className="py-5">
@@ -331,7 +343,8 @@ export default function TalkApp() {
             </CardContent>
           </Card>
         </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

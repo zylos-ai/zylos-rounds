@@ -163,8 +163,17 @@ export class TalkEngine {
         case 'response.output_audio_transcript.done':
           this.on.aiDone();
           break;
+        // User item appears (in true order) before the reply starts — let the
+        // app reserve a bubble; the async ASR text fills it in later.
+        case 'conversation.item.added':
+        case 'conversation.item.created':
+          if (ev.item?.type === 'message' && ev.item?.role === 'user') this.on.userPending(ev.item.id);
+          break;
         case 'conversation.item.input_audio_transcription.completed':
-          if (ev.transcript && ev.transcript.trim()) this.on.userText(ev.transcript.trim());
+          this.on.userText((ev.transcript || '').trim(), ev.item_id);
+          break;
+        case 'conversation.item.input_audio_transcription.failed':
+          this.on.userText('', ev.item_id); // drop the reserved bubble
           break;
         case 'response.done':
           this.on.responseDone();

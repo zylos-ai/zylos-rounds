@@ -251,9 +251,13 @@ export class Relay {
       try { client.close(); } catch { /* already closed */ }
       self.active = Math.max(0, self.active - 1);
       const dur = Math.round((Date.now() - startedAt) / 1000);
-      if (transcript.length) {
-        if (generic) store.appendCycleTranscript(task.id, member.id, cycleKey, transcript.join('\n'), dur);
-        else store.appendTranscript(member.id, reportDate, transcript.join('\n'), dur, model, saved);
+      // Entries are ordered slots: user slots are inserted at item-creation
+      // time and filled by the (late) ASR result, so the archive keeps true
+      // conversation order. Unfilled slots (failed/empty ASR) drop out here.
+      const lines = transcript.map(e => e.text).filter(Boolean);
+      if (lines.length) {
+        if (generic) store.appendCycleTranscript(task.id, member.id, cycleKey, lines.join('\n'), dur);
+        else store.appendTranscript(member.id, reportDate, lines.join('\n'), dur, model, saved);
       }
       console.log(`[rounds] session end ${member.name} (${reason}, ${dur}s, saved=${saved})`);
       // fire-and-forget: merge the submitted conversation into the member's 动态画像
@@ -301,11 +305,26 @@ export class Relay {
           // model opens the conversation
           safeSend(upstream, { type: 'response.create' });
           return;
-        case 'conversation.item.input_audio_transcription.completed':
-          if (ev.transcript?.trim()) transcript.push(`${member.name}: ${ev.transcript.trim()}`);
+        // A user message item appears in the event stream as soon as the turn
+        // is committed — before the model's reply starts. Reserve its slot
+        // now; the async ASR result fills it in later (it routinely arrives
+        // AFTER the reply's transcript, which used to scramble the order).
+        case 'conversation.item.added':
+        case 'conversation.item.created':
+          if (ev.item?.type === 'message' && ev.item?.role === 'user'
+            && !transcript.some(e => e.id === ev.item.id)) {
+            transcript.push({ id: ev.item.id, text: null });
+          }
           break;
+        case 'conversation.item.input_audio_transcription.completed': {
+          const text = (ev.transcript || '').trim();
+          const slot = transcript.find(e => e.id === ev.item_id);
+          if (slot) slot.text = text ? `${member.name}: ${text}` : null;
+          else if (text) transcript.push({ id: ev.item_id, text: `${member.name}: ${text}` });
+          break;
+        }
         case 'response.output_audio_transcript.done':
-          if (ev.transcript?.trim()) transcript.push(`Luna: ${ev.transcript.trim()}`);
+          if (ev.transcript?.trim()) transcript.push({ text: `Luna: ${ev.transcript.trim()}` });
           break;
         case 'response.done': {
           const calls = (ev.response?.output || []).filter(i => i.type === 'function_call');

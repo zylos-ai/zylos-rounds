@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-07-19
+
+### Fixed
+- **Talk page transcript ordering.** The user's speech transcription arrives
+  asynchronously and routinely later than the agent's reply subtitle, which
+  scrambled turn order both on screen and in the archived transcript. A slot
+  is now reserved at the moment the user's turn is committed
+  (`conversation.item.added`/`created`) — shown as a pending "…" bubble on
+  the page — and the ASR result fills it in place; failed or empty
+  transcriptions drop the slot. Archived transcripts keep true conversation
+  order the same way
+- **Talk page layout.** The in-call page is now a fixed single screen
+  (`h-dvh` + `overflow-hidden`): the mic orb, waveform and end-call button
+  stay put while the chat log below is the page's only scroll region,
+  auto-scrolling to the latest message. Subtitles no longer push the page
+  taller until the mic scrolls out of view; the submitted-summary card moved
+  inside the scroll region
+
 ## [0.8.0] - 2026-07-19
 
 ### Added
