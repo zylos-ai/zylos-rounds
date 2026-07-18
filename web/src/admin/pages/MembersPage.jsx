@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Copy, Check, ExternalLink, Trash2, Loader2, FlaskConical, NotebookPen, Repeat, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Copy, Check, ExternalLink, Trash2, Loader2, FlaskConical, NotebookPen, Repeat, ChevronDown, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { cn, copyText } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -35,6 +35,7 @@ export default function MembersPage() {
   const [busy, setBusy] = useState(false);
   const [copiedKey, setCopiedKey] = useState(null);
   const [page, setPage] = useState(1);
+  const [query, setQuery] = useState('');
   const copyTimer = useRef(null);
 
   const load = useCallback(async () => {
@@ -93,9 +94,11 @@ export default function MembersPage() {
     return <p className="text-sm text-muted-foreground">{loadError || '加载中…'}</p>;
   }
 
-  const totalPages = Math.max(1, Math.ceil(members.length / PAGE_SIZE));
+  const q = query.trim().toLowerCase();
+  const filtered = q ? members.filter((m) => m.name.toLowerCase().includes(q)) : members;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
-  const pageMembers = members.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const pageMembers = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   return (
     <>
@@ -106,9 +109,23 @@ export default function MembersPage() {
 
       {loadError ? <p className="mt-6 text-sm text-destructive">{loadError}</p> : null}
 
-      {/* add-member entry lives at the top right of the roster */}
+      {/* search + add-member entry live at the top of the roster */}
       <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
-        <span className="text-sm text-muted-foreground">共 {members.length} 位成员</span>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-sm text-muted-foreground">
+            {q ? `${filtered.length} / ${members.length} 位成员` : `共 ${members.length} 位成员`}
+          </span>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-faint" strokeWidth={1.75} />
+            <Input
+              value={query}
+              onChange={(e) => { setQuery(e.target.value); setPage(1); }}
+              placeholder="搜索成员"
+              autoComplete="off"
+              className="h-9 w-[180px] pl-8 max-sm:w-[150px]"
+            />
+          </div>
+        </div>
         <form onSubmit={onAdd} className="flex items-center gap-2">
           <Input
             value={name}
@@ -129,6 +146,8 @@ export default function MembersPage() {
         <CardContent className="px-5 py-2 max-sm:px-4">
           {members.length === 0 ? (
             <p className="py-4 text-sm text-faint">暂无成员，先在右上方添加</p>
+          ) : filtered.length === 0 ? (
+            <p className="py-4 text-sm text-faint">没有名字含「{query.trim()}」的成员</p>
           ) : (
             <div className="divide-y divide-border">
               {pageMembers.map((m) => (
