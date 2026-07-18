@@ -60,9 +60,9 @@ test('login flow sets cookie and session validates', async () => {
   await auth.handleLogin(req, res);
   assert.equal(res.code, 204);
   const cookie = res.headers['set-cookie'];
-  assert.match(cookie, /__Host-zylos_standup_session=/);
+  assert.match(cookie, /__Host-zylos_rounds_session=/);
   const token = cookie.match(/session=([0-9a-f]+);/)[1];
-  const authedReq = mockReq({ cookie: `__Host-zylos_standup_session=${token}` });
+  const authedReq = mockReq({ cookie: `__Host-zylos_rounds_session=${token}` });
   assert.ok(auth.isAuthenticated(authedReq));
   // logout destroys session
   const res2 = mockRes();

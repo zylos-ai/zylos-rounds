@@ -78,10 +78,10 @@ export class ProfileUpdater {
       const profile = String(text || '').trim().slice(0, MAX_PROFILE_CHARS);
       if (!profile) return false;
       this.store.setMemberProfile(member.id, profile);
-      console.log(`[standup] profile updated for ${member.name} (${profile.length} chars)`);
+      console.log(`[rounds] profile updated for ${member.name} (${profile.length} chars)`);
       return true;
     } catch (err) {
-      console.error(`[standup] profile update failed: ${err.message}`);
+      console.error(`[rounds] profile update failed: ${err.message}`);
       return false;
     }
   }

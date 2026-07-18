@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * zylos-standup — voice daily-standup component.
+ * zylos-rounds — voice daily-standup component.
  *
  * Root-internal HTTP app on 127.0.0.1:<port>; Caddy exposes it at /standup/*
  * (strip_prefix + X-Forwarded-Prefix). Serves the built React frontend,
@@ -24,23 +24,23 @@ import { sendText, sendJson } from './lib/http-util.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-console.log('[standup] Starting...');
-console.log(`[standup] Data directory: ${DATA_DIR}`);
+console.log('[rounds] Starting...');
+console.log(`[rounds] Data directory: ${DATA_DIR}`);
 
 const config = getConfig();
 if (!config.enabled) {
-  console.log('[standup] Component disabled in config, exiting.');
+  console.log('[rounds] Component disabled in config, exiting.');
   process.exit(0);
 }
 
 const env = loadEnvSecrets();
 
-const store = new Store(path.join(DATA_DIR, 'data', 'standup.db'));
+const store = new Store(path.join(DATA_DIR, 'data', 'rounds.db'));
 const settings = new Settings(store, getConfig, env);
 // Key may live in .env or (for fresh installs) be set later from the admin
 // settings page — missing at startup is a warning, not a fatal error.
 if (!settings.resolveKey()) {
-  console.warn('[standup] No OpenAI API key configured yet — set one in the admin settings page (or ~/zylos/.env)');
+  console.warn('[rounds] No OpenAI API key configured yet — set one in the admin settings page (or ~/zylos/.env)');
 }
 // Built-in try-it member: full talk flow, excluded from all rosters/digests.
 store.ensureTestMember('体验成员', crypto.randomBytes(8).toString('base64url'));
@@ -57,9 +57,9 @@ if (!config.serviceToken) {
   config.serviceToken = crypto.randomBytes(24).toString('base64url');
   try {
     saveConfig(config);
-    console.log('[standup] minted management API service token (config.serviceToken)');
+    console.log('[rounds] minted management API service token (config.serviceToken)');
   } catch (err) {
-    console.error(`[standup] failed to persist service token: ${err.message}`);
+    console.error(`[rounds] failed to persist service token: ${err.message}`);
   }
 }
 
@@ -69,7 +69,7 @@ const statics = new Static(path.join(__dirname, 'public'));
 const profiles = new ProfileUpdater(store, getConfig, env, settings);
 const relay = new Relay(store, getConfig, env, settings, context, profiles);
 
-watchConfig(() => console.log('[standup] Config reloaded'));
+watchConfig(() => console.log('[rounds] Config reloaded'));
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://internal');
@@ -108,7 +108,7 @@ const server = http.createServer(async (req, res) => {
 
     sendText(res, 404, 'not found');
   } catch (e) {
-    console.error('[standup] http error', e);
+    console.error('[rounds] http error', e);
     if (!res.headersSent) sendText(res, 500, 'server error');
     else res.end();
   }
@@ -118,11 +118,11 @@ relay.attach(server);
 
 const port = config.port ?? 3478;
 server.listen(port, '127.0.0.1', () => {
-  console.log(`[standup] Listening on 127.0.0.1:${port} (model=${settings.resolveModel()}, voice=${settings.resolveVoice()}, key=${settings.keySource()}, proxy=${env.proxy ? 'on' : 'off'}, auth=${auth.enabled ? 'on' : 'OFF'})`);
+  console.log(`[rounds] Listening on 127.0.0.1:${port} (model=${settings.resolveModel()}, voice=${settings.resolveVoice()}, key=${settings.keySource()}, proxy=${env.proxy ? 'on' : 'off'}, auth=${auth.enabled ? 'on' : 'OFF'})`);
 });
 
 function shutdown() {
-  console.log('[standup] Shutting down...');
+  console.log('[rounds] Shutting down...');
   auth.stop();
   server.close(() => {
     store.close();

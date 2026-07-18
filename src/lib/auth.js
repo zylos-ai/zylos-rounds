@@ -1,5 +1,5 @@
 /**
- * Admin auth for zylos-standup — port of the zylos-dashboard AuthGate pattern:
+ * Admin auth for zylos-rounds — port of the zylos-dashboard AuthGate pattern:
  * scrypt-hashed password in config.json, session tokens in SQLite (sha256 at rest),
  * sliding expiry, per-IP + global login rate limiting, __Host- session cookie.
  *
@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import { sendJson, readJsonBody, getClientIp, parseCookies } from './http-util.js';
 
 const SCRYPT_KEYLEN = 64;
-const COOKIE_NAME = '__Host-zylos_standup_session';
+const COOKIE_NAME = '__Host-zylos_rounds_session';
 const SESSION_ABSOLUTE_MS = 7 * 86_400_000;
 const SESSION_IDLE_MS = 86_400_000;
 const CLEANUP_INTERVAL_MS = 300_000;
@@ -83,9 +83,9 @@ export class AuthGate {
       existing.auth = { ...(existing.auth || {}), password: hashed };
       fs.writeFileSync(this.configPath, `${JSON.stringify(existing, null, 2)}\n`);
       this.config.auth.password = hashed;
-      console.log('[standup] Auth: migrated plaintext password to scrypt hash');
+      console.log('[rounds] Auth: migrated plaintext password to scrypt hash');
     } catch (err) {
-      console.error(`[standup] Auth: failed to migrate password: ${err.message}`);
+      console.error(`[rounds] Auth: failed to migrate password: ${err.message}`);
     }
   }
 

@@ -1,5 +1,5 @@
 /**
- * SQLite store for zylos-standup.
+ * SQLite store for zylos-rounds.
  *
  * Incremental, idempotent migrations tracked in schema_migrations —
  * never modify an existing migration, only append new ones.
@@ -104,7 +104,7 @@ export class Store {
       if (m.version <= current) continue;
       this.db.exec(m.sql);
       this.db.prepare('INSERT INTO schema_migrations(version) VALUES(?)').run(m.version);
-      console.log(`[standup] DB migrated to version ${m.version}`);
+      console.log(`[rounds] DB migrated to version ${m.version}`);
     }
   }
 

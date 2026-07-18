@@ -3,7 +3,7 @@ const os = require('os');
 
 module.exports = {
   apps: [{
-    name: 'zylos-standup',
+    name: 'zylos-rounds',
     script: 'src/index.js',
     cwd: path.join(os.homedir(), 'zylos/.claude/skills/standup'),
     env: {
@@ -14,8 +14,8 @@ module.exports = {
     max_restarts: 10,
     restart_delay: 5000,
     // Logs managed by PM2
-    error_file: path.join(os.homedir(), 'zylos/components/standup/logs/error.log'),
-    out_file: path.join(os.homedir(), 'zylos/components/standup/logs/out.log'),
+    error_file: path.join(os.homedir(), 'zylos/components/rounds/logs/error.log'),
+    out_file: path.join(os.homedir(), 'zylos/components/rounds/logs/out.log'),
     log_date_format: 'YYYY-MM-DD HH:mm:ss'
   }]
 };

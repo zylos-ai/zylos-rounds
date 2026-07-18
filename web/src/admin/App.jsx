@@ -100,7 +100,7 @@ function Layout({ route, onLogout, reportDate, children }) {
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
               <Mic className="h-[18px] w-[18px]" strokeWidth={2} />
             </span>
-            <span className="max-sm:hidden">语音日报</span>
+            <span className="max-sm:hidden">Rounds</span>
           </a>
           <nav className="flex items-center gap-1.5">
             {nav.map((item) => (

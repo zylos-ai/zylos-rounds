@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Post-upgrade hook for zylos-standup
+ * Post-upgrade hook for zylos-rounds
  *
  * Called by Claude after CLI upgrade completes (zylos upgrade --json).
  * CLI handles: stop service, backup, file sync, npm install, manifest.
@@ -16,7 +16,7 @@ import fs from 'fs';
 import path from 'path';
 
 const HOME = process.env.HOME;
-const DATA_DIR = path.join(HOME, 'zylos/components/standup');
+const DATA_DIR = path.join(HOME, 'zylos/components/rounds');
 const configPath = path.join(DATA_DIR, 'config.json');
 
 console.log('[post-upgrade] Running standup-specific migrations...\n');

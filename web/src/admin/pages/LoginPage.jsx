@@ -36,7 +36,7 @@ export default function LoginPage({ onLoggedIn }) {
           <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
             <Mic className="h-6 w-6" strokeWidth={2} />
           </span>
-          <CardTitle className="text-2xl font-bold tracking-tight">语音日报</CardTitle>
+          <CardTitle className="text-2xl font-bold tracking-tight">Rounds</CardTitle>
           <CardDescription className="text-[0.95rem]">输入管理密码进入管理后台</CardDescription>
         </CardHeader>
         <CardContent className="pb-8 pt-2">

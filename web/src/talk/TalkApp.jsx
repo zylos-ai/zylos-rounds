@@ -57,7 +57,7 @@ export default function TalkApp() {
         const data = await res.json();
         setName(data.name || '');
         setIsTest(Boolean(data.is_test));
-        document.title = `语音日报 · ${data.name || ''}`;
+        document.title = `Rounds · ${data.name || ''}`;
         setPhase('idle');
         say('点击麦克风开始');
       } catch {
@@ -167,7 +167,7 @@ export default function TalkApp() {
             </div>
             <div className="text-xl font-bold tracking-tight">链接无效</div>
             <p className="max-w-[300px] text-[0.95rem] leading-relaxed text-muted-foreground">
-              这个专属链接不存在或已失效，请联系管理员获取新的语音日报链接。
+              这个专属链接不存在或已失效，请联系管理员获取新的专属链接。
             </p>
           </CardContent>
         </Card>
@@ -223,7 +223,7 @@ export default function TalkApp() {
             <Mic className="h-6 w-6" strokeWidth={2} />
           </span>
           <div className="mt-6 text-[0.82rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-            语音日报
+            Rounds
           </div>
           <h1 className="mt-3 text-4xl font-bold leading-tight tracking-tight max-sm:text-3xl">
             {name}，和 Luna 聊 3-5 分钟
@@ -255,7 +255,7 @@ export default function TalkApp() {
           <Mic className="h-[18px] w-[18px]" strokeWidth={2} />
         </span>
         <div className="leading-tight">
-          <div className="text-[1.02rem] font-bold tracking-tight">语音日报</div>
+          <div className="text-[1.02rem] font-bold tracking-tight">Rounds</div>
           {name ? (
             <div className="flex items-center gap-1.5 text-[0.78rem] text-muted-foreground">
               {name}
@@ -350,7 +350,7 @@ function Shell({ name, children }) {
       <header className="pb-1 pt-[18px]">
         <h1 className="flex items-center gap-2 text-[1.05rem] font-semibold">
           <Mic className="h-[18px] w-[18px] text-primary" strokeWidth={1.75} />
-          语音日报
+          Rounds
         </h1>
         {name ? (
           <p className="mt-1.5 text-[0.82rem] leading-normal text-muted-foreground">

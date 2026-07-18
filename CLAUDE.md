@@ -1,19 +1,19 @@
-# zylos-standup Development Guide
+# zylos-rounds Development Guide
 
-This document guides AI assistants working on the zylos-standup component.
+This document guides AI assistants working on the zylos-rounds component.
 
 ## Project Conventions
 
 - **ESM only** — `import`/`export`, never `require()`. `"type": "module"` in package.json. Exception: `ecosystem.config.cjs` (PM2 requires CJS)
 - **Node.js 22.13+** — Minimum runtime version (uses `node:sqlite` DatabaseSync)
 - **Conventional commits** — `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`
-- **All runtime config in `config.json`** — `~/zylos/components/standup/config.json` (data directory, never committed). `OPENAI_API_KEY` / proxy come from `~/zylos/.env`, never config.json
+- **All runtime config in `config.json`** — `~/zylos/components/rounds/config.json` (data directory, never committed). `OPENAI_API_KEY` / proxy come from `~/zylos/.env`, never config.json
 - **English for code** — Comments, commit messages, PR descriptions
 
 ## Architecture
 
 ```
-Browser ──(Caddy /standup/* strip-prefix)──▶ 127.0.0.1:3478
+Browser ──(Caddy /rounds/* strip-prefix; /standup/* legacy alias)──▶ 127.0.0.1:3478
   static React build ─┐                        │
   /u/<token> talk ────┼── /ws?token= ─▶ WS relay ──proxy──▶ OpenAI Realtime
   admin SPA (#/ hash) ┘                        └─ SQLite (data dir)
@@ -77,8 +77,8 @@ frontmatter version, `CHANGELOG.md` entry. After merge:
 ## Directory Convention
 
 ```
-Code:  ~/zylos/.claude/skills/standup/   # overwritten on upgrade
-Data:  ~/zylos/components/standup/       # preserved (config.json, data/)
+Code:  ~/zylos/.claude/skills/rounds/   # overwritten on upgrade
+Data:  ~/zylos/components/rounds/       # preserved (config.json, data/)
 ```
 
 Never write to the SQLite DB directly for routine operations — use the API.

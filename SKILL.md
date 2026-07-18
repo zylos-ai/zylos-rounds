@@ -1,21 +1,22 @@
 ---
-name: standup
-version: 0.4.0
+name: rounds
+version: 0.5.0
 description: >-
-  Voice daily-standup component. Team members talk to an AI agent (OpenAI
-  Realtime, Chinese voice conversation) via a personal no-login link; the agent
-  collects yesterday/today/blockers/meeting-topics, stores structured reports,
-  and serves per-day team digests. The agent has a maintainable "brain" —
-  editable team background, probing guidance, per-member context and an
-  auto-maintained dynamic profile (动态画像, merged from past reports after
-  each standup) injected every call, plus on-demand tools to recall a member's
-  past reports and search a team knowledge base. Full management is available
-  to agents via scripts/cli.js with the bearer API key (config.serviceToken) —
-  members, brain, knowledge, reports, settings — no DB access needed. Use when
-  managing standup members (add / remove / reset link), tuning the agent's
-  background / probing / knowledge / profiles, reading daily reports /
-  transcripts / digests, checking who has reported today, or troubleshooting
-  the voice relay. Triggers: "日报", "语音日报", "standup", "每日汇报",
+  Rounds (formerly standup) — delegated 1:1 structured voice conversations for
+  teams. An AI agent (OpenAI Realtime, Chinese voice) talks to each member via
+  a personal no-login link on the owner's behalf; the daily standup
+  (yesterday/today/blockers/meeting-topics with per-day team digests) is the
+  first built-in scenario. The agent has a maintainable "brain" — editable
+  team background, probing guidance, per-member context and an auto-maintained
+  dynamic profile (动态画像, merged from past reports after each conversation)
+  injected every call, plus on-demand tools to recall a member's past reports
+  and search a team knowledge base. Full management is available to agents via
+  scripts/cli.js with the bearer API key (config.serviceToken) — members,
+  brain, knowledge, reports, settings — no DB access needed. Use when managing
+  members (add / remove / reset link), tuning the agent's background /
+  probing / knowledge / profiles, reading daily reports / transcripts /
+  digests, checking who has reported today, or troubleshooting the voice
+  relay. Triggers: "rounds", "日报", "语音日报", "standup", "每日汇报",
   "日会待议", "谁还没汇报", "追问", "背景", "画像", "知识库".
 type: capability
 
@@ -23,9 +24,9 @@ lifecycle:
   npm: true
   service:
     type: pm2
-    name: zylos-standup
+    name: zylos-rounds
     entry: src/index.js
-  data_dir: ~/zylos/components/standup
+  data_dir: ~/zylos/components/rounds
   hooks:
     configure: hooks/configure.js
     post-install: hooks/post-install.js
@@ -36,29 +37,36 @@ lifecycle:
     - data/
 
 http_routes:
+  - path: /rounds/*
+    type: reverse_proxy
+    target: localhost:3478
+    strip_prefix: /rounds
+  # legacy alias — member links issued under /standup/ keep working
   - path: /standup/*
     type: reverse_proxy
     target: localhost:3478
     strip_prefix: /standup
 
 upgrade:
-  repo: zylos-ai/zylos-standup
+  repo: zylos-ai/zylos-rounds
   branch: main
 
 config:
   required: []
   optional:
-    - name: STANDUP_PORT
+    - name: ROUNDS_PORT
       description: Local port the component listens on (127.0.0.1)
       default: "3478"
 
 dependencies: []
 ---
 
-# Standup — 语音日报
+# Rounds — 代你走一轮的语音沟通 agent
 
-Voice-first daily standup: each member gets a permanent personal link
-(`/standup/u/<token>`), talks to the agent for 3–5 minutes, and a structured
+Delegated 1:1 voice conversations: the agent "makes the rounds" on the
+owner's behalf. The built-in first scenario is the daily voice standup:
+each member gets a permanent personal link
+(`/rounds/u/<token>`), talks to the agent for 3–5 minutes, and a structured
 report (昨天 / 今天 / 卡点 / 日会待议) is stored per member per day. Admin
 surfaces (roster, daily digest, history) sit behind password login
 (dashboard-style scrypt + session cookie).
@@ -67,13 +75,13 @@ surfaces (roster, daily digest, history) sit behind password login
 
 | Path | Who | What |
 |------|-----|------|
-| `/standup/` | admin (login) | roster: members, links, today status; add/remove/reset-link |
-| `/standup/#/report/<YYYY-MM-DD>` | admin | daily digest (topics first, per-member cards, raw transcript on demand, missing list) |
-| `/standup/#/reports` | admin | multi-day history |
-| `/standup/#/brain` | admin | 背景/追问: team background, probing guidance, knowledge base |
-| `/standup/u/<token>` | member | voice conversation page (no login) |
+| `/rounds/` | admin (login) | roster: members, links, today status; add/remove/reset-link |
+| `/rounds/#/report/<YYYY-MM-DD>` | admin | daily digest (topics first, per-member cards, raw transcript on demand, missing list) |
+| `/rounds/#/reports` | admin | multi-day history |
+| `/rounds/#/brain` | admin | 背景/追问: team background, probing guidance, knowledge base |
+| `/rounds/u/<token>` | member | voice conversation page (no login) |
 
-## Configuration (`~/zylos/components/standup/config.json`)
+## Configuration (`~/zylos/components/rounds/config.json`)
 
 | Key | Default | Notes |
 |-----|---------|-------|
@@ -105,7 +113,7 @@ the bundled CLI instead of raw curl or the web UI. Never write to the SQLite
 DB directly.
 
 ```bash
-CLI="node ~/zylos/.claude/skills/standup/scripts/cli.js"
+CLI="node ~/zylos/.claude/skills/rounds/scripts/cli.js"
 
 $CLI member list                       # roster + links + today's status
 $CLI member add 小王
@@ -129,12 +137,12 @@ $CLI settings get
 $CLI settings set --voice cedar
 ```
 
-Credential resolution: `--url`/`--key` flags → `STANDUP_URL`/`STANDUP_API_KEY`
-env → `~/zylos/components/standup/cli.json` (`{"url","apiKey"}`) → same-host
+Credential resolution: `--url`/`--key` flags → `ROUNDS_URL`/`ROUNDS_API_KEY`
+env → `~/zylos/components/rounds/cli.json` (`{"url","apiKey"}`) → same-host
 `config.json` (127.0.0.1 + serviceToken). On this host it works with zero
 setup. For a remote agent (e.g. the coco avatar): copy `scripts/cli.js`, drop
 a `cli.json` in its own data dir pointing at
-`https://luna.jinglever.com/standup` with the API key — no DB, no login.
+`https://luna.jinglever.com/rounds` with the API key — no DB, no login.
 
 ## Agent brain (background / probing / knowledge)
 
@@ -168,7 +176,7 @@ for reference: `GET/POST/DELETE /api/members`, `POST
 /api/members/:id/profile`, `GET/PUT /api/context`, `GET /api/context/members`,
 `GET/POST/PUT/DELETE /api/knowledge`, `GET /api/knowledge/search?q=`,
 `GET /api/reports/history`, `GET /api/reports/<date>`, `GET/PUT
-/api/settings`. Base: `https://luna.jinglever.com/standup` (or
+/api/settings`. Base: `https://luna.jinglever.com/rounds` (or
 `http://127.0.0.1:3478`). Only login itself is session-only.
 
 ### Dynamic profiles (动态画像)
@@ -183,7 +191,7 @@ via the roster dialog or `member set-profile`.
 
 ## Data
 
-- `data/standup.db` — members (permanent tokens, optional per-member
+- `data/rounds.db` — members (permanent tokens, optional per-member
   `context`, auto-maintained `profile`), reports (one row per member×date,
   UNIQUE), admin sessions, `agent_context` (background + probing),
   `knowledge`. WAL mode.
@@ -193,15 +201,15 @@ via the roster dialog or `member set-profile`.
 ## Migration from the MVP (one-time)
 
 ```bash
-node ~/zylos/.claude/skills/standup/scripts/migrate-from-poc.js --dry-run
-node ~/zylos/.claude/skills/standup/scripts/migrate-from-poc.js
+node ~/zylos/.claude/skills/rounds/scripts/migrate-from-poc.js --dry-run
+node ~/zylos/.claude/skills/rounds/scripts/migrate-from-poc.js
 ```
 
 Preserves member ids and tokens — existing member links keep working.
 
 ## Troubleshooting
 
-- `pm2 logs zylos-standup` — session start/end lines, `client ... ctx_rate=`
+- `pm2 logs zylos-rounds` — session start/end lines, `client ... ctx_rate=`
   device beacons (capture-side audio issues show up here), ASR failures.
 - Member reports garbled AI hearing → check the client beacon sample rate;
   the client captures at device-native rate and downsamples to 24k (never

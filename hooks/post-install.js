@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Post-install hook for zylos-standup
+ * Post-install hook for zylos-rounds
  *
  * Called by zylos after configure hook and CLI installation.
  * - Creates data subdirectories
@@ -14,7 +14,7 @@ import path from 'node:path';
 import { hashPassword } from '../src/lib/auth.js';
 
 const HOME = process.env.HOME;
-const DATA_DIR = path.join(HOME, 'zylos/components/standup');
+const DATA_DIR = path.join(HOME, 'zylos/components/rounds');
 
 console.log('[post-install] Running standup-specific setup...\n');
 

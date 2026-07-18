@@ -14,7 +14,7 @@ test('parseArgs separates flags (anywhere) from positionals', () => {
 
 test('resolveTarget precedence: flags > env > cli.json > config.json', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'standup-cli-'));
-  const dataDir = path.join(home, 'zylos/components/standup');
+  const dataDir = path.join(home, 'zylos/components/rounds');
   fs.mkdirSync(dataDir, { recursive: true });
 
   assert.equal(resolveTarget({}, {}, home), null); // nothing configured
@@ -25,7 +25,7 @@ test('resolveTarget precedence: flags > env > cli.json > config.json', () => {
   fs.writeFileSync(path.join(dataDir, 'cli.json'), JSON.stringify({ url: 'https://host/standup', apiKey: 'cli-key' }));
   assert.deepEqual(resolveTarget({}, {}, home), { url: 'https://host/standup', key: 'cli-key' });
 
-  const env = { STANDUP_URL: 'https://env/standup', STANDUP_API_KEY: 'env-key' };
+  const env = { ROUNDS_URL: 'https://env/standup', ROUNDS_API_KEY: 'env-key' };
   assert.deepEqual(resolveTarget({}, env, home), { url: 'https://env/standup', key: 'env-key' });
 
   assert.deepEqual(

@@ -24,7 +24,7 @@ const opt = name => {
 const dryRun = args.includes('--dry-run');
 
 const sourcePath = opt('source') || path.join(HOME, 'zylos/workspace/voice-standup-poc/voice-standup.db');
-const targetPath = opt('target') || path.join(HOME, 'zylos/components/standup/data/standup.db');
+const targetPath = opt('target') || path.join(HOME, 'zylos/components/rounds/data/standup.db');
 
 if (!fs.existsSync(sourcePath)) {
   console.error(`source DB not found: ${sourcePath}`);

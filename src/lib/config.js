@@ -1,7 +1,7 @@
 /**
- * Configuration loader for zylos-standup
+ * Configuration loader for zylos-rounds
  *
- * Loads config from ~/zylos/components/standup/config.json
+ * Loads config from ~/zylos/components/rounds/config.json
  * with hot-reload support via file watcher.
  */
 
@@ -9,7 +9,7 @@ import fs from 'fs';
 import path from 'path';
 
 const HOME = process.env.HOME;
-export const DATA_DIR = path.join(HOME, 'zylos/components/standup');
+export const DATA_DIR = path.join(HOME, 'zylos/components/rounds');
 export const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
 
 // Default configuration
@@ -67,11 +67,11 @@ export function loadConfig() {
         auth: { ...DEFAULT_CONFIG.auth, ...(parsed.auth || {}) },
       };
     } else {
-      console.warn(`[standup] Config file not found: ${CONFIG_PATH}`);
+      console.warn(`[rounds] Config file not found: ${CONFIG_PATH}`);
       config = { ...DEFAULT_CONFIG };
     }
   } catch (err) {
-    console.error(`[standup] Failed to load config: ${err.message}`);
+    console.error(`[rounds] Failed to load config: ${err.message}`);
     config = { ...DEFAULT_CONFIG };
   }
   return config;
@@ -97,7 +97,7 @@ export function saveConfig(newConfig) {
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(newConfig, null, 2));
     config = newConfig;
   } catch (err) {
-    console.error(`[standup] Failed to save config: ${err.message}`);
+    console.error(`[rounds] Failed to save config: ${err.message}`);
     throw err;
   }
 }
@@ -114,7 +114,7 @@ export function watchConfig(onChange) {
   if (fs.existsSync(CONFIG_PATH)) {
     configWatcher = fs.watch(CONFIG_PATH, (eventType) => {
       if (eventType === 'change') {
-        console.log('[standup] Config file changed, reloading...');
+        console.log('[rounds] Config file changed, reloading...');
         loadConfig();
         if (onChange) {
           onChange(config);

@@ -1,6 +1,6 @@
 {
-  "name": "zylos-standup",
-  "version": "0.4.0",
+  "name": "zylos-rounds",
+  "version": "0.5.0",
   "description": "AI-assisted async daily standup tool",
   "type": "module",
   "main": "src/index.js",
@@ -9,13 +9,13 @@
     "test": "node --test 'test/*.test.js'",
     "check": "node --check src/index.js && for f in src/lib/*.js; do node --check $f; done"
   },
-  "homepage": "https://github.com/zylos-ai/zylos-standup#readme",
+  "homepage": "https://github.com/zylos-ai/zylos-rounds#readme",
   "bugs": {
-    "url": "https://github.com/zylos-ai/zylos-standup/issues"
+    "url": "https://github.com/zylos-ai/zylos-rounds/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zylos-ai/zylos-standup.git"
+    "url": "git+https://github.com/zylos-ai/zylos-rounds.git"
   },
   "keywords": [
     "zylos",

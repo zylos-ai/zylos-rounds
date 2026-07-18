@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * standup CLI — agent-friendly management client for zylos-standup.
+ * standup CLI — agent-friendly management client for zylos-rounds.
  *
  * Talks to the admin API with the bearer API key (config.serviceToken); never
  * touches the database. Designed for AI agents: JSON output, stdin for long
@@ -8,9 +8,9 @@
  *
  * Credential resolution (first hit wins):
  *   1. --url / --key flags
- *   2. STANDUP_URL / STANDUP_API_KEY environment variables
- *   3. ~/zylos/components/standup/cli.json        {"url": "...", "apiKey": "..."}
- *   4. ~/zylos/components/standup/config.json     (same-host install: 127.0.0.1:<port> + serviceToken)
+ *   2. ROUNDS_URL / ROUNDS_API_KEY environment variables
+ *   3. ~/zylos/components/rounds/cli.json        {"url": "...", "apiKey": "..."}
+ *   4. ~/zylos/components/rounds/config.json     (same-host install: 127.0.0.1:<port> + serviceToken)
  *
  * A remote agent (e.g. the coco avatar) only needs cli.json in its own data
  * directory pointing at the public URL — see SKILL.md.
@@ -77,8 +77,8 @@ export function parseArgs(argv) {
 
 export function resolveTarget(flags, env, home) {
   if (flags.url && flags.key) return { url: flags.url, key: flags.key };
-  if (env.STANDUP_URL && env.STANDUP_API_KEY) return { url: env.STANDUP_URL, key: env.STANDUP_API_KEY };
-  const dataDir = path.join(home, 'zylos/components/standup');
+  if (env.ROUNDS_URL && env.ROUNDS_API_KEY) return { url: env.ROUNDS_URL, key: env.ROUNDS_API_KEY };
+  const dataDir = path.join(home, 'zylos/components/rounds');
   try {
     const c = JSON.parse(fs.readFileSync(path.join(dataDir, 'cli.json'), 'utf8'));
     if (c.url && c.apiKey) return { url: c.url, key: c.apiKey };
@@ -209,7 +209,7 @@ async function main() {
     return;
   }
   const target = resolveTarget(flags, process.env, process.env.HOME || '');
-  if (!target) fail('no credentials: pass --url/--key, set STANDUP_URL/STANDUP_API_KEY, or provide cli.json/config.json in ~/zylos/components/standup/');
+  if (!target) fail('no credentials: pass --url/--key, set ROUNDS_URL/ROUNDS_API_KEY, or provide cli.json/config.json in ~/zylos/components/rounds/');
   const out = await run(target, rest[0], rest[1], rest.slice(2), flags);
   console.log(JSON.stringify(out, null, 2));
 }

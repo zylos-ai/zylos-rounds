@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Pre-upgrade hook for zylos-standup
+ * Pre-upgrade hook for zylos-rounds
  *
  * Called by Claude BEFORE CLI upgrade steps.
  * If this hook fails (exit code 1), the upgrade is aborted.
@@ -19,7 +19,7 @@ import fs from 'fs';
 import path from 'path';
 
 const HOME = process.env.HOME;
-const DATA_DIR = path.join(HOME, 'zylos/components/standup');
+const DATA_DIR = path.join(HOME, 'zylos/components/rounds');
 const configPath = path.join(DATA_DIR, 'config.json');
 
 console.log('[pre-upgrade] Running standup pre-upgrade checks...\n');

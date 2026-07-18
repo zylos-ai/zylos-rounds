@@ -140,24 +140,24 @@ export class Relay {
           safeSend(client, { type: 'app.saved', summary: args });
           respond({ ok: true, message: '已保存' });
         } catch (e) {
-          console.error('[standup] summary parse error', e);
+          console.error('[rounds] summary parse error', e);
         }
         break;
       case 'recall_member_history': {
         const days = Math.min(10, Math.max(1, Number(args.days) || 5));
         const data = this.context.recallHistory(member, reportDate, days);
-        console.log(`[standup] tool recall_member_history ${member.name} -> ${data.count} reports`);
+        console.log(`[rounds] tool recall_member_history ${member.name} -> ${data.count} reports`);
         respond(data);
         break;
       }
       case 'search_team_knowledge': {
         const data = this.context.searchKnowledge(String(args.query || ''));
-        console.log(`[standup] tool search_team_knowledge "${data.query}" -> ${data.count} hits`);
+        console.log(`[rounds] tool search_team_knowledge "${data.query}" -> ${data.count} hits`);
         respond(data);
         break;
       }
       default:
-        console.warn('[standup] unknown tool call', fc.name);
+        console.warn('[rounds] unknown tool call', fc.name);
     }
   }
 
@@ -176,7 +176,7 @@ export class Relay {
     const startedAt = Date.now();
     const transcript = [];
     let saved = false;
-    console.log(`[standup] session start ${member.name}`);
+    console.log(`[rounds] session start ${member.name}`);
 
     const upstream = new WebSocket(`wss://api.openai.com/v1/realtime?model=${model}`, {
       agent: this.env.proxy ? new HttpsProxyAgent(this.env.proxy) : undefined,
@@ -198,14 +198,14 @@ export class Relay {
       if (transcript.length) {
         store.appendTranscript(member.id, reportDate, transcript.join('\n'), dur, model, saved);
       }
-      console.log(`[standup] session end ${member.name} (${reason}, ${dur}s, saved=${saved})`);
+      console.log(`[rounds] session end ${member.name} (${reason}, ${dur}s, saved=${saved})`);
       // fire-and-forget: merge today's submitted report into the member's 动态画像
       if (saved && self.profiles) self.profiles.updateAfterReport(member.id, reportDate);
     }
 
     upstream.on('open', () => upstream.send(JSON.stringify(this.sessionUpdate(member))));
     upstream.on('error', e => {
-      console.error('[standup] upstream error', e.message);
+      console.error('[rounds] upstream error', e.message);
       safeSend(client, { type: 'app.error', message: '上游连接失败' });
       finish('upstream_error');
     });
@@ -218,7 +218,7 @@ export class Relay {
       try { ev = JSON.parse(raw.toString()); } catch { return; }
       if (ev.type === 'app.client_info') {
         // device diagnostics — capture-side audio issues show up here first
-        console.log(`[standup] client ${member.name} ctx_rate=${ev.ctx_rate} ua=${ev.ua}`);
+        console.log(`[rounds] client ${member.name} ctx_rate=${ev.ctx_rate} ua=${ev.ua}`);
         return;
       }
       if (ev.type === 'app.end') {
@@ -252,14 +252,14 @@ export class Relay {
           break;
         }
         case 'conversation.item.input_audio_transcription.failed':
-          console.error('[standup] asr failed', JSON.stringify(ev.error || ev));
+          console.error('[rounds] asr failed', JSON.stringify(ev.error || ev));
           break;
         case 'error':
           // app.end fires response.cancel unconditionally; when no response is
           // active the API answers with this benign error — swallow it, or the
           // client re-enables the submit button mid-wrap-up.
           if (ev.error?.code === 'response_cancel_not_active') return;
-          console.error('[standup] api error', JSON.stringify(ev.error));
+          console.error('[rounds] api error', JSON.stringify(ev.error));
           safeSend(client, { type: 'app.error', message: ev.error?.message || '上游错误' });
           return; // already delivered as app.error — don't forward the raw event too
       }

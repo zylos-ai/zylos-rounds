@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-07-18
+
+### Changed
+- **Rebrand: Standup → Rounds** — the product is now called **Rounds**, and
+  the repository moved to `zylos-ai/zylos-rounds` (full git history
+  preserved). Component name `rounds`, PM2 service `zylos-rounds`, data dir
+  `~/zylos/components/rounds/` (database file `rounds.db`), env vars
+  `ROUNDS_URL`/`ROUNDS_API_KEY`, public path `/rounds/*`, and UI branding all
+  renamed accordingly
+- **Legacy links keep working** — `/standup/*` is served as an alias of
+  `/rounds/*`, so member talk links (`/standup/u/<token>`) issued before the
+  rename remain valid
+
 ## [0.4.0] - 2026-07-18
 
 ### Added
@@ -12,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   command line via the admin API, JSON in/out, stdin for long text, zero
   prompts. Members (add / remove / reset-link / context / profile), brain
   containers, knowledge base (incl. search), day reports and settings.
-  Credentials resolve from flags → `STANDUP_URL`/`STANDUP_API_KEY` env →
+  Credentials resolve from flags → `ROUNDS_URL`/`ROUNDS_API_KEY` env →
   `cli.json` in the data dir → same-host `config.json`, so a remote agent
   (e.g. the coco avatar) only needs a `cli.json` with the public URL + API key
 - **API key with full admin scope** — the bearer `config.serviceToken` now

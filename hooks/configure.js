@@ -1,21 +1,21 @@
 #!/usr/bin/env node
 /**
- * Configure hook for zylos-standup
+ * Configure hook for zylos-rounds
  *
  * Called by zylos after collecting SKILL.md config.required values.
  * Receives a JSON object on stdin and writes component-owned config.json.
  *
  * Example stdin:
- *   { "STANDUP_API_KEY": "secret" }
+ *   { "ROUNDS_API_KEY": "secret" }
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 
 const HOME = process.env.HOME;
-const DATA_DIR = path.join(HOME, 'zylos/components/standup');
+const DATA_DIR = path.join(HOME, 'zylos/components/rounds');
 const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
-const COMPONENT_PREFIX = 'STANDUP_';
+const COMPONENT_PREFIX = 'ROUNDS_';
 
 const DEFAULT_CONFIG = {
   enabled: true

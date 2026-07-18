@@ -2,10 +2,10 @@
   <img src="./assets/logo.png" alt="Zylos" height="120">
 </p>
 
-<h1 align="center">zylos-standup</h1>
+<h1 align="center">zylos-rounds</h1>
 
 <p align="center">
-  Voice daily standup — team members talk to an AI agent, the team gets a structured daily digest
+  Delegated 1:1 voice conversations — the agent makes the rounds for you; daily standup is the first built-in scenario
 </p>
 
 <p align="center">
@@ -35,14 +35,14 @@
 ## Install
 
 ```bash
-zylos add standup
+zylos add rounds
 ```
 
 The generated admin password is printed once during install.
 
 ## Configuration
 
-`~/zylos/components/standup/config.json` (see [SKILL.md](./SKILL.md) for all
+`~/zylos/components/rounds/config.json` (see [SKILL.md](./SKILL.md) for all
 keys):
 
 ```json
@@ -61,9 +61,9 @@ keys):
 
 | URL | Who |
 |-----|-----|
-| `https://<host>/standup/` | admin — roster, add/remove members, copy links |
-| `https://<host>/standup/#/report/2026-07-17` | admin — daily digest |
-| `https://<host>/standup/u/<token>` | member — voice conversation |
+| `https://<host>/rounds/` | admin — roster, add/remove members, copy links |
+| `https://<host>/rounds/#/report/2026-07-17` | admin — daily digest |
+| `https://<host>/rounds/u/<token>` | member — voice conversation |
 
 ## Development
 
