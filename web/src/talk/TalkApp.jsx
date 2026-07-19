@@ -223,11 +223,17 @@ export default function TalkApp() {
     }
   }, [say]);
 
-  const toggleMode = useCallback(() => {
+  const toggleMode = useCallback(async () => {
     const engine = engineRef.current;
     if (!engine || doneRef.current) return;
     const toText = !engine.textMode;
-    engine.setMode(toText ? 'text' : 'voice');
+    try {
+      await engine.setMode(toText ? 'text' : 'voice');
+    } catch {
+      // mic re-acquire denied — engine stays in text mode
+      say('麦克风获取失败，请检查权限后重试');
+      return;
+    }
     setTextMode(toText);
     if (toText) {
       setPaused(false);

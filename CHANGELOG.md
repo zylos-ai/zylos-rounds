@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.3] - 2026-07-19
+
+### Fixed
+- **Text mode blocked phone-keyboard voice dictation.** Switching to text
+  mode previously only gated the audio feed while keeping the capture track
+  open, so mobile OSes considered the mic in use and disabled the IME's
+  built-in speech-to-text. Text mode now fully releases the mic device
+  (tracks stopped, graph node detached); switching back to voice re-acquires
+  it into the persistent audio graph, resuming a suspended AudioContext and
+  restarting the resample phase. A denied re-acquire keeps the session in
+  text mode with a visible hint instead of a dead voice mode
+
 ## [0.10.2] - 2026-07-19
 
 ### Added

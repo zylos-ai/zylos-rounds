@@ -69,24 +69,18 @@ export class TalkEngine {
 
   /** Acquire mic + audio graph, then open the relay WS. Throws if mic denied. */
   async start() {
-    this.micStream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
-    });
     // Device-native sample rate — never force 24k (see header comment).
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     await this.ctx.resume();
     const SRC_RATE = this.ctx.sampleRate;
     await this.ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: 'text/javascript' })));
-    const src = this.ctx.createMediaStreamSource(this.micStream);
 
     // Visualization tap (parallel branch, does not touch the capture path).
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 256;
     this.analyser.smoothingTimeConstant = 0.75;
-    src.connect(this.analyser);
 
     this.workletNode = new AudioWorkletNode(this.ctx, 'cap');
-    src.connect(this.workletNode);
 
     let buf = [];
     const CHUNK_SRC = Math.round(SRC_RATE / 10); // ship a packet every ~100ms
@@ -111,7 +105,42 @@ export class TalkEngine {
         }
       }
     };
+    await this.acquireMic();
     this.connect();
+  }
+
+  /**
+   * (Re-)acquire the mic and wire it into the persistent audio graph.
+   * Separate from start() because text mode fully releases the device (an
+   * open capture track blocks the phone keyboard's own voice dictation) and
+   * switching back to voice has to grab it again.
+   */
+  async acquireMic() {
+    if (this.micStream) return;
+    // mobile browsers may suspend the context while no capture track is live
+    if (this.ctx && this.ctx.state === 'suspended') await this.ctx.resume();
+    this.micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+    });
+    this.dsPos = 0; // fresh capture stream — restart the resample phase
+    this.micSrc = this.ctx.createMediaStreamSource(this.micStream);
+    this.micSrc.connect(this.analyser);
+    this.micSrc.connect(this.workletNode);
+  }
+
+  releaseMic() {
+    if (this.micSrc) {
+      try {
+        this.micSrc.disconnect();
+      } catch {
+        /* already disconnected */
+      }
+      this.micSrc = null;
+    }
+    if (this.micStream) {
+      this.micStream.getTracks().forEach((t) => t.stop());
+      this.micStream = null;
+    }
   }
 
   connect() {
@@ -232,15 +261,25 @@ export class TalkEngine {
   }
 
   /**
-   * Switch reply modality mid-call. Text mode also gates the mic feed
-   * (quiet environments) and silences any in-flight audio.
+   * Switch reply modality mid-call. Text mode fully releases the mic device
+   * (not just gating the feed — a held capture track blocks phone-keyboard
+   * voice dictation) and silences any in-flight audio; voice mode re-acquires
+   * it. Throws if the re-acquire is denied — caller keeps text mode then.
    */
-  setMode(mode) {
+  async setMode(mode) {
     if (this.done) return;
     this.textMode = mode === 'text';
     if (this.textMode) {
       this.flushPlayback();
       this.curItemId = null;
+      this.releaseMic();
+    } else {
+      try {
+        await this.acquireMic();
+      } catch (err) {
+        this.textMode = true;
+        throw err;
+      }
     }
     this.send({ type: 'app.set_mode', mode: this.textMode ? 'text' : 'voice' });
   }
@@ -348,7 +387,7 @@ export class TalkEngine {
       /* noop */
     }
     try {
-      if (this.micStream) this.micStream.getTracks().forEach((t) => t.stop());
+      this.releaseMic();
     } catch {
       /* noop */
     }
