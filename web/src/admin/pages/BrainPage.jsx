@@ -55,7 +55,7 @@ export default function BrainPage() {
         icon={Brain}
         title="团队背景"
         hint="团队在做什么、当前的重点。帮助助手听懂同事在说什么，不会被读出来。"
-        placeholder="例如：我们是 COCO 团队，正在做 AI agent 协作平台。当前重点是……"
+        placeholder="例如：我们是 OpenMax 团队，正在做 AI agent 协作平台。当前重点是……"
         initial={ctx.team_background}
         onSave={(v) => api('api/context', { method: 'PUT', body: { team_background: v } })}
       />

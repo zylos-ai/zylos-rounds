@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.3] - 2026-07-19
+
+### Fixed
+- **Brand:** 大脑 page team-background placeholder still said COCO — now
+  OpenMax (repo-wide sweep found no other user-facing occurrence)
+
 ## [0.11.2] - 2026-07-19
 
 ### Changed
