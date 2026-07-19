@@ -28,6 +28,48 @@ const parseList = v => {
   }
 };
 
+// Owner ruling (2026-07-19): a profile is a synthesized portrait organized by
+// dimensions, never a dated event log — the old "- [YYYY-MM-DD] entry" format
+// grew into exactly that. Only Current-workstreams lines carry dates (they are
+// genuinely time-bound); every other dimension holds distilled stable traits.
+const RULES_ZH = `请输出更新后的完整画像。画像是对这个人的综合归纳，不是事件记录——把新信息提炼、融合进对应维度的已有表述，而不是按日期追加条目。
+
+按以下维度组织（Markdown 小节，无内容的维度省略，不要输出一级大标题）：
+### 角色与职责
+### 工作主线
+正在推进的事项，每条概括当前状态和所处阶段，句末标注最后确认日期（如"（07-19）"）；超过 30 天未再确认且明显不再进行的删除。
+### 关注点与诉求
+持续关心的方向、反复表达的诉求与优先级。
+### 卡点模式
+反复出现或长期存在的障碍；一次性卡点解决后即删除。
+### 风格与习惯
+工作节奏、沟通与表达方式、协作习惯。
+
+要求：
+- 用概括性表述："正在主导 X，处于联调阶段"，而不是"某天做了什么"；逐日流水不进画像。
+- 新信息优先融合改写已有条目，被取代的旧表述删除。
+- 除工作主线外，其他维度不带日期，只保留提炼后的稳定认识。
+- 总长不超过 500 字。只输出画像本身，不要解释或多余文字。`;
+
+const RULES_EN = `Output the full updated profile. A profile is a synthesized portrait of the person, not an event log — distill new information into the existing wording of the matching dimension instead of appending dated entries.
+
+Organize into these dimensions (Markdown sections; omit empty ones; no top-level heading):
+### Role & responsibilities
+### Current workstreams
+Items actively in progress — each line summarizes the current state and stage, ending with the last-confirmed date (e.g. "(07-19)"); drop items unconfirmed for over 30 days and clearly no longer active.
+### Focus & asks
+Directions they persistently care about, repeated asks and priorities.
+### Blocker patterns
+Recurring or long-standing obstacles; remove one-off blockers once resolved.
+### Style & habits
+Work rhythm, communication and collaboration style.
+
+Requirements:
+- Summarize, don't log: "leading X, now in integration testing", never "did Y on a given day"; day-by-day details stay out.
+- Fold new information into existing entries first; delete superseded wording.
+- Only Current workstreams carries dates — other dimensions hold distilled, stable observations.
+- Keep the total under 350 words. Output only the profile itself — no explanation or extra text.`;
+
 // The profile is written in the member's language: their reports arrive in it,
 // and the profile is injected into the agent's instructions for that member's
 // calls (mixed-language instructions degrade weaker realtime models).
@@ -44,18 +86,8 @@ const PROFILE_STRINGS = {
     todayReport: body => `【今天的日报】\n${body}`,
     todayTask: (title, body) => `【今天的一对一沟通】主题：${title}\n${body}`,
     transcript: t => `【今天的原始对话】\n${t}`,
-    rulesDaily: `请输出更新后的完整画像，要求：
-- 内容围绕：角色/职责、在做的项目及进展脉络、持续的关注点、反复出现的卡点、工作习惯，以及对话中透露的其他有助于沟通的信息。
-- 每条一行，以"- [YYYY-MM-DD]"开头，日期是该信息最后一次被确认的日期；今天日报里再次出现的旧信息，把日期更新为今天并合并表述。
-- 超过 30 天没有再出现、且已明显不再相关的条目删除；被新信息取代的旧表述删除。
-- 逐日的流水账（具体某天做了什么）不要进画像，画像只保留跨天有意义的脉络和事实。
-- 总长不超过 500 字。只输出画像条目本身，不要任何解释、标题或多余文字。`,
-    rulesTask: `请输出更新后的完整画像，要求：
-- 内容围绕：角色/职责、在做的项目及进展脉络、持续的关注点、反复出现的卡点、工作习惯，以及对话中透露的其他有助于沟通的信息。
-- 每条一行，以"- [YYYY-MM-DD]"开头，日期是该信息最后一次被确认的日期；这次沟通里再次出现的旧信息，把日期更新为今天并合并表述。
-- 超过 30 天没有再出现、且已明显不再相关的条目删除；被新信息取代的旧表述删除。
-- 逐次沟通的流水账不要进画像，画像只保留跨天有意义的脉络和事实。
-- 总长不超过 500 字。只输出画像条目本身，不要任何解释、标题或多余文字。`,
+    rulesDaily: RULES_ZH,
+    rulesTask: RULES_ZH,
   },
   en: {
     sep: ':',
@@ -69,18 +101,8 @@ const PROFILE_STRINGS = {
     todayReport: body => `[Today's report]\n${body}`,
     todayTask: (title, body) => `[Today's one-on-one] Topic: ${title}\n${body}`,
     transcript: t => `[Today's raw conversation]\n${t}`,
-    rulesDaily: `Output the full updated profile, with these requirements:
-- Content should cover: role/responsibilities, ongoing projects and their progress threads, persistent focus areas, recurring blockers, work habits, and anything else revealed in conversation that helps communication.
-- One entry per line, starting with "- [YYYY-MM-DD]" — the date the information was last confirmed; for old information that reappears in today's report, update its date to today and merge the wording.
-- Delete entries not seen for over 30 days that are clearly no longer relevant; delete old wording superseded by new information.
-- Day-by-day logs (what was done on a specific day) do not belong in the profile — keep only threads and facts meaningful across days.
-- Keep the total under 350 words. Output only the profile entries themselves — no explanation, headings or extra text.`,
-    rulesTask: `Output the full updated profile, with these requirements:
-- Content should cover: role/responsibilities, ongoing projects and their progress threads, persistent focus areas, recurring blockers, work habits, and anything else revealed in conversation that helps communication.
-- One entry per line, starting with "- [YYYY-MM-DD]" — the date the information was last confirmed; for old information that reappears in this conversation, update its date to today and merge the wording.
-- Delete entries not seen for over 30 days that are clearly no longer relevant; delete old wording superseded by new information.
-- Per-conversation logs do not belong in the profile — keep only threads and facts meaningful across days.
-- Keep the total under 350 words. Output only the profile entries themselves — no explanation, headings or extra text.`,
+    rulesDaily: RULES_EN,
+    rulesTask: RULES_EN,
   },
 };
 
@@ -92,6 +114,11 @@ export class ProfileUpdater {
     this.getConfig = getConfig;
     this.env = env;       // { openaiApiKey, proxy }
     this.settings = settings; // textConnection('profile'): provider + key + model
+  }
+
+  /** Owner-written override of the default profile rules (agent_context KV), verbatim when set. */
+  profileRules(defaultRules) {
+    return (this.store.getContext('profile_instruction') || '').trim() || defaultRules;
   }
 
   buildPrompt(member, report, todayDate) {
@@ -113,7 +140,7 @@ export class ProfileUpdater {
       existing ? L.existing(existing) : L.existingEmpty,
       L.todayReport(body),
       transcript ? L.transcript(transcript) : null,
-      L.rulesDaily,
+      this.profileRules(L.rulesDaily),
     ].filter(Boolean).join('\n\n');
   }
 
@@ -172,7 +199,7 @@ export class ProfileUpdater {
         (member.profile || '').trim() ? L.existing(member.profile.trim()) : L.existingEmpty,
         L.todayTask(task.title, body),
         transcript ? L.transcript(transcript) : null,
-        L.rulesTask,
+        this.profileRules(L.rulesTask),
       ].filter(Boolean).join('\n\n');
 
       const text = await this.callModel(conn, prompt, member.id);

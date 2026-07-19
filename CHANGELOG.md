@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] - 2026-07-19
+
+### Changed
+- **Member profiles are now synthesized portraits, not event logs.** The
+  profile prompt no longer produces dated "- [YYYY-MM-DD] entry" lines;
+  profiles are organized by dimension (角色与职责 / 工作主线 / 关注点与诉求 /
+  卡点模式 / 风格与习惯), folding new information into existing wording.
+  Only Current-workstreams lines carry a last-confirmed date; other
+  dimensions hold distilled stable traits.
+
+### Added
+- **Custom profile instruction (global).** New `profile_instruction`
+  agent-context key — editable on the Brain page and via
+  `cli.js brain set profile-instruction` — fully replaces the built-in
+  profile template for all members when set.
+- **Digest instruction editable on existing tasks.** The digest card now has
+  an edit affordance (previously create-form only), so any task — including
+  the built-in daily standup — can set or change its per-task custom digest
+  instruction from the detail page.
+
 ## [0.14.1] - 2026-07-19
 
 ### Changed

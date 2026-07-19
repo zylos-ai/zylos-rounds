@@ -35,7 +35,7 @@ Members
 
 Agent brain
   brain get                           team_background + probing_guidance
-  brain set <team-background|probing-guidance> [text]    (text arg or stdin)
+  brain set <team-background|probing-guidance|profile-instruction> [text]  (text arg or stdin)
 
 Knowledge base
   knowledge list
@@ -157,7 +157,7 @@ async function call(target, method, apiPath, body) {
   return data;
 }
 
-const BRAIN_KEYS = { 'team-background': 'team_background', 'probing-guidance': 'probing_guidance' };
+const BRAIN_KEYS = { 'team-background': 'team_background', 'probing-guidance': 'probing_guidance', 'profile-instruction': 'profile_instruction' };
 
 async function run(target, cmd, sub, args, flags) {
   const get = p => call(target, 'GET', p);
@@ -186,7 +186,7 @@ async function run(target, cmd, sub, args, flags) {
     case 'brain get': return get('/api/context');
     case 'brain set': {
       const key = BRAIN_KEYS[args[0]];
-      if (!key) fail('usage: brain set <team-background|probing-guidance> [text]');
+      if (!key) fail('usage: brain set <team-background|probing-guidance|profile-instruction> [text]');
       return put('/api/context', { [key]: textInput(args[1]) });
     }
 

@@ -76,7 +76,7 @@ const DICT = {
     probeLabel: '追问指引（可选，叠加在大脑的通用追问指引之上）',
     probePh: '这次沟通要重点追什么、追到什么深度。例如：\n- 提到延期时，追问影响面和新的时间点\n- 只聊结论不聊过程时，追一个具体例子',
     digestInstrLabel: '汇总 instruction（可选，不填用默认模板）',
-    digestInstrPhRecurring: '默认模板：进展要点 / 共性主题 / 重点信号。想换个结构或口径就写在这里。',
+    digestInstrPhRecurring: '默认模板：按事项归并的进展 / 卡点与风险 / 待议。想换个结构或口径就写在这里。',
     digestInstrPhOneshot: '默认模板：共识 / 分歧 / 重点信号。想换个结构或口径就写在这里。',
     participantsLabel: '参与成员（每人会生成该任务专属链接）',
     deadlineLabel: '截止日期（可选）',
@@ -105,11 +105,14 @@ const DICT = {
     digestManual: '默认手工触发，可随时生成',
     digestAutoSet: (ts, closeLinked) => ` · 已设自动生成 ${ts}${closeLinked ? '（生成后自动关闭）' : ''}`,
     digestCustomInstr: ' · 已自定义汇总 instruction',
+    digestInstrEdit: '自定义汇总 instruction',
+    digestInstrDialogTitle: (title) => `「${title}」的汇总 instruction`,
+    digestInstrDialogDesc: '自定义这个任务的汇总生成规则（结构、口径），设置后替代默认模板，只作用于本任务。留空恢复默认。',
     regenDigest: '重新生成汇总',
     genDigest: '生成汇总',
     digestNotYet: '尚未生成。成员完成对话后点「生成汇总」',
     digestNotYetCustom: '，按自定义 instruction 输出。',
-    digestNotYetRecurring: '，输出进展要点 / 共性主题 / 重点信号。',
+    digestNotYetRecurring: '，按事项输出进展 / 卡点与风险 / 待议。',
     digestNotYetOneshot: '，输出共识 / 分歧 / 重点信号。',
     participants: '参与成员',
     cycleFrom: (key, current) => `${key} 起的这一期${current ? '（本期）' : ''}`,
@@ -197,7 +200,7 @@ const DICT = {
     probeLabel: 'Probing guidance (optional, layered on top of the brain’s general guidance)',
     probePh: 'What to probe in this round and how deep. For example:\n- When a delay comes up, probe the impact and the new date\n- When only conclusions are shared, ask for a concrete example',
     digestInstrLabel: 'Digest instruction (optional; default template if empty)',
-    digestInstrPhRecurring: 'Default template: progress highlights / common themes / key signals. Write here to change the structure or angle.',
+    digestInstrPhRecurring: 'Default template: progress / blockers & risks / for discussion, grouped by workstream. Write here to change the structure or angle.',
     digestInstrPhOneshot: 'Default template: consensus / disagreements / key signals. Write here to change the structure or angle.',
     participantsLabel: 'Participants (each member gets a task-specific link)',
     deadlineLabel: 'Deadline (optional)',
@@ -226,11 +229,14 @@ const DICT = {
     digestManual: 'Manual trigger by default; generate anytime',
     digestAutoSet: (ts, closeLinked) => ` · auto-digest scheduled for ${ts}${closeLinked ? ' (task closes after)' : ''}`,
     digestCustomInstr: ' · custom digest instruction set',
+    digestInstrEdit: 'Customize digest instruction',
+    digestInstrDialogTitle: (title) => `Digest instruction for "${title}"`,
+    digestInstrDialogDesc: 'Custom rules for this task\'s digest (structure, angle). When set it replaces the default template, for this task only. Clear to restore the default.',
     regenDigest: 'Regenerate digest',
     genDigest: 'Generate digest',
     digestNotYet: 'Not generated yet. Once members finish their conversations, click "Generate digest"',
     digestNotYetCustom: ' to output using your custom instruction.',
-    digestNotYetRecurring: ' to output progress highlights / common themes / key signals.',
+    digestNotYetRecurring: ' to output progress / blockers & risks / for discussion, grouped by workstream.',
     digestNotYetOneshot: ' to output consensus / disagreements / key signals.',
     participants: 'Participants',
     cycleFrom: (key, current) => `cycle starting ${key}${current ? ' (current)' : ''}`,
@@ -586,8 +592,33 @@ function CreateTaskCard({ onDone }) {
 
 /* ---------------- detail ---------------- */
 
-function DigestCard({ task, digesting, digestError, onTrigger }) {
+function DigestCard({ task, digesting, digestError, onTrigger, onSaved }) {
   const T = useLangDict(DICT);
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(task.digest_instruction || '');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const onOpenChange = (next) => {
+    if (next) { setValue(task.digest_instruction || ''); setErr(''); }
+    setOpen(next);
+  };
+
+  const saveInstr = async () => {
+    if (busy) return;
+    setBusy(true);
+    setErr('');
+    try {
+      await api(`api/tasks/${task.id}`, { method: 'PUT', body: { digest_instruction: value } });
+      setOpen(false);
+      onSaved();
+    } catch (e) {
+      if (e.status !== 401) setErr(T.saveFailed);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Card>
       <CardContent className="py-5">
@@ -601,10 +632,45 @@ function DigestCard({ task, digesting, digestError, onTrigger }) {
             {task.digest_auto_at ? T.digestAutoSet(task.digest_auto_at.slice(0, 16), task.digest_close_linked) : ''}
             {task.digest_instruction ? T.digestCustomInstr : ''}
           </span>
-          <Button size="sm" className="ml-auto" onClick={onTrigger} disabled={digesting}>
-            {digesting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            {task.digest ? T.regenDigest : T.genDigest}
-          </Button>
+          <div className="ml-auto flex items-center gap-1">
+            <AlertDialog open={open} onOpenChange={onOpenChange}>
+              <Button
+                variant="ghost"
+                size="icon"
+                title={T.digestInstrEdit}
+                aria-label={T.digestInstrEdit}
+                className={cn('shrink-0', Boolean((task.digest_instruction || '').trim()) && 'text-primary')}
+                onClick={() => onOpenChange(true)}
+              >
+                <NotebookPen strokeWidth={1.75} />
+              </Button>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{T.digestInstrDialogTitle(task.title)}</AlertDialogTitle>
+                  <AlertDialogDescription>{T.digestInstrDialogDesc}</AlertDialogDescription>
+                </AlertDialogHeader>
+                <textarea
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  placeholder={task.type === 'recurring' ? T.digestInstrPhRecurring : T.digestInstrPhOneshot}
+                  rows={6}
+                  className={TEXTAREA_CLASS}
+                />
+                {err ? <p className="-mt-1 text-sm text-destructive">{err}</p> : null}
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={busy}>{T.cancel}</AlertDialogCancel>
+                  <Button className="h-[34px] px-4" disabled={busy} onClick={saveInstr}>
+                    {busy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
+                    {T.save}
+                  </Button>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            <Button size="sm" onClick={onTrigger} disabled={digesting}>
+              {digesting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {task.digest ? T.regenDigest : T.genDigest}
+            </Button>
+          </div>
         </div>
         {digestError && <p className="mb-3 text-sm text-destructive">{digestError}</p>}
         {task.digest
@@ -746,12 +812,12 @@ export function TaskDetailPage({ id, cycle }) {
       {task.is_builtin ? (
         <>
           {task.report && <DayReportView data={task.report} />}
-          <DigestCard task={task} digesting={digesting} digestError={digestError} onTrigger={triggerDigest} />
+          <DigestCard task={task} digesting={digesting} digestError={digestError} onTrigger={triggerDigest} onSaved={load} />
           <MemberLinksCard task={task} copied={copied} copy={copy} resetLink={resetLink} />
         </>
       ) : (
         <>
-          <DigestCard task={task} digesting={digesting} digestError={digestError} onTrigger={triggerDigest} />
+          <DigestCard task={task} digesting={digesting} digestError={digestError} onTrigger={triggerDigest} onSaved={load} />
 
           <Card>
             <CardContent className="py-5">

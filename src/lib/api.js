@@ -517,11 +517,12 @@ export class Api {
     return sendJson(res, 200, await this.settings.testTextModel(model, provider ?? undefined));
   }
 
-  // ---- agent context containers (background + probing guidance) ----
+  // ---- agent context containers (background + probing + profile instruction) ----
   getContext(res) {
     sendJson(res, 200, {
       team_background: this.store.getContext('team_background') || '',
       probing_guidance: this.store.getContext('probing_guidance') || '',
+      profile_instruction: this.store.getContext('profile_instruction') || '',
     });
   }
 
@@ -532,7 +533,7 @@ export class Api {
     } catch {
       return sendJson(res, 400, { error: 'bad_request' });
     }
-    for (const key of ['team_background', 'probing_guidance']) {
+    for (const key of ['team_background', 'probing_guidance', 'profile_instruction']) {
       if (body[key] === undefined) continue;
       const v = String(body[key]);
       if (v.length > 20000) return sendJson(res, 400, { error: 'too_long' });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Brain, MessageCircleQuestion, BookOpen, Loader2, Plus, Pencil, Trash2, X } from 'lucide-react';
+import { Brain, MessageCircleQuestion, BookOpen, Loader2, Plus, Pencil, Trash2, X, UserRoundPen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -31,6 +31,9 @@ const DICT = {
     probingTitle: '追问指引',
     probingHint: '决定助手在什么情况下追问、追问什么、追问到什么程度。你关心什么，就写在这里。',
     probingPlaceholder: '例如：当对方说某事「基本完成」时，追问一句是否验证过……',
+    profileInstrTitle: '画像生成指引',
+    profileInstrHint: '自定义动态画像的生成规则（结构、维度、口径），设置后完全替代系统默认模板，对所有成员生效。留空用默认：按维度归纳的综合画像。',
+    profileInstrPlaceholder: '例如：画像分三节——工作主线 / 协作关系 / 需要留意的信号，每节不超过 3 条……',
     saved: '已保存，下一次通话生效',
     saveFailed: '保存失败，请重试',
     save: '保存',
@@ -66,6 +69,9 @@ const DICT = {
     probingTitle: 'Probing guidance',
     probingHint: 'Controls when the assistant probes, what it asks about, and how deep it goes. Whatever you care about, write it here.',
     probingPlaceholder: 'e.g. When someone says something is "mostly done", ask whether it has been verified…',
+    profileInstrTitle: 'Profile instruction',
+    profileInstrHint: 'Custom rules for generating dynamic member profiles (structure, dimensions, tone). When set it fully replaces the built-in template, for all members. Leave empty for the default: a synthesized portrait organized by dimensions.',
+    profileInstrPlaceholder: 'e.g. Three sections — current workstreams / collaboration / signals to watch, at most 3 lines each…',
     saved: 'Saved, takes effect on the next call',
     saveFailed: 'Save failed, please retry',
     save: 'Save',
@@ -141,6 +147,15 @@ export default function BrainPage() {
         placeholder={T.probingPlaceholder}
         initial={ctx.probing_guidance}
         onSave={(v) => api('api/context', { method: 'PUT', body: { probing_guidance: v } })}
+      />
+
+      <ContextCard
+        icon={UserRoundPen}
+        title={T.profileInstrTitle}
+        hint={T.profileInstrHint}
+        placeholder={T.profileInstrPlaceholder}
+        initial={ctx.profile_instruction}
+        onSave={(v) => api('api/context', { method: 'PUT', body: { profile_instruction: v } })}
       />
 
       <KnowledgeSection />
