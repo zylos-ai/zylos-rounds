@@ -9,6 +9,11 @@ description: >-
   terminal) — no zylos installation and no server-side access required.
   Use when asked about rounds, 日报, standup, 汇报, digests, member links,
   画像, or when managing a remote Rounds deployment.
+version: 0.18.1
+type: capability
+
+lifecycle:
+  npm: false
 ---
 
 # Rounds Client
@@ -67,6 +72,16 @@ with a one-line message on stderr.
 
 ## Install / update this client
 
+Zylos users — the client is a versioned component, mirrored on every
+release to [zylos-ai/zylos-rounds-client](https://github.com/zylos-ai/zylos-rounds-client):
+
+```bash
+zylos add rounds-client       # install
+zylos upgrade rounds-client   # update
+```
+
+Any other runtime — copy the two files into a skills directory:
+
 ```bash
 DEST=~/.claude/skills/rounds-client   # or any skills dir your runtime reads
 mkdir -p "$DEST"
@@ -74,7 +89,8 @@ curl -fsSL https://raw.githubusercontent.com/zylos-ai/zylos-rounds/main/scripts/
 curl -fsSL https://raw.githubusercontent.com/zylos-ai/zylos-rounds/main/client/SKILL.md -o "$DEST/SKILL.md"
 ```
 
-The client is a single file — updating means re-downloading `cli.js`.
+`node cli.js version` prints the installed client version; updating a
+manual copy means re-downloading `cli.js`.
 
 ## Server deployment
 

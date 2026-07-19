@@ -1,0 +1,82 @@
+# Mirrors the portable client (client/SKILL.md + scripts/cli.js) to
+# zylos-ai/zylos-rounds-client on every release tag, so zylos users can
+# `zylos add rounds-client` and get versioned upgrades. The mirror repo is
+# build output only — never edited by hand.
+name: mirror-client
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to mirror (e.g. v0.18.1)'
+        required: true
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag
+        id: tag
+        run: |
+          TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - name: Verify versions match the tag
+        run: |
+          VER="${{ steps.tag.outputs.version }}"
+          PKG=$(node -p "require('./package.json').version")
+          CLI=$(node -e "import('./scripts/cli.js').then(m => console.log(m.CLIENT_VERSION))")
+          SKILL=$(sed -n 's/^version: //p' client/SKILL.md | head -1)
+          [ "$PKG" = "$VER" ] || { echo "package.json $PKG != tag $VER"; exit 1; }
+          [ "$CLI" = "$VER" ] || { echo "cli.js CLIENT_VERSION $CLI != tag $VER"; exit 1; }
+          [ "$SKILL" = "$VER" ] || { echo "client/SKILL.md version $SKILL != tag $VER"; exit 1; }
+
+      - name: Assemble client package
+        run: |
+          mkdir -p /tmp/out
+          cp client/SKILL.md /tmp/out/SKILL.md
+          cp scripts/cli.js /tmp/out/cli.js
+          {
+            echo "# zylos-rounds-client"
+            echo
+            echo "Portable management client for [zylos-rounds](https://github.com/zylos-ai/zylos-rounds)."
+            echo
+            echo "**Auto-mirrored from \`zylos-ai/zylos-rounds\` (\`client/\` + \`scripts/cli.js\`) on every release — do not edit or open PRs here.** Source of truth: https://github.com/zylos-ai/zylos-rounds"
+            echo
+            echo "Install as a zylos component: \`zylos add rounds-client\` — or see SKILL.md for manual install on any agent runtime."
+          } > /tmp/out/README.md
+
+      - name: Push to mirror repo
+        env:
+          DEPLOY_KEY: ${{ secrets.MIRROR_CLIENT_DEPLOY_KEY }}
+        run: |
+          set -e
+          TAG="${{ steps.tag.outputs.tag }}"
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/mirror_key
+          chmod 600 ~/.ssh/mirror_key
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/mirror_key -o IdentitiesOnly=yes"
+          git clone --depth 1 git@github.com:zylos-ai/zylos-rounds-client.git /tmp/mirror || {
+            # first run: repo may be empty
+            mkdir -p /tmp/mirror && cd /tmp/mirror && git init -b main
+            git remote add origin git@github.com:zylos-ai/zylos-rounds-client.git
+          }
+          cd /tmp/mirror
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || git ls-remote --exit-code --tags origin "$TAG" >/dev/null 2>&1; then
+            echo "tag $TAG already exists on mirror — refusing to overwrite"; exit 1
+          fi
+          find . -mindepth 1 -maxdepth 1 -not -name .git -exec rm -rf {} +
+          cp /tmp/out/* .
+          git add -A
+          git -c user.name='zylos-rounds mirror' -c user.email='actions@github.com' \
+            commit --allow-empty -m "release $TAG — mirrored from zylos-ai/zylos-rounds@${{ github.sha }}"
+          git tag "$TAG"
+          git push origin main "$TAG"

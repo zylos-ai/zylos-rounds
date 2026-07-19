@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.1] - 2026-07-20
+
+### Added
+- **rounds-client is now an installable zylos component**: every release tag
+  auto-mirrors `client/SKILL.md` + `scripts/cli.js` to
+  [zylos-ai/zylos-rounds-client](https://github.com/zylos-ai/zylos-rounds-client)
+  via GitHub Action (`mirror-client.yml`), so zylos users get versioned
+  `zylos add rounds-client` / `zylos upgrade rounds-client` instead of a
+  static curl copy. The mirror workflow refuses to run if package.json,
+  cli.js or client/SKILL.md versions drift from the tag.
+- `cli.js version` / `--version` prints the client version without a server
+  call; help header shows it too.
+
 ## [0.18.0] - 2026-07-20
 
 ### Changed

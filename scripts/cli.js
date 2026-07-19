@@ -24,9 +24,12 @@ import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
-const HELP = `rounds CLI — manage the Rounds app via its admin API
+export const CLIENT_VERSION = '0.18.1';
+
+const HELP = `rounds CLI v${CLIENT_VERSION} — manage the Rounds app via its admin API
 
 Usage: cli.js [--url U] [--key K] <command> [args]
+       cli.js version                 print client version (no server call)
 
 Members
   member list                         roster with per-task links, context/profile
@@ -375,6 +378,10 @@ async function main() {
   const { flags, rest } = parseArgs(process.argv.slice(2));
   if (flags.help !== undefined || rest[0] === 'help' || !rest.length) {
     console.log(HELP);
+    return;
+  }
+  if (flags.version !== undefined || rest[0] === 'version') {
+    console.log(JSON.stringify({ name: 'rounds-client', version: CLIENT_VERSION }));
     return;
   }
   const target = resolveTarget(flags, process.env, process.env.HOME || '');

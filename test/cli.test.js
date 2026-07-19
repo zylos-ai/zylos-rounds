@@ -63,3 +63,9 @@ test('resolveTarget searches ROUNDS_HOME and ~/.rounds before the zylos data dir
   fs.writeFileSync(path.join(customDir, 'config.json'), JSON.stringify({ port: 5000, serviceToken: 'local-key' }));
   assert.equal(resolveTarget({}, { ROUNDS_HOME: customDir }, home), null);
 });
+
+test('CLIENT_VERSION matches package.json version', async () => {
+  const { CLIENT_VERSION } = await import('../scripts/cli.js');
+  const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.equal(CLIENT_VERSION, pkg.version);
+});
