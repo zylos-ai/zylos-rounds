@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AudioLines, CheckCircle2, ChevronLeft, ChevronRight, CircleDollarSign, FileText,
-  Globe, Loader2, Pencil, Plus, RefreshCw, Server, Square, Trash2, Volume2, XCircle,
+  AudioLines, CheckCircle2, FileText, Globe, Loader2, Pencil, Plus, RefreshCw,
+  Server, Square, Trash2, Volume2, XCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -31,11 +31,6 @@ const TZ_SUGGESTIONS = [
 
 const testErrorText = (r) => TEST_ERRORS[r.error] || `失败（${r.error}）`;
 
-const fmtUsd = (v) => `$${(v || 0) < 0.995 ? (v || 0).toFixed(3) : (v || 0).toFixed(2)}`;
-const fmtMinutes = (s) => {
-  const min = (s || 0) / 60;
-  return min >= 1 ? `${min.toFixed(0)} 分钟` : s > 0 ? '<1 分钟' : '—';
-};
 
 /** Inline create/edit form. The builtin provider only exposes its API key. */
 function ProviderForm({ provider, onDone, onCancel }) {
@@ -215,11 +210,6 @@ export default function SettingsPage() {
   const [tzMsg, setTzMsg] = useState(null);
   const tzMsgTimer = useRef(null);
 
-  // usage/cost card state
-  const [usage, setUsage] = useState(null);       // /api/usage payload
-  const [usageMonth, setUsageMonth] = useState(''); // '' = current month
-  const [usageBusy, setUsageBusy] = useState(false);
-
   // model suggestion cache per provider slug ('' = builtin)
   const [modelCache, setModelCache] = useState({});
   const [refreshBusy, setRefreshBusy] = useState({}); // { [cacheKey]: true }
@@ -323,25 +313,6 @@ export default function SettingsPage() {
       clearTimeout(tzMsgTimer.current);
     };
   }, [load]);
-
-  // usage/cost card — loads independently so a failure never blocks settings
-  useEffect(() => {
-    let stale = false;
-    setUsageBusy(true);
-    api(`api/usage${usageMonth ? `?month=${usageMonth}` : ''}`)
-      .then((data) => { if (!stale) setUsage(data); })
-      .catch(() => { if (!stale) setUsage(null); })
-      .finally(() => { if (!stale) setUsageBusy(false); });
-    return () => { stale = true; };
-  }, [usageMonth]);
-
-  const shiftUsageMonth = (delta) => {
-    const cur = usageMonth || usage?.month;
-    if (!cur) return;
-    const [y, m] = cur.split('-').map(Number);
-    const d = new Date(Date.UTC(y, m - 1 + delta, 1));
-    setUsageMonth(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`);
-  };
 
   const flash = (setter, timer, msg) => {
     setter(msg);
@@ -709,106 +680,6 @@ export default function SettingsPage() {
           {tzMsg ? (
             <p className={cn('mt-3 text-sm', tzMsg.ok ? 'text-success' : 'text-destructive')}>{tzMsg.text}</p>
           ) : null}
-        </CardContent>
-      </Card>
-
-      <Card className="mt-6">
-        <CardContent className="px-6 py-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent text-muted-foreground">
-                <CircleDollarSign className="h-5 w-5" strokeWidth={1.75} />
-              </span>
-              <div>
-                <h2 className="text-lg font-semibold leading-tight">用量与成本</h2>
-                <p className="mt-0.5 text-sm text-muted-foreground">按 API 返回的真实 token 用量与官方价目估算（美元）</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-1 text-sm text-muted-foreground">
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => shiftUsageMonth(-1)} aria-label="上一月">
-                <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
-              </Button>
-              <span className="min-w-[4.5rem] text-center font-medium tabular-nums">{usage?.month || '—'}</span>
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => shiftUsageMonth(1)} aria-label="下一月">
-                <ChevronRight className="h-4 w-4" strokeWidth={1.75} />
-              </Button>
-            </div>
-          </div>
-
-          {usageBusy && !usage ? (
-            <p className="mt-6 text-sm text-muted-foreground"><Loader2 className="mr-1.5 inline h-4 w-4 animate-spin" strokeWidth={1.75} />加载中…</p>
-          ) : !usage ? (
-            <p className="mt-6 text-sm text-muted-foreground">用量数据加载失败，请刷新重试</p>
-          ) : (
-            <>
-              <div className="mt-6 grid grid-cols-2 gap-4 sm:max-w-md">
-                <div className="rounded-lg bg-accent/60 px-4 py-3">
-                  <p className="text-sm text-muted-foreground">本月累计</p>
-                  <p className="mt-1 text-2xl font-semibold tabular-nums">{fmtUsd(usage.total_usd)}</p>
-                </div>
-                <div className="rounded-lg bg-accent/60 px-4 py-3">
-                  <p className="text-sm text-muted-foreground">今日</p>
-                  <p className="mt-1 text-2xl font-semibold tabular-nums">{fmtUsd(usage.today_usd)}</p>
-                </div>
-              </div>
-
-              {usage.by_model.length ? (
-                <div className="mt-6 overflow-x-auto">
-                  <p className="mb-2 text-sm font-medium text-muted-foreground">按模型</p>
-                  <table className="w-full min-w-[420px] text-sm">
-                    <thead>
-                      <tr className="border-b text-left text-muted-foreground">
-                        <th className="py-1.5 pr-3 font-medium">模型</th>
-                        <th className="py-1.5 pr-3 font-medium">用途</th>
-                        <th className="py-1.5 pr-3 text-right font-medium">次数</th>
-                        <th className="py-1.5 pr-3 text-right font-medium">通话时长</th>
-                        <th className="py-1.5 text-right font-medium">费用</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {usage.by_model.map((r) => (
-                        <tr key={`${r.model}-${r.slot}`} className="border-b border-border/60 last:border-0">
-                          <td className="py-1.5 pr-3 font-mono text-[0.8rem]">{r.model}</td>
-                          <td className="py-1.5 pr-3">{SLOT_LABELS[r.slot] || r.slot}</td>
-                          <td className="py-1.5 pr-3 text-right tabular-nums">{r.calls}</td>
-                          <td className="py-1.5 pr-3 text-right tabular-nums">{r.slot === 'voice' ? fmtMinutes(r.seconds) : '—'}</td>
-                          <td className="py-1.5 text-right tabular-nums">{fmtUsd(r.usd)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="mt-6 text-sm text-muted-foreground">本月还没有用量记录（从 v0.11.0 上线后的通话开始统计）</p>
-              )}
-
-              {usage.by_member.length ? (
-                <div className="mt-5 overflow-x-auto">
-                  <p className="mb-2 text-sm font-medium text-muted-foreground">按成员</p>
-                  <table className="w-full min-w-[360px] text-sm">
-                    <thead>
-                      <tr className="border-b text-left text-muted-foreground">
-                        <th className="py-1.5 pr-3 font-medium">成员</th>
-                        <th className="py-1.5 pr-3 text-right font-medium">次数</th>
-                        <th className="py-1.5 pr-3 text-right font-medium">通话时长</th>
-                        <th className="py-1.5 text-right font-medium">费用</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {usage.by_member.map((r) => (
-                        <tr key={r.member_id} className="border-b border-border/60 last:border-0">
-                          <td className="py-1.5 pr-3">{r.name || `#${r.member_id}`}</td>
-                          <td className="py-1.5 pr-3 text-right tabular-nums">{r.calls}</td>
-                          <td className="py-1.5 pr-3 text-right tabular-nums">{fmtMinutes(r.seconds)}</td>
-                          <td className="py-1.5 text-right tabular-nums">{fmtUsd(r.usd)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
-            </>
-          )}
         </CardContent>
       </Card>
     </>

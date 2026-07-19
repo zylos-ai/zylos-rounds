@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Mic, Users, LogOut, Brain, Settings as SettingsIcon, ClipboardList } from 'lucide-react';
+import { Mic, Users, LogOut, Brain, Settings as SettingsIcon, ClipboardList, CircleDollarSign } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { api } from './api';
@@ -8,6 +8,7 @@ import LoginPage from './pages/LoginPage';
 import MembersPage from './pages/MembersPage';
 import BrainPage from './pages/BrainPage';
 import SettingsPage from './pages/SettingsPage';
+import UsagePage from './pages/UsagePage';
 import { TasksPage, TaskDetailPage } from './pages/TasksPage';
 
 export default function App() {
@@ -68,6 +69,7 @@ export default function App() {
       {route.name === 'task' && <TaskDetailPage id={route.id} cycle={route.cycle} />}
       {route.name === 'members' && <MembersPage />}
       {route.name === 'brain' && <BrainPage />}
+      {route.name === 'usage' && <UsagePage />}
       {route.name === 'settings' && <SettingsPage />}
       {route.name === 'legacyReport' && <LegacyDailyRedirect date={route.date} />}
     </Layout>
@@ -105,6 +107,7 @@ function Layout({ route, onLogout, children }) {
     { label: '任务', hash: '#/', icon: ClipboardList, active: route.name === 'tasks' || route.name === 'task' || route.name === 'legacyReport' },
     { label: '成员', hash: '#/members', icon: Users, active: route.name === 'members' },
     { label: '大脑', hash: '#/brain', icon: Brain, active: route.name === 'brain' },
+    { label: '用量', hash: '#/usage', icon: CircleDollarSign, active: route.name === 'usage' },
     { label: '设置', hash: '#/settings', icon: SettingsIcon, active: route.name === 'settings' },
   ];
 

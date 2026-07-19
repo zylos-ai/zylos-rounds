@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.1] - 2026-07-19
+
+### Changed
+- **用量与成本 promoted to its own nav page.** Cost is something the owner
+  checks, not configures — buried at the bottom of a five-card settings page
+  it was hard to reach. New 用量 tab (任务/成员/大脑/用量/设置) with the
+  month rollup as a full page; the settings page returns to pure
+  configuration. Mobile-adapted: single-line table headers, truncated model
+  ids with the slot label kept visible, 用途 column folded into the model
+  cell on small screens, no page-level horizontal scroll
+
 ## [0.11.0] - 2026-07-19
 
 ### Added

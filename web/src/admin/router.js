@@ -19,6 +19,7 @@ export function parseHash() {
   if (m) return { name: 'task', id: Number(m[1]), cycle: m[2] };
   if (h === '/members') return { name: 'members' };
   if (h === '/brain') return { name: 'brain' };
+  if (h === '/usage') return { name: 'usage' };
   if (h === '/settings') return { name: 'settings' };
   if (h === '/reports') return { name: 'legacyReport', date: null };
   m = h.match(/^\/report\/(\d{4}-\d{2}-\d{2})$/);
