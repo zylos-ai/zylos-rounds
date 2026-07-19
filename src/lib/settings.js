@@ -21,7 +21,18 @@ import { DEFAULT_PROFILE_MODEL } from './profile.js';
 
 export const BUILTIN_PROVIDER = 'openai';
 // Suggestions (datalist) — no longer a validation whitelist since v0.8.
-export const MODEL_OPTIONS = ['gpt-realtime-2.1', 'gpt-realtime', 'gpt-realtime-mini'];
+export const MODEL_OPTIONS = ['gpt-realtime-2.1', 'gpt-realtime', 'gpt-realtime-mini', 'gemini-2.5-flash-native-audio-latest', 'gemini-3.1-flash-live-preview'];
+
+/**
+ * Wire protocol a provider speaks. Inferred from the base URL — a provider
+ * pointed at generativelanguage.googleapis.com is Gemini (Live API WS +
+ * ?key= auth + /v1beta/models); everything else is OpenAI-compatible.
+ */
+export function providerProtocol(provider) {
+  return /generativelanguage\.googleapis\.com/i.test(provider?.base_url || '') ? 'gemini' : 'openai';
+}
+
+const GEMINI_WS_PATH = '/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
 export const VOICE_OPTIONS = ['marin', 'cedar', 'coral', 'sage', 'shimmer', 'alloy', 'ash', 'ballad', 'echo', 'verse'];
 
 export const SLOTS = ['voice', 'profile', 'digest'];
@@ -145,10 +156,12 @@ export class Settings {
   voiceConnection() {
     const provider = this.slotProvider('voice');
     const base = (provider?.base_url || 'https://api.openai.com').replace(/\/+$/, '');
+    const protocol = providerProtocol(provider);
     return {
       provider,
+      protocol,
       key: this.providerKey(provider),
-      wsUrl: `${base.replace(/^http/i, 'ws')}/v1/realtime`,
+      wsUrl: `${base.replace(/^http/i, 'ws')}${protocol === 'gemini' ? GEMINI_WS_PATH : '/v1/realtime'}`,
       model: this.resolveModel(),
       voice: this.resolveVoice(),
     };
@@ -168,16 +181,24 @@ export class Settings {
 
   // ---- probes ----
 
+  /** Provider-protocol-aware models endpoint + auth (Gemini: ?key=, no Bearer). */
+  modelsRequest(provider, key) {
+    const base = (provider.base_url || '').replace(/\/+$/, '');
+    return providerProtocol(provider) === 'gemini'
+      ? { url: `${base}/v1beta/models?key=${encodeURIComponent(key)}&pageSize=1000`, headers: {}, base }
+      : { url: `${base}/v1/models`, headers: { Authorization: `Bearer ${key}` }, base };
+  }
+
   /** Cheap key + connectivity probe against a provider's models endpoint. */
   testConnection(provider = this.builtinProvider()) {
     const key = this.providerKey(provider);
     if (!key) return Promise.resolve({ ok: false, error: 'no_key' });
-    const base = (provider.base_url || '').replace(/\/+$/, '');
+    const { url, headers, base } = this.modelsRequest(provider, key);
     return new Promise(resolve => {
       const doRequest = base.startsWith('https:') ? httpsRequest : httpRequest;
-      const req = doRequest(`${base}/v1/models`, {
+      const req = doRequest(url, {
         method: 'GET',
-        headers: { Authorization: `Bearer ${key}` },
+        headers,
         agent: base.startsWith('https:') && this.env.proxy ? new HttpsProxyAgent(this.env.proxy) : undefined,
         timeout: 10_000,
       }, res => {
@@ -191,16 +212,17 @@ export class Settings {
     });
   }
 
-  /** Fetch a provider's model list via GET /v1/models. */
+  /** Fetch a provider's model list (OpenAI /v1/models or Gemini /v1beta/models). */
   listModels(provider) {
     const key = this.providerKey(provider);
     if (!key) return Promise.resolve({ ok: false, error: 'no_key' });
-    const base = (provider.base_url || '').replace(/\/+$/, '');
+    const { url, headers, base } = this.modelsRequest(provider, key);
+    const gemini = providerProtocol(provider) === 'gemini';
     return new Promise(resolve => {
       const doRequest = base.startsWith('https:') ? httpsRequest : httpRequest;
-      const req = doRequest(`${base}/v1/models`, {
+      const req = doRequest(url, {
         method: 'GET',
-        headers: { Authorization: `Bearer ${key}` },
+        headers,
         agent: base.startsWith('https:') && this.env.proxy ? new HttpsProxyAgent(this.env.proxy) : undefined,
         timeout: 15_000,
       }, res => {
@@ -211,7 +233,10 @@ export class Settings {
             return resolve({ ok: false, error: res.statusCode === 401 ? 'invalid_key' : `http_${res.statusCode}` });
           }
           try {
-            const ids = (JSON.parse(data).data || []).map(m => m.id).filter(Boolean).sort();
+            const parsed = JSON.parse(data);
+            const ids = gemini
+              ? (parsed.models || []).map(m => (m.name || '').replace(/^models\//, '')).filter(Boolean).sort()
+              : (parsed.data || []).map(m => m.id).filter(Boolean).sort();
             resolve({ ok: true, models: ids });
           } catch {
             resolve({ ok: false, error: 'bad_response' });

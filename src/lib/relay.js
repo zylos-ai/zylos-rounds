@@ -16,6 +16,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { todayLocal } from './http-util.js';
 import { ONESHOT_CYCLE, currentCycleKey } from './cycle.js';
+import { GeminiUpstream } from './gemini-live.js';
 
 const SUBMIT_TOOL = {
   type: 'function',
@@ -246,10 +247,14 @@ export class Relay {
       : null;
     console.log(`[rounds] session start ${member.name}${generic ? ` (task #${task.id} ${task.title}, cycle ${cycleKey})` : ''}`);
 
-    const upstream = new WebSocket(`${conn.wsUrl}?model=${model}`, {
-      agent: this.env.proxy && conn.wsUrl.startsWith('wss:') ? new HttpsProxyAgent(this.env.proxy) : undefined,
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
+    // Gemini providers speak a different wire protocol — the adapter emulates
+    // the OpenAI Realtime surface so everything below stays provider-agnostic.
+    const upstream = conn.protocol === 'gemini'
+      ? new GeminiUpstream({ wsUrl: conn.wsUrl, key: apiKey, model, proxy: this.env.proxy })
+      : new WebSocket(`${conn.wsUrl}?model=${model}`, {
+        agent: this.env.proxy && conn.wsUrl.startsWith('wss:') ? new HttpsProxyAgent(this.env.proxy) : undefined,
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
 
     const killTimer = setTimeout(() => finish('timeout'), maxSessionMs);
     let closed = false;

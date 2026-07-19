@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-07-19
+
+### Added
+- **Gemini Live voice provider.** A provider whose base URL points at
+  `generativelanguage.googleapis.com` now speaks Google's BidiGenerateContent
+  protocol through a new upstream adapter (`src/lib/gemini-live.js`) that
+  emulates the OpenAI Realtime surface — the relay, client, tools
+  (submit/recall/knowledge), continuation, transcripts and text-mode gating
+  all work unchanged. Audio input is resampled 24k→16k server-side
+  (phase-continuous); input/output transcription is native (no ASR sidecar).
+  Thinking is disabled (`thinkingBudget: 0`) — thinking plus tool calls in
+  audio sessions trips a server-side `CONTENT_TYPE_AUDIO` close (observed on
+  native-audio-preview-12-2025). Provider probes (`provider test/models`)
+  are protocol-aware (`?key=` auth, `/v1beta/models`). Verified end-to-end:
+  full 4-topic standup with probing, summary submission and goodbye on
+  `gemini-2.5-flash-native-audio-preview-12-2025`. Known limits: mid-call
+  voice/text switching is adapter-gated (subtitles keep streaming, audio is
+  dropped in text mode); OpenAI voices don't map (Gemini default voice or
+  `Kore` family via settings); `gemini-*-native-audio-latest` currently
+  rejects tools+audio upstream — use the dated preview or
+  `gemini-3.1-flash-live-preview`.
+
 ## [0.9.2] - 2026-07-19
 
 ### Added

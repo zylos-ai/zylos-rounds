@@ -1,6 +1,6 @@
 ---
 name: rounds
-version: 0.9.2
+version: 0.10.0
 description: >-
   Rounds (formerly standup) — delegated 1:1 structured voice conversations for
   teams. An AI agent (OpenAI Realtime, Chinese voice) talks to each member via
@@ -104,12 +104,20 @@ wins) — they are never stored in config.json.
 
 Since v0.8 model connections are managed as **providers** (settings page or
 CLI): each provider carries a base URL + write-only API key + capability
-flags (Realtime voice / models listing), all spoken over the
-OpenAI-compatible protocol. The builtin `openai` provider maps to the .env
-key; voice / profile / digest each select a provider + model
+flags (Realtime voice / models listing). The builtin `openai` provider maps
+to the .env key; voice / profile / digest each select a provider + model
 (`settings set --voice-provider/--profile-provider/--digest-provider`,
 `provider list/add/set/remove/models/test`). config.json model keys remain
 the fallback layer under the settings DB.
+
+Since v0.10 the voice slot also speaks **Gemini Live**: add a provider with
+`--base-url https://generativelanguage.googleapis.com` and a Gemini API key,
+then select it plus a live model (e.g.
+`gemini-2.5-flash-native-audio-preview-12-2025` — avoid `-latest`, it
+rejects tools+audio; `gemini-3.1-flash-live-preview` also works). The wire
+protocol is auto-detected from the base URL; transcription is native (the
+ASR sidecar setting is ignored). Set `GEMINI_DEBUG=1` on the service for
+wire-level diagnostics.
 
 To reset the admin password: write a plaintext value into `auth.password`,
 restart the service — it is migrated to a scrypt hash on startup and printed
