@@ -32,6 +32,44 @@
 - **Admin auth** — scrypt-hashed password (generated at install), session
   cookies, login rate limiting
 
+## Screenshots
+
+### The member side — one personal link, one short call
+
+No login, no forms: each member opens their link, taps the mic, and talks.
+The page follows the member's language (中文 / English).
+
+<p align="center">
+  <img src="./docs/screenshots/talk.png" alt="Member voice call page" width="360">
+</p>
+
+### The owner side — reports land structured
+
+Suggested meeting topics come first, then per-member report cards, who
+hasn't reported yet, and every member's personal link:
+
+![Daily standup day view](./docs/screenshots/daily-standup.png)
+
+### One-off rounds — collect signals, then digest them
+
+Launch a round of 1:1 conversations on any topic (retro, planning survey,
+incident follow-up). Per-member summaries roll up into a task digest:
+
+![One-off task with digest](./docs/screenshots/retro-digest.png)
+
+### The agent's brain
+
+Team background and probing guidance are injected into every call; the
+knowledge base is searched on demand mid-conversation:
+
+![Agent brain](./docs/screenshots/brain.png)
+
+### Usage & cost
+
+Estimated from real API-reported token usage, by model and by member:
+
+![Usage and cost](./docs/screenshots/usage.png)
+
 ## Install
 
 ```bash
