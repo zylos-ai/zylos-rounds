@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-07-19
+
+### Changed
+- **Rounds no longer reads the shared `~/zylos/.env`.** Provider API keys
+  live exclusively in the settings DB (settings page or provider API); the
+  built-in OpenAI provider's special env-key override is removed. A legacy
+  `OPENAI_API_KEY` in the process environment is migrated into the builtin
+  provider's DB row once at first start, then ignored.
+- Outbound proxy is now configured via config.json `proxy` (app data dir),
+  falling back to `HTTPS_PROXY`/`HTTP_PROXY` from the process environment.
+- Settings page: removed the "key from .env" provider badge (the state no
+  longer exists).
+
 ## [0.12.0] - 2026-07-19
 
 ### Added

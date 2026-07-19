@@ -2,10 +2,11 @@
  * Runtime settings over the v0.8 provider framework.
  *
  * Providers (DB table) own connection info: base URL, API key (write-only at
- * the API surface), capability flags (realtime WS / models listing). The
- * builtin 'openai' provider replaces the old implicit global connection; for
- * it — and only it — an OPENAI_API_KEY in ~/zylos/.env overrides the DB key,
- * keeping existing key-in-.env deployments working untouched.
+ * the API surface), capability flags (realtime WS / models listing). All
+ * keys live in the DB — set via the settings page or the provider API. A
+ * legacy OPENAI_API_KEY in the process environment is copied into the
+ * builtin provider's DB row once at startup (migrateLegacyEnvKey) and never
+ * read at resolution time.
  *
  * Usage slots (voice / profile / digest) reference a provider by slug via the
  * settings DB and fall back to the builtin. Model / voice resolution keeps
@@ -44,7 +45,7 @@ export class Settings {
   constructor(store, getConfig, env) {
     this.store = store;
     this.getConfig = getConfig;
-    this.env = env; // loadEnvSecrets() result: { openaiApiKey, proxy }
+    this.env = env; // loadEnvSecrets() result: { openaiApiKey (legacy migration source), proxy }
   }
 
   // ---- providers ----
@@ -53,18 +54,30 @@ export class Settings {
     return this.store.getProvider(BUILTIN_PROVIDER);
   }
 
-  /** Effective key for a provider. Env key applies to the builtin only. */
+  /** Effective key for a provider — always the DB value. */
   providerKey(provider) {
-    if (!provider) return '';
-    if (provider.is_builtin) return this.env.openaiApiKey || provider.api_key || '';
-    return provider.api_key || '';
+    return provider?.api_key || '';
   }
 
-  /** 'env' | 'db' | 'none' — where a provider's effective key comes from. */
+  /** 'db' | 'none' — whether a provider has a key stored. */
   providerKeySource(provider) {
-    if (!provider) return 'none';
-    if (provider.is_builtin && this.env.openaiApiKey) return 'env';
-    return provider.api_key ? 'db' : 'none';
+    return provider?.api_key ? 'db' : 'none';
+  }
+
+  /**
+   * One-shot legacy migration: copy OPENAI_API_KEY from the process
+   * environment into the builtin provider's DB row, only if the row has no
+   * key yet. Guarded by a settings flag so a later deliberate key clear is
+   * never overwritten.
+   */
+  migrateLegacyEnvKey() {
+    if (this.store.getSetting('env_key_migrated')) return false;
+    this.store.setSetting('env_key_migrated', '1');
+    const legacy = this.env.openaiApiKey || '';
+    const builtin = this.builtinProvider();
+    if (!legacy || !builtin || builtin.api_key) return false;
+    this.store.updateProvider(BUILTIN_PROVIDER, { apiKey: legacy });
+    return true;
   }
 
   // Legacy surface (builtin provider's key) — startup check + settings card.

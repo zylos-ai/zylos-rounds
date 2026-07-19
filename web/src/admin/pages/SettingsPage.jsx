@@ -54,7 +54,6 @@ const DICT = {
     add: '新增',
     builtinBadge: '内置',
     noKeyBadge: '未配置 key',
-    keyFromEnvBadge: 'key 来自 .env',
     keySetBadge: 'key 已配置',
     voiceBadge: '语音',
     modelListBadge: '模型列表',
@@ -145,7 +144,6 @@ const DICT = {
     add: 'Add',
     builtinBadge: 'Built-in',
     noKeyBadge: 'No key',
-    keyFromEnvBadge: 'key from .env',
     keySetBadge: 'key configured',
     voiceBadge: 'Voice',
     modelListBadge: 'Model list',
@@ -679,7 +677,7 @@ export default function SettingsPage() {
                   {p.is_builtin ? <Badge variant="accent">{T.builtinBadge}</Badge> : null}
                   {p.key_source === 'none'
                     ? <Badge>{T.noKeyBadge}</Badge>
-                    : <Badge variant="success">{p.key_source === 'env' ? T.keyFromEnvBadge : T.keySetBadge}</Badge>}
+                    : <Badge variant="success">{T.keySetBadge}</Badge>}
                   {p.cap_realtime ? <Badge>{T.voiceBadge}</Badge> : null}
                   {p.cap_models ? <Badge>{T.modelListBadge}</Badge> : null}
                   {p.in_use.length ? (

@@ -99,9 +99,13 @@ keys):
 models, and voices are managed day-to-day from the settings page (OpenAI
 Realtime, Gemini Live, or any OpenAI-compatible endpoint).
 
-`OPENAI_API_KEY` (and optional `HTTPS_PROXY`) are read from `~/zylos/.env`
-and apply to the built-in OpenAI provider; keys for additional providers are
-entered on the settings page and stored locally.
+Provider API keys are entered on the settings page (or via the provider
+API) and stored locally in the database. The outbound proxy, if you need
+one, goes in config.json (`"proxy": "http://127.0.0.1:7890"`), with the
+`HTTPS_PROXY` / `HTTP_PROXY` process environment as fallback — the shared
+`~/zylos/.env` is not read at all. Upgrading from an older install that
+kept `OPENAI_API_KEY` in the environment? It is migrated into the database
+automatically on first start.
 
 ## Usage
 

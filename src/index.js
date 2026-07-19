@@ -38,10 +38,11 @@ const env = loadEnvSecrets();
 
 const store = new Store(path.join(DATA_DIR, 'data', 'rounds.db'));
 const settings = new Settings(store, getConfig, env);
-// Key may live in .env or (for fresh installs) be set later from the admin
-// settings page — missing at startup is a warning, not a fatal error.
+if (settings.migrateLegacyEnvKey()) console.log('[rounds] Migrated legacy OPENAI_API_KEY from the process environment into the builtin provider (DB); env keys are no longer read');
+// Keys live in the DB and can be set later from the admin settings page —
+// missing at startup is a warning, not a fatal error.
 if (!settings.resolveKey()) {
-  console.warn('[rounds] No OpenAI API key configured yet — set one in the admin settings page (or ~/zylos/.env)');
+  console.warn('[rounds] No API key configured for the builtin provider yet — set one in the admin settings page');
 }
 // Built-in try-it member: full talk flow, excluded from all rosters/digests.
 store.ensureTestMember('体验成员', crypto.randomBytes(8).toString('base64url'));

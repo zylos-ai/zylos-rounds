@@ -1,6 +1,6 @@
 ---
 name: rounds
-version: 0.12.0
+version: 0.13.0
 description: >-
   Rounds (formerly standup) — delegated 1:1 structured voice conversations for
   teams. An AI agent (realtime voice, Chinese or English per member — member
@@ -93,6 +93,7 @@ surfaces (roster, daily digest, history) sit behind password login
 | `transcriptionModel` | `gpt-realtime-whisper` | input ASR sidecar model |
 | `maxConcurrent` | `4` | concurrent voice sessions |
 | `maxSessionMs` | `600000` | per-session hard cap |
+| `proxy` | `null` | outbound HTTPS proxy URL; fallback: `HTTPS_PROXY`/`HTTP_PROXY` process env |
 | `timeZone` | `Asia/Shanghai` | report-date boundary |
 | `auth.enabled` | `true` | admin auth (never disable in production) |
 | `auth.password` | generated | scrypt hash; plaintext printed once at install |
@@ -100,13 +101,18 @@ surfaces (roster, daily digest, history) sit behind password login
 | `profileModel` | `gpt-5.1` | text model that maintains the 动态画像 after each report |
 | `profileApiBase` | `https://api.openai.com` | override for tests/mocks only |
 
-`OPENAI_API_KEY` and `HTTPS_PROXY` are read from `~/zylos/.env` (process.env
-wins) — they are never stored in config.json.
+Rounds reads nothing from the shared `~/zylos/.env`. The outbound proxy
+comes from config.json `proxy` (falling back to the `HTTPS_PROXY` /
+`HTTP_PROXY` process environment). Provider API keys live in the settings
+DB only, entered on the settings page or via the provider API. A legacy
+`OPENAI_API_KEY` still present in the process environment is copied into
+the builtin provider's DB row once at first start on ≥v0.13.0, then
+ignored.
 
 Since v0.8 model connections are managed as **providers** (settings page or
 CLI): each provider carries a base URL + write-only API key + capability
-flags (Realtime voice / models listing). The builtin `openai` provider maps
-to the .env key; voice / profile / digest each select a provider + model
+flags (Realtime voice / models listing); voice / profile / digest each
+select a provider + model
 (`settings set --voice-provider/--profile-provider/--digest-provider`,
 `provider list/add/set/remove/models/test`). config.json model keys remain
 the fallback layer under the settings DB.

@@ -275,7 +275,7 @@ export class Api {
       slug: p.slug,
       name: p.name,
       base_url: p.base_url,
-      key_source: this.settings.providerKeySource(p), // 'env' | 'db' | 'none'
+      key_source: this.settings.providerKeySource(p), // 'db' | 'none'
       cap_realtime: Boolean(p.cap_realtime),
       cap_models: Boolean(p.cap_models),
       protocol: providerProtocol(p),
@@ -397,7 +397,7 @@ export class Api {
   // The key itself is write-only: GET exposes only whether/where one is set.
   getSettings(res) {
     sendJson(res, 200, {
-      openai_key_source: this.settings.keySource(), // builtin provider: 'env' | 'db' | 'none'
+      openai_key_source: this.settings.keySource(), // builtin provider: 'db' | 'none'
       model: this.settings.resolveModel(),
       voice: this.settings.resolveVoice(),
       model_options: MODEL_OPTIONS, // suggestions only since v0.8

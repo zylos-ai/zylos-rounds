@@ -22,6 +22,7 @@ export const DEFAULT_CONFIG = {
   transcriptionModel: 'gpt-realtime-whisper',
   maxConcurrent: 4,
   maxSessionMs: 10 * 60 * 1000,
+  proxy: null, // outbound HTTPS proxy URL; falls back to HTTPS_PROXY/HTTP_PROXY process env
   timeZone: '', // blank = settings default (Asia/Singapore); override in settings UI
   auth: {
     enabled: true,
@@ -30,22 +31,17 @@ export const DEFAULT_CONFIG = {
 };
 
 /**
- * Read OPENAI_API_KEY and proxy settings from ~/zylos/.env (shared workspace
- * secrets — never duplicated into config.json) with process.env taking precedence.
+ * Rounds is self-contained: it reads nothing from the shared ~/zylos/.env.
+ * Proxy comes from config.json `proxy` (data dir), falling back to the
+ * HTTPS_PROXY / HTTP_PROXY process environment. Provider API keys live in
+ * the DB (settings page / provider API); a legacy OPENAI_API_KEY still
+ * present in the process environment is read once as a migration source
+ * (settings.migrateLegacyEnvKey) and never at resolution time.
  */
 export function loadEnvSecrets() {
-  const out = {};
-  try {
-    const file = path.join(HOME, 'zylos/.env');
-    for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
-      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-      if (m) out[m[1]] = m[2].replace(/^["']|["']$/g, '');
-    }
-  } catch { /* no .env — rely on process.env */ }
-  const env = { ...out, ...process.env };
   return {
-    openaiApiKey: env.OPENAI_API_KEY || '',
-    proxy: env.HTTPS_PROXY || env.HTTP_PROXY || null,
+    openaiApiKey: process.env.OPENAI_API_KEY || '',
+    proxy: getConfig().proxy || process.env.HTTPS_PROXY || process.env.HTTP_PROXY || null,
   };
 }
 
