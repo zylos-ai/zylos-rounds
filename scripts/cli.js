@@ -76,6 +76,13 @@ Reports & settings
                [--voice-provider S] [--profile-provider S] [--digest-provider S]
                                       models for 画像/汇总 + provider slug per slot + IANA time zone; '' reverts to default
 
+API keys (v0.17)
+  token list                          named management API keys (+ whether the legacy config key exists)
+  token create <name>                 mint a named key — plaintext shown ONCE in the response
+  token rotate <id>                   re-mint the secret for a key (old plaintext dies immediately)
+  token revoke <id|legacy>            revoke a key; 'legacy' kills the shared config.serviceToken
+                                      (rotate flow: create new -> switch clients -> revoke old/legacy)
+
 Providers (v0.8)
   provider list
   provider add <name> --base-url URL [--slug S] [--api-key K] [--realtime true] [--models true]
@@ -326,6 +333,17 @@ async function run(target, cmd, sub, args, flags) {
       }
       if (!Object.keys(body).length) fail('usage: settings set [--model M] [--voice V] [--time-zone TZ] [--profile-model M] [--digest-model M] [--voice-provider S] [--profile-provider S] [--digest-provider S]');
       return put('/api/settings', body);
+    }
+
+    case 'token list': return get('/api/tokens');
+    case 'token create': {
+      if (!args[0]) fail('usage: token create <name>');
+      return post('/api/tokens', { name: args[0] });
+    }
+    case 'token rotate': return post(`/api/tokens/${id(args[0])}/rotate`, {});
+    case 'token revoke': {
+      if (args[0] === 'legacy') return del('/api/tokens/legacy');
+      return del(`/api/tokens/${id(args[0])}`);
     }
 
     case 'provider list': return get('/api/providers');

@@ -1,6 +1,6 @@
 ---
 name: rounds
-version: 0.16.0
+version: 0.17.0
 description: >-
   Rounds (formerly standup) — delegated 1:1 structured voice conversations for
   teams. An AI agent (realtime voice, Chinese or English per member — member
@@ -12,7 +12,8 @@ description: >-
   dynamic profile (动态画像, merged from past reports after each conversation)
   injected every call, plus on-demand tools to recall a member's past reports
   and search a team knowledge base. Full management is available to agents via
-  scripts/cli.js with the bearer API key (config.serviceToken) — members,
+  scripts/cli.js with a bearer API key (named keys in DB, or the legacy
+  config.serviceToken) — members,
   brain, knowledge, reports, settings — no DB access needed. Use when managing
   members (add / remove / reset link), tuning the agent's background /
   probing / knowledge / profiles, reading daily reports / transcripts /
@@ -97,7 +98,7 @@ surfaces (roster, daily digest, history) sit behind password login
 | `timeZone` | `Asia/Shanghai` | report-date boundary |
 | `auth.enabled` | `true` | admin auth (never disable in production) |
 | `auth.password` | generated | scrypt hash; plaintext printed once at install |
-| `serviceToken` | generated | bearer API key — full admin API scope (roster / brain / knowledge / reports / settings); minted on first start |
+| `serviceToken` | generated | legacy shared bearer API key — full admin API scope; minted on first start only if no named key exists. v0.17+: prefer named keys (`cli.js token create`), then revoke this one |
 | `profileModel` | `gpt-5.1` | text model that maintains the 动态画像 after each report |
 | `profileApiBase` | `https://api.openai.com` | override for tests/mocks only |
 
@@ -139,8 +140,10 @@ to neither logs nor console.
 
 ## Admin operations (agent-side, via CLI)
 
-The whole admin API accepts the bearer API key (`config.serviceToken`) — use
-the bundled CLI instead of raw curl or the web UI. Never write to the SQLite
+The whole admin API accepts a bearer API key — named per-client keys managed
+via `token` commands / the settings page (sha256 at rest in DB), plus the
+legacy shared `config.serviceToken` until it is revoked. Use the bundled CLI
+instead of raw curl or the web UI. Never write to the SQLite
 DB directly.
 
 ```bash
@@ -169,6 +172,12 @@ $CLI report today                      # or: report 2026-07-18 / report history
 $CLI settings get
 $CLI settings set --voice cedar
 $CLI settings set --language en        # team default language (zh|en; digests follow it)
+
+$CLI token list                        # named API keys + whether the legacy config key exists
+$CLI token create avatar               # plaintext shown ONCE in the response — save it
+$CLI token rotate 2                    # new secret for key 2; old plaintext dies immediately
+$CLI token revoke 2                    # revoke a named key
+$CLI token revoke legacy               # kill the shared config.serviceToken (after migrating clients)
 ```
 
 Credential resolution: `--url`/`--key` flags → `ROUNDS_URL`/`ROUNDS_API_KEY`
@@ -209,8 +218,9 @@ sharper over time.
 ### Management API (Luna / the coco avatar)
 
 Everything the admin UI can do is also available programmatically with the
-bearer API key (`config.serviceToken`) — prefer the CLI above; raw endpoints
-for reference: `GET/POST/DELETE /api/members`, `POST
+bearer API key — prefer the CLI above; raw endpoints
+for reference: `GET/POST /api/tokens`, `POST /api/tokens/:id/rotate`,
+`DELETE /api/tokens/:id`, `DELETE /api/tokens/legacy`, `GET/POST/DELETE /api/members`, `POST
 /api/members/:id/reset-token`, `PUT /api/members/:id/context`, `PUT
 /api/members/:id/profile`, `GET/PUT /api/context`, `GET /api/context/members`,
 `GET/POST/PUT/DELETE /api/knowledge`, `GET /api/knowledge/search?q=`,

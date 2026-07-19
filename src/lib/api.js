@@ -28,27 +28,37 @@ function newToken() {
 }
 
 export class Api {
-  constructor(store, auth, getConfig, settings, context, digests) {
+  constructor(store, auth, getConfig, settings, context, digests, persistConfig = null) {
     this.store = store;
     this.auth = auth;
     this.getConfig = getConfig;
     this.settings = settings;
     this.context = context;
     this.digests = digests;
+    this.persistConfig = persistConfig;
   }
 
   // The whole admin surface is reachable by a human admin (session cookie) OR
-  // by Luna / the coco avatar (Bearer API key, config.serviceToken) — roster,
-  // brain content, knowledge, reports and settings alike. Owner's 2026-07-18
-  // ruling: the API key is a full management credential so agents can operate
-  // the app (via scripts/cli.js) without touching the database; only the login
-  // itself stays session-only.
+  // by an agent with a bearer API key — roster, brain content, knowledge,
+  // reports and settings alike. Owner's 2026-07-18 ruling: the API key is a
+  // full management credential so agents can operate the app (via
+  // scripts/cli.js) without touching the database; only the login itself
+  // stays session-only. v0.17: keys are named DB rows (sha256 at rest,
+  // create/rotate/revoke via /api/tokens); config.serviceToken remains
+  // honored as an unlisted legacy key until revoked.
   isManager(req) {
     if (this.auth.isAuthenticated(req)) return true;
     const m = /^Bearer\s+(.+)$/i.exec(req.headers.authorization || '');
     const tok = m && m[1].trim();
+    if (!tok) return false;
+    const row = this.store.getApiTokenByHash(
+      crypto.createHash('sha256').update(tok).digest('hex'));
+    if (row) {
+      this.store.touchApiToken(row.id);
+      return true;
+    }
     const svc = this.getConfig().serviceToken;
-    if (!tok || !svc || tok.length !== svc.length) return false;
+    if (!svc || tok.length !== svc.length) return false;
     try {
       return crypto.timingSafeEqual(Buffer.from(tok), Buffer.from(svc));
     } catch {
@@ -222,8 +232,72 @@ export class Api {
 
     if (p === '/api/usage' && req.method === 'GET') return this.getUsage(res, url), true;
 
+    if (p === '/api/tokens' && req.method === 'GET') return this.listTokens(res), true;
+    if (p === '/api/tokens' && req.method === 'POST') return await this.createToken(req, res), true;
+    if (p === '/api/tokens/legacy' && req.method === 'DELETE') return this.revokeLegacyToken(res), true;
+
+    m = p.match(/^\/api\/tokens\/(\d+)\/rotate$/);
+    if (m && req.method === 'POST') return this.rotateToken(res, Number(m[1])), true;
+
+    m = p.match(/^\/api\/tokens\/(\d+)$/);
+    if (m && req.method === 'DELETE') return this.revokeToken(res, Number(m[1])), true;
+
     sendJson(res, 404, { error: 'not_found' });
     return true;
+  }
+
+  // ---- management API tokens (v0.17) ----
+
+  listTokens(res) {
+    sendJson(res, 200, {
+      tokens: this.store.listApiTokens(),
+      legacy: Boolean(this.getConfig().serviceToken),
+    });
+  }
+
+  async createToken(req, res) {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      return sendJson(res, 400, { error: 'bad_request' });
+    }
+    const name = String(body.name || '').trim();
+    if (!name || name.length > 60) return sendJson(res, 400, { error: 'invalid_name' });
+    if (this.store.getApiTokenByName(name)) return sendJson(res, 409, { error: 'name_taken' });
+    const plaintext = `rk_${crypto.randomBytes(24).toString('base64url')}`;
+    const row = this.store.createApiToken(
+      name, crypto.createHash('sha256').update(plaintext).digest('hex'));
+    // the plaintext is shown exactly once — only its hash is stored
+    sendJson(res, 201, { ...row, token: plaintext });
+  }
+
+  rotateToken(res, id) {
+    if (!this.store.getApiToken(id)) return sendJson(res, 404, { error: 'not_found' });
+    const plaintext = `rk_${crypto.randomBytes(24).toString('base64url')}`;
+    const row = this.store.rotateApiToken(
+      id, crypto.createHash('sha256').update(plaintext).digest('hex'));
+    sendJson(res, 200, { ...row, token: plaintext });
+  }
+
+  revokeToken(res, id) {
+    if (!this.store.deleteApiToken(id)) return sendJson(res, 404, { error: 'not_found' });
+    sendJson(res, 200, { ok: true, revoked: id });
+  }
+
+  // Revoke the legacy config.serviceToken (rotation end-state: mint named
+  // tokens, move clients over, then kill the shared legacy key).
+  revokeLegacyToken(res) {
+    const config = this.getConfig();
+    if (!config.serviceToken) return sendJson(res, 404, { error: 'not_found' });
+    if (!this.persistConfig) return sendJson(res, 501, { error: 'not_supported' });
+    delete config.serviceToken;
+    try {
+      this.persistConfig(config);
+    } catch {
+      return sendJson(res, 500, { error: 'persist_failed' });
+    }
+    sendJson(res, 200, { ok: true, revoked: 'legacy' });
   }
 
   // Pre-generated wav samples (scripts/generate-voice-samples.mjs and

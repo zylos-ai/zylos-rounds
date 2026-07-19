@@ -42,7 +42,8 @@ async function boot() {
     else store.setCycleDigest(id, key, '## 共识\n- stub');
     return '## 共识\n- stub';
   };
-  const api = new Api(store, auth, getConfig, settings, new AgentContext(store), digests);
+  const api = new Api(store, auth, getConfig, settings, new AgentContext(store), digests,
+    () => { /* persistConfig stub — config object already mutated in place */ });
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://internal');
     if (await api.handle(req, res, url)) return;
@@ -516,6 +517,56 @@ test('time zone setting: layering, validation, blank revert (v0.10.4)', async ()
     s = (await call('PUT', '/api/settings', { time_zone: '' })).data;
     assert.equal(s.time_zone, '');
     assert.equal(s.time_zone_effective, 'Asia/Shanghai');
+  } finally {
+    close();
+  }
+});
+
+test('named API tokens: create/list/auth/rotate/revoke + legacy revoke (v0.17)', async () => {
+  const { call, close } = await boot();
+  try {
+    // create — plaintext returned exactly once
+    const created = await call('POST', '/api/tokens', { name: 'luna' });
+    assert.equal(created.status, 201);
+    assert.match(created.data.token, /^rk_[A-Za-z0-9_-]+$/);
+    const tid = created.data.id;
+    const plain1 = created.data.token;
+    assert.equal((await call('POST', '/api/tokens', { name: 'luna' })).status, 409);
+    assert.equal((await call('POST', '/api/tokens', { name: '  ' })).status, 400);
+
+    // list never exposes secrets; legacy config key is flagged
+    const list = await call('GET', '/api/tokens');
+    assert.equal(list.status, 200);
+    assert.equal(list.data.legacy, true);
+    const row = list.data.tokens.find(t => t.id === tid);
+    assert.equal(row.name, 'luna');
+    assert.equal(Object.hasOwn(row, 'token'), false);
+    assert.equal(Object.hasOwn(row, 'token_hash'), false);
+
+    // the minted token authenticates with full manager scope and gets last_used stamped
+    const asNew = { Authorization: `Bearer ${plain1}` };
+    assert.equal((await call('GET', '/api/members', null, asNew)).status, 200);
+    const used = (await call('GET', '/api/tokens')).data.tokens.find(t => t.id === tid);
+    assert.ok(used.last_used_at);
+
+    // rotate: same id/name, new secret; old plaintext dies immediately
+    const rotated = await call('POST', `/api/tokens/${tid}/rotate`, {});
+    assert.equal(rotated.status, 200);
+    assert.equal(rotated.data.id, tid);
+    assert.notEqual(rotated.data.token, plain1);
+    assert.equal((await call('GET', '/api/members', null, asNew)).status, 401);
+    const asRotated = { Authorization: `Bearer ${rotated.data.token}` };
+    assert.equal((await call('GET', '/api/members', null, asRotated)).status, 200);
+
+    // legacy config.serviceToken can be revoked remotely (rotation end-state)
+    assert.equal((await call('DELETE', '/api/tokens/legacy', null, asRotated)).status, 200);
+    assert.equal((await call('GET', '/api/members')).status, 401); // boot()'s default KEY header
+    assert.equal((await call('GET', '/api/tokens', null, asRotated)).data.legacy, false);
+
+    // revoke the named token — bearer access fully gone
+    assert.equal((await call('DELETE', `/api/tokens/${tid}`, null, asRotated)).status, 200);
+    assert.equal((await call('GET', '/api/members', null, asRotated)).status, 401);
+    assert.equal((await call('DELETE', '/api/tokens/999', null, asRotated)).status, 401);
   } finally {
     close();
   }

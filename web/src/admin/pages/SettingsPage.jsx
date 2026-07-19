@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AudioLines, CheckCircle2, FileText, Globe, Loader2, Pencil, Plus, RefreshCw,
-  Server, Square, Trash2, Volume2, XCircle,
+  AudioLines, CheckCircle2, Copy, FileText, Globe, KeyRound, Loader2, Pencil,
+  Plus, RefreshCw, Server, Square, Trash2, Volume2, XCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -101,6 +101,26 @@ const DICT = {
     langDefaultOption: (name) => `默认（${name}）`,
     langEffective: (name) => `当前生效：${name}`,
     langSaved: (name) => `已保存，当前生效：${name}`,
+    // API keys card
+    tokensTitle: 'API 密钥',
+    tokensDesc: '供 agent / CLI 远程管理使用的 Bearer 密钥，可分客户端发放、单独轮换或吊销',
+    tokenNameLabel: '名称',
+    tokenNamePlaceholder: '如 luna、avatar、ci',
+    tokenCreate: '创建',
+    tokenNameTaken: '名称已存在',
+    tokenInvalidName: '名称不能为空',
+    tokenPlainOnce: (name) => `「${name}」的密钥，仅显示这一次，请立即保存：`,
+    tokenCopy: '复制',
+    tokenCopied: '已复制',
+    tokenRotate: '轮换',
+    tokenRevoke: '吊销',
+    tokenLegacyName: '旧版共享密钥（config.serviceToken）',
+    tokenLegacyBadge: '旧版',
+    tokenLegacyHint: '建议：创建命名密钥并迁移客户端后，吊销这把共享密钥',
+    tokenCreatedAt: (t) => `创建于 ${t}`,
+    tokenLastUsed: (t) => (t ? `最近使用 ${t}` : '从未使用'),
+    tokenEmpty: '暂无命名密钥',
+    tokenRevokeFailed: '吊销失败，请重试',
   },
   en: {
     testErrors: {
@@ -191,6 +211,26 @@ const DICT = {
     langDefaultOption: (name) => `Default (${name})`,
     langEffective: (name) => `Currently effective: ${name}`,
     langSaved: (name) => `Saved — now effective: ${name}`,
+    // API keys card
+    tokensTitle: 'API Keys',
+    tokensDesc: 'Bearer keys for agents / CLI remote management — issue per client, rotate or revoke individually',
+    tokenNameLabel: 'Name',
+    tokenNamePlaceholder: 'e.g. luna, avatar, ci',
+    tokenCreate: 'Create',
+    tokenNameTaken: 'Name already taken',
+    tokenInvalidName: 'Name is required',
+    tokenPlainOnce: (name) => `Key for “${name}” — shown only once, save it now:`,
+    tokenCopy: 'Copy',
+    tokenCopied: 'Copied',
+    tokenRotate: 'Rotate',
+    tokenRevoke: 'Revoke',
+    tokenLegacyName: 'Legacy shared key (config.serviceToken)',
+    tokenLegacyBadge: 'Legacy',
+    tokenLegacyHint: 'Recommended: create named keys, migrate clients, then revoke this shared key',
+    tokenCreatedAt: (t) => `Created ${t}`,
+    tokenLastUsed: (t) => (t ? `Last used ${t}` : 'Never used'),
+    tokenEmpty: 'No named keys yet',
+    tokenRevokeFailed: 'Revoke failed, please retry',
   },
 };
 
@@ -288,6 +328,183 @@ function ProviderForm({ provider, onDone, onCancel }) {
         {msg ? <span className="text-sm text-destructive">{msg}</span> : null}
       </div>
     </form>
+  );
+}
+
+/** Management API keys: named bearer tokens (DB) + the legacy shared config key. */
+function TokensCard() {
+  const T = useLangDict(DICT);
+  const [tokens, setTokens] = useState([]);
+  const [legacy, setLegacy] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [busy, setBusy] = useState({}); // { [id|'legacy'|'create']: true }
+  const [msg, setMsg] = useState(null); // { ok, text }
+  // { name, token } — plaintext shown exactly once after create/rotate
+  const [minted, setMinted] = useState(null);
+  const [copied, setCopied] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await api('api/tokens');
+      setTokens(r.tokens);
+      setLegacy(r.legacy);
+    } catch { /* page-level load error handling covers the rest */ }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const onCreate = async (e) => {
+    e.preventDefault();
+    if (busy.create || !newName.trim()) return;
+    setBusy((s) => ({ ...s, create: true }));
+    setMsg(null);
+    try {
+      const r = await api('api/tokens', { method: 'POST', body: { name: newName.trim() } });
+      setMinted({ name: r.name, token: r.token });
+      setCopied(false);
+      setNewName('');
+      setCreating(false);
+      await load();
+    } catch (err) {
+      if (err.status !== 401) {
+        setMsg({ ok: false, text: err.data?.error === 'name_taken' ? T.tokenNameTaken : err.data?.error === 'invalid_name' ? T.tokenInvalidName : T.saveFailed });
+      }
+    } finally {
+      setBusy((s) => ({ ...s, create: false }));
+    }
+  };
+
+  const onRotate = async (t) => {
+    if (busy[t.id]) return;
+    setBusy((s) => ({ ...s, [t.id]: true }));
+    setMsg(null);
+    try {
+      const r = await api(`api/tokens/${t.id}/rotate`, { method: 'POST', body: {} });
+      setMinted({ name: r.name, token: r.token });
+      setCopied(false);
+      await load();
+    } catch (err) {
+      if (err.status !== 401) setMsg({ ok: false, text: T.requestFailed });
+    } finally {
+      setBusy((s) => ({ ...s, [t.id]: false }));
+    }
+  };
+
+  const onRevoke = async (key, apiPath) => {
+    if (busy[key]) return;
+    setBusy((s) => ({ ...s, [key]: true }));
+    setMsg(null);
+    try {
+      await api(apiPath, { method: 'DELETE' });
+      await load();
+    } catch (err) {
+      if (err.status !== 401) setMsg({ ok: false, text: T.tokenRevokeFailed });
+    } finally {
+      setBusy((s) => ({ ...s, [key]: false }));
+    }
+  };
+
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(minted.token);
+      setCopied(true);
+    } catch { /* clipboard unavailable — the token stays visible for manual copy */ }
+  };
+
+  return (
+    <Card className="mt-6">
+      <CardContent className="px-6 py-6">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent text-muted-foreground">
+            <KeyRound className="h-5 w-5" strokeWidth={1.75} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-semibold leading-tight">{T.tokensTitle}</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">{T.tokensDesc}</p>
+          </div>
+          <Button type="button" variant="outline" className="h-9 px-3 text-sm" onClick={() => { setCreating(!creating); setMsg(null); }}>
+            <Plus strokeWidth={1.75} />
+            {T.add}
+          </Button>
+        </div>
+
+        {creating ? (
+          <form onSubmit={onCreate} className="mt-3 flex flex-wrap items-end gap-3 rounded-lg border border-border bg-accent/40 p-4">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium text-muted-foreground">{T.tokenNameLabel}</span>
+              <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={T.tokenNamePlaceholder} autoComplete="off" className="h-10 w-[220px] text-sm" />
+            </label>
+            <Button type="submit" className="h-10 px-4 text-sm" disabled={busy.create || !newName.trim()}>
+              {busy.create ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
+              {T.tokenCreate}
+            </Button>
+            <Button type="button" variant="ghost" className="h-10 px-3 text-sm text-muted-foreground" onClick={() => setCreating(false)}>{T.cancel}</Button>
+          </form>
+        ) : null}
+
+        {minted ? (
+          <div className="mt-3 rounded-lg border border-primary/40 bg-primary/5 p-4">
+            <p className="text-sm font-medium">{T.tokenPlainOnce(minted.name)}</p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <code className="break-all rounded bg-accent px-2 py-1 font-mono text-sm">{minted.token}</code>
+              <Button type="button" variant="outline" className="h-8 px-2.5 text-sm" onClick={onCopy}>
+                {copied ? <CheckCircle2 strokeWidth={1.75} /> : <Copy strokeWidth={1.75} />}
+                {copied ? T.tokenCopied : T.tokenCopy}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {msg ? (
+          <p className={cn('mt-3 flex items-center gap-1.5 text-sm', msg.ok ? 'text-success' : 'text-destructive')}>
+            {msg.ok ? <CheckCircle2 className="h-4 w-4" strokeWidth={1.75} /> : <XCircle className="h-4 w-4" strokeWidth={1.75} />}
+            {msg.text}
+          </p>
+        ) : null}
+
+        <ul className="mt-5 flex flex-col gap-3">
+          {tokens.map((t) => (
+            <li key={t.id} className="rounded-lg border border-border px-4 py-3">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <span className="text-[0.95rem] font-medium">{t.name}</span>
+                <span className="text-xs text-muted-foreground">
+                  {T.tokenCreatedAt(t.created_at)} · {T.tokenLastUsed(t.last_used_at)}
+                </span>
+                <span className="grow" />
+                <div className="flex items-center gap-1.5">
+                  <Button type="button" variant="ghost" className="h-8 px-2.5 text-sm text-muted-foreground" disabled={Boolean(busy[t.id])} onClick={() => onRotate(t)}>
+                    {busy[t.id] ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : <RefreshCw strokeWidth={1.75} />}
+                    {T.tokenRotate}
+                  </Button>
+                  <Button type="button" variant="ghost" className="h-8 px-2.5 text-sm text-muted-foreground hover:text-destructive" disabled={Boolean(busy[t.id])} onClick={() => onRevoke(t.id, `api/tokens/${t.id}`)}>
+                    <Trash2 strokeWidth={1.75} />
+                    {T.tokenRevoke}
+                  </Button>
+                </div>
+              </div>
+            </li>
+          ))}
+          {legacy ? (
+            <li className="rounded-lg border border-border px-4 py-3">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <span className="text-[0.95rem] font-medium">{T.tokenLegacyName}</span>
+                <Badge>{T.tokenLegacyBadge}</Badge>
+                <span className="grow" />
+                <Button type="button" variant="ghost" className="h-8 px-2.5 text-sm text-muted-foreground hover:text-destructive" disabled={Boolean(busy.legacy)} onClick={() => onRevoke('legacy', 'api/tokens/legacy')}>
+                  {busy.legacy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : <Trash2 strokeWidth={1.75} />}
+                  {T.tokenRevoke}
+                </Button>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">{T.tokenLegacyHint}</p>
+            </li>
+          ) : null}
+          {!tokens.length && !legacy ? (
+            <li className="text-sm text-muted-foreground">{T.tokenEmpty}</li>
+          ) : null}
+        </ul>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -906,6 +1123,9 @@ export default function SettingsPage() {
           ) : null}
         </CardContent>
       </Card>
+
+      {/* management API keys */}
+      <TokensCard />
     </>
   );
 }

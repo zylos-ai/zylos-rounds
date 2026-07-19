@@ -244,6 +244,21 @@ export const MIGRATIONS = [
       ALTER TABLE members ADD COLUMN language TEXT;
     `,
   },
+  {
+    // v0.17 named management API keys: per-client bearer tokens (create /
+    // rotate / revoke without touching the server), sha256 at rest. The
+    // config.json serviceToken keeps working as an unlisted legacy key.
+    version: 11,
+    sql: `
+      CREATE TABLE IF NOT EXISTS api_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        token_hash TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+        last_used_at TEXT
+      );
+    `,
+  },
 ];
 
 export class Store {
@@ -320,6 +335,44 @@ export class Store {
 
   deleteProvider(slug) {
     this.db.prepare('DELETE FROM providers WHERE slug=? AND is_builtin=0').run(slug);
+  }
+
+  // ---- management API tokens (v0.17) ----
+  listApiTokens() {
+    return this.db.prepare('SELECT id, name, created_at, last_used_at FROM api_tokens ORDER BY id').all();
+  }
+
+  getApiToken(id) {
+    return this.db.prepare('SELECT id, name, created_at, last_used_at FROM api_tokens WHERE id=?').get(id) ?? null;
+  }
+
+  getApiTokenByName(name) {
+    return this.db.prepare('SELECT id, name FROM api_tokens WHERE name=?').get(name) ?? null;
+  }
+
+  getApiTokenByHash(hash) {
+    return this.db.prepare('SELECT id, name FROM api_tokens WHERE token_hash=?').get(hash) ?? null;
+  }
+
+  createApiToken(name, hash) {
+    const r = this.db.prepare('INSERT INTO api_tokens(name, token_hash) VALUES(?,?)').run(name, hash);
+    return this.getApiToken(r.lastInsertRowid);
+  }
+
+  /** Rotate: same row (id/name), new secret, created_at reset to now. */
+  rotateApiToken(id, hash) {
+    this.db.prepare(`
+      UPDATE api_tokens SET token_hash=?, created_at=datetime('now','localtime'), last_used_at=NULL WHERE id=?
+    `).run(hash, id);
+    return this.getApiToken(id);
+  }
+
+  deleteApiToken(id) {
+    return this.db.prepare('DELETE FROM api_tokens WHERE id=?').run(id).changes > 0;
+  }
+
+  touchApiToken(id) {
+    this.db.prepare(`UPDATE api_tokens SET last_used_at=datetime('now','localtime') WHERE id=?`).run(id);
   }
 
   // ---- agent context (background + probing guidance containers) ----

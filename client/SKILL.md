@@ -22,8 +22,10 @@ operation goes through the REST API with a bearer key.
 Get two values from whoever runs the Rounds server:
 
 - **URL** — the server's public base URL (e.g. `https://host/rounds`)
-- **API key** — the server's `serviceToken` (printed on the server's first
-  start, also in the server's `config.json`)
+- **API key** — a bearer key for the management API. Best practice (server
+  v0.17+): a *named* key minted for this client (`cli.js token create <name>`
+  on the server, or admin Settings → API Keys); the legacy shared
+  `serviceToken` printed on the server's first start also works until revoked
 
 Store them in `~/.rounds/cli.json`:
 

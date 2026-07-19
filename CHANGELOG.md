@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.0] - 2026-07-20
+
+### Added
+- Named management API keys (`api_tokens` table, sha256 at rest): create /
+  rotate / revoke per client instead of sharing one `serviceToken`. Plaintext
+  is shown exactly once at mint time.
+- Remote management: `cli.js token list|create|rotate|revoke` subcommands and
+  `GET/POST /api/tokens`, `POST /api/tokens/:id/rotate`, `DELETE
+  /api/tokens/:id`, `DELETE /api/tokens/legacy` endpoints — standard rotation
+  needs no server access.
+- Admin Settings page "API Keys" card: mint (one-time plaintext display with
+  copy), rotate, revoke; doubles as the recovery path via password login.
+
+### Changed
+- `config.serviceToken` is now a legacy/bootstrap credential: still honored
+  until revoked (`token revoke legacy`), minted on start only when no named
+  key exists.
+
 ## [0.16.0] - 2026-07-20
 
 ### Added

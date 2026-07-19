@@ -63,9 +63,12 @@ const context = new AgentContext(store);
 context.seedDefaults();
 
 // Bearer API key for the management API — full admin scope (roster, brain,
-// knowledge, reports, settings) for Luna / the coco avatar and scripts/cli.js.
-// Minted once and persisted into the component config.
-if (!config.serviceToken) {
+// knowledge, reports, settings) for agents and scripts/cli.js. Minted once and
+// persisted into the component config. v0.17: named per-client keys live in
+// the DB (/api/tokens, `cli.js token ...`); this config key stays honored as
+// a legacy credential until revoked, and is only minted when the DB has no
+// named keys yet (fresh install bootstrap).
+if (!config.serviceToken && !store.listApiTokens().length) {
   config.serviceToken = crypto.randomBytes(24).toString('base64url');
   try {
     saveConfig(config);
@@ -91,7 +94,7 @@ if (config.auth?.enabled && !config.auth.password) {
 
 const auth = new AuthGate(config, store, CONFIG_PATH);
 const digests = new DigestGenerator(store, getConfig, env, settings);
-const api = new Api(store, auth, getConfig, settings, context, digests);
+const api = new Api(store, auth, getConfig, settings, context, digests, saveConfig);
 const statics = new Static(path.join(__dirname, 'public'));
 const profiles = new ProfileUpdater(store, getConfig, env, settings);
 const relay = new Relay(store, getConfig, env, settings, context, profiles);
