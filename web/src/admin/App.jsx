@@ -96,7 +96,7 @@ function LegacyDailyRedirect({ date }) {
 function Layout({ route, onLogout, children }) {
   const navRef = useRef(null);
 
-  // on narrow screens the nav scrolls horizontally — keep the active tab in view
+  // desktop only — on narrow screens the tabs live in the bottom bar instead
   useEffect(() => {
     const el = navRef.current?.querySelector('[data-active="true"]');
     if (el && navRef.current.scrollWidth > navRef.current.clientWidth) {
@@ -119,22 +119,22 @@ function Layout({ route, onLogout, children }) {
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
               <Mic className="h-[18px] w-[18px]" strokeWidth={2} />
             </span>
-            <span className="max-sm:hidden">Rounds</span>
+            Rounds
           </a>
-          <nav ref={navRef} className="no-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto sm:flex-none">
+          <nav ref={navRef} className="no-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto max-sm:hidden sm:flex-none">
             {nav.map((item) => (
               <a
                 key={item.hash}
                 href={item.hash}
                 data-active={item.active || undefined}
                 className={cn(
-                  'inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-4 text-[0.9rem] font-medium no-underline transition-colors duration-150 max-sm:px-3',
+                  'inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-4 text-[0.9rem] font-medium no-underline transition-colors duration-150',
                   item.active
                     ? 'bg-primary-soft text-primary'
                     : 'text-muted-foreground hover:bg-accent hover:text-foreground'
                 )}
               >
-                <item.icon className="h-4 w-4 max-sm:hidden" strokeWidth={1.75} />
+                <item.icon className="h-4 w-4" strokeWidth={1.75} />
                 {item.label}
               </a>
             ))}
@@ -146,7 +146,25 @@ function Layout({ route, onLogout, children }) {
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-[1200px] px-6 pb-16 pt-10 max-sm:px-4 max-sm:pt-6">{children}</main>
+      <main className="mx-auto max-w-[1200px] px-6 pb-16 pt-10 max-sm:px-4 max-sm:pb-28 max-sm:pt-6">{children}</main>
+      {/* mobile: fixed bottom tab bar (5 entries = standard capacity); desktop keeps the top nav */}
+      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-card pb-[env(safe-area-inset-bottom)] sm:hidden">
+        <div className="grid grid-cols-5">
+          {nav.map((item) => (
+            <a
+              key={item.hash}
+              href={item.hash}
+              className={cn(
+                'flex flex-col items-center gap-1 py-2 text-[0.7rem] font-medium no-underline transition-colors duration-150',
+                item.active ? 'text-primary' : 'text-muted-foreground'
+              )}
+            >
+              <item.icon className="h-5 w-5" strokeWidth={item.active ? 2 : 1.75} />
+              {item.label}
+            </a>
+          ))}
+        </div>
+      </nav>
     </div>
   );
 }
