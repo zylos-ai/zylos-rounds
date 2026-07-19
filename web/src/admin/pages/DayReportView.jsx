@@ -2,6 +2,36 @@ import { useState } from 'react';
 import { MessageCircle, History, Target, TriangleAlert, Users, MessagesSquare, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useLangDict } from '../i18n';
+
+const DICT = {
+  zh: {
+    topicsTitle: '建议日会重点讨论',
+    noTopics: '这一天没有待议题',
+    minutes: (n) => `${n} 分钟`,
+    yesterday: '昨天',
+    today: '今天',
+    blockers: '卡点',
+    missingTitle: '未汇报',
+    allDone: '全员已完成',
+    listSeparator: '、',
+    transcript: '原始对话',
+    emptyItems: '（无）',
+  },
+  en: {
+    topicsTitle: 'Suggested topics for today’s meeting',
+    noTopics: 'No topics raised for this day',
+    minutes: (n) => `${n} min`,
+    yesterday: 'Yesterday',
+    today: 'Today',
+    blockers: 'Blockers',
+    missingTitle: 'Not reported',
+    allDone: 'Everyone has reported',
+    listSeparator: ', ',
+    transcript: 'Transcript',
+    emptyItems: '(none)',
+  },
+};
 
 /**
  * Presentational day view of the built-in daily standup (topics highlight,
@@ -9,6 +39,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
  * task's detail page — the successor of the old 今日报告/历史 pages.
  */
 export default function DayReportView({ data }) {
+  const T = useLangDict(DICT);
   const reports = data.reports || [];
   const missing = data.missing || [];
   const topics = data.topics || [];
@@ -20,7 +51,7 @@ export default function DayReportView({ data }) {
         <CardHeader>
           <CardTitle className="text-lg">
             <MessageCircle className="h-5 w-5 text-primary" strokeWidth={1.75} />
-            建议日会重点讨论
+            {T.topicsTitle}
             <span className="rounded-full border border-primary-line bg-primary-soft px-2.5 py-0.5 text-sm font-semibold text-primary">
               {topics.length}
             </span>
@@ -36,7 +67,7 @@ export default function DayReportView({ data }) {
                 </li>
               ))
             ) : (
-              <li className="text-faint">这一天没有待议题</li>
+              <li className="text-faint">{T.noTopics}</li>
             )}
           </ul>
         </CardContent>
@@ -50,16 +81,16 @@ export default function DayReportView({ data }) {
               <CardTitle className="text-lg">
                 {r.member_name}
                 {r.duration_s ? (
-                  <span className="ml-auto text-sm font-normal text-faint">{Math.round(r.duration_s / 60)} 分钟</span>
+                  <span className="ml-auto text-sm font-normal text-faint">{T.minutes(Math.round(r.duration_s / 60))}</span>
                 ) : null}
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-1">
               <div className="grid grid-cols-2 gap-x-4 max-sm:grid-cols-1">
-                <ReportSection icon={History} title="昨天" items={r.yesterday} />
-                <ReportSection icon={Target} title="今天" items={r.today} />
+                <ReportSection icon={History} title={T.yesterday} items={r.yesterday} />
+                <ReportSection icon={Target} title={T.today} items={r.today} />
               </div>
-              <ReportSection icon={TriangleAlert} title="卡点" items={r.blockers} />
+              <ReportSection icon={TriangleAlert} title={T.blockers} items={r.blockers} />
               <TranscriptToggle transcript={r.transcript} />
             </CardContent>
           </Card>
@@ -71,14 +102,14 @@ export default function DayReportView({ data }) {
         <CardHeader>
           <CardTitle className="text-lg">
             <Users className="h-5 w-5 text-muted-foreground" strokeWidth={1.75} />
-            未汇报
+            {T.missingTitle}
             <span className="rounded-full border border-border-strong px-2.5 py-0.5 text-sm font-semibold text-muted-foreground">
               {missing.length}
             </span>
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-1">
-          <p className="text-[0.95rem]">{missing.length ? missing.join('、') : '全员已完成'}</p>
+          <p className="text-[0.95rem]">{missing.length ? missing.join(T.listSeparator) : T.allDone}</p>
         </CardContent>
       </Card>
     </>
@@ -87,6 +118,7 @@ export default function DayReportView({ data }) {
 
 // Raw conversation transcript — stored for review (备查), revealed on demand.
 function TranscriptToggle({ transcript }) {
+  const T = useLangDict(DICT);
   const [open, setOpen] = useState(false);
   if (!transcript || !transcript.trim()) return null;
   return (
@@ -97,7 +129,7 @@ function TranscriptToggle({ transcript }) {
         className="flex items-center gap-1.5 text-[0.8rem] font-semibold text-muted-foreground transition-colors hover:text-foreground"
       >
         <MessagesSquare className="h-4 w-4" strokeWidth={1.75} />
-        原始对话
+        {T.transcript}
         <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} strokeWidth={2} />
       </button>
       {open ? (
@@ -110,6 +142,7 @@ function TranscriptToggle({ transcript }) {
 }
 
 function ReportSection({ icon: Icon, title, items }) {
+  const T = useLangDict(DICT);
   return (
     <div>
       <h3 className="mb-1.5 mt-4 flex items-center gap-1.5 text-[0.8rem] font-semibold text-muted-foreground">
@@ -117,7 +150,7 @@ function ReportSection({ icon: Icon, title, items }) {
         {title}
       </h3>
       <ul className="list-disc pl-5 text-[0.95rem] leading-relaxed">
-        {items && items.length ? items.map((x, i) => <li key={i}>{x}</li>) : <li className="text-faint">（无）</li>}
+        {items && items.length ? items.map((x, i) => <li key={i}>{x}</li>) : <li className="text-faint">{T.emptyItems}</li>}
       </ul>
     </div>
   );

@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-07-19
+
+### Added
+- **Multi-language support (zh/en).** Language now flows through every
+  surface:
+  - **Per-member language** (`members.language`, migration 10; NULL = team
+    default): drives the member's talk-page UI, the agent's spoken language
+    (full English instruction/tool-description set mirroring the
+    battle-tested Chinese one — anti-hallucination, submit-timing and
+    continuation rules included), the ASR sidecar language, the Gemini
+    adapter's kick strings, and the member's dynamic-profile language.
+    Set via admin members page selector, `PUT /api/members/:id/language`,
+    or `cli.js member add --language` / `member set-language`.
+  - **Team default language** (settings key `language`, default zh; config
+    fallback `config.language`): fallback for members without their own
+    setting, and the language of owner-facing digest prompts/reports.
+    Set via settings page, `PUT /api/settings {language}`, or
+    `cli.js settings set --language`.
+  - **Admin SPA viewer language**: 中/EN toggle in the header
+    (localStorage-persisted, browser-language default) — independent of
+    team/member languages; all admin pages fully bilingual.
+  - `GET /api/talk/session` now returns the member's resolved `language`;
+    `GET /api/members` returns `language` + `language_effective`.
+
 ## [0.11.3] - 2026-07-19
 
 ### Fixed

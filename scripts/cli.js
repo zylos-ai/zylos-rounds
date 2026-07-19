@@ -27,10 +27,11 @@ Usage: cli.js [--url U] [--key K] <command> [args]
 
 Members
   member list                         roster with per-task links, context/profile
-  member add <name>                   add (or re-activate) a member; mints their daily-task link
+  member add <name> [--language L]    add (or re-activate) a member; mints their daily-task link (L: zh|en)
   member remove <id>                  deactivate a member (history kept, links die)
   member set-context <id> [text]      set 基础背景 (text arg or stdin; empty clears)
   member set-profile <id> [text]      overwrite 动态画像 (text arg or stdin; empty clears)
+  member set-language <id> [zh|en]    set conversation/UI language (empty = team default)
 
 Agent brain
   brain get                           team_background + probing_guidance
@@ -68,7 +69,7 @@ Reports & settings
   report today | report <YYYY-MM-DD>  day digest (structured + transcripts)
   report history                      per-day submission counts
   settings get
-  settings set [--model M] [--voice V] [--time-zone TZ] [--profile-model M] [--digest-model M]
+  settings set [--model M] [--voice V] [--time-zone TZ] [--language zh|en] [--profile-model M] [--digest-model M]
                [--voice-provider S] [--profile-provider S] [--digest-provider S]
                                       models for 画像/汇总 + provider slug per slot + IANA time zone; '' reverts to default
 
@@ -172,12 +173,15 @@ async function run(target, cmd, sub, args, flags) {
   switch (`${cmd} ${sub}`) {
     case 'member list': return get('/api/members');
     case 'member add': {
-      if (!args[0]) fail('usage: member add <name>');
-      return post('/api/members', { name: args[0] });
+      if (!args[0]) fail('usage: member add <name> [--language zh|en]');
+      const body = { name: args[0] };
+      if (flags.language !== undefined) body.language = flags.language;
+      return post('/api/members', body);
     }
     case 'member remove': return del(`/api/members/${id(args[0])}`).then(() => ({ ok: true, removed: id(args[0]) }));
     case 'member set-context': return put(`/api/members/${id(args[0])}/context`, { context: textInput(args[1]) });
     case 'member set-profile': return put(`/api/members/${id(args[0])}/profile`, { profile: textInput(args[1]) });
+    case 'member set-language': return put(`/api/members/${id(args[0])}/language`, { language: args[1] ?? '' });
 
     case 'brain get': return get('/api/context');
     case 'brain set': {
@@ -302,6 +306,7 @@ async function run(target, cmd, sub, args, flags) {
       if (flags['profile-model'] !== undefined) body.profile_model = flags['profile-model'];
       if (flags['digest-model'] !== undefined) body.digest_model = flags['digest-model'];
       if (flags['time-zone'] !== undefined) body.time_zone = flags['time-zone'];
+      if (flags.language !== undefined) body.language = flags.language;
       for (const slot of ['voice', 'profile', 'digest']) {
         if (flags[`${slot}-provider`] !== undefined) body[`${slot}_provider`] = flags[`${slot}-provider`];
       }

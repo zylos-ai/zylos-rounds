@@ -122,7 +122,7 @@ test('digest prompt includes per-member results and flags incomplete members', (
   s.addTaskMember(task.id, m2, 'tt2');
   s.submitCycleSummary(task.id, m1, '-', JSON.stringify(['进展顺利']), JSON.stringify(['想换方向']));
 
-  const gen = new DigestGenerator(s, () => ({}), {}, { resolveKey: () => null });
+  const gen = new DigestGenerator(s, () => ({}), {}, { resolveKey: () => null, resolveLanguage: () => 'zh' });
   const prompt = gen.buildPrompt(s.getTask(task.id), s.cycleRecords(task.id, '-'), '-');
   assert.match(prompt, /brief内容/);
   assert.match(prompt, /问题清单/);
@@ -139,7 +139,7 @@ test('digest generate: no submissions -> null; trigger applies decoupled close l
   const task = s.createTask({ type: 'oneshot', title: 'T' });
   s.addTaskMember(task.id, m1, 'tt1');
 
-  const gen = new DigestGenerator(s, () => ({}), {}, { resolveKey: () => 'k' });
+  const gen = new DigestGenerator(s, () => ({}), {}, { resolveKey: () => 'k', resolveLanguage: () => 'zh' });
   assert.equal(await gen.generate(task.id), null); // nothing submitted yet
 
   s.submitCycleSummary(task.id, m1, '-', JSON.stringify(['a']), JSON.stringify([]));

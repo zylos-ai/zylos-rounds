@@ -23,19 +23,20 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { TalkEngine, resolveTokenAndBase } from './engine';
 import Waveform from './Waveform';
+import { MESSAGES, browserLang } from './i18n';
 
 const { base: BASE, token: TOKEN } = resolveTokenAndBase();
 
 let nextId = 1;
 const nid = () => nextId++;
 
-// "7月19日 · 星期六" from the server's report date (server TZ is authoritative)
-const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
-function dateLabel(d) {
+// "7月19日 · 星期六" / "Jul 19 · Saturday" from the server's report date
+// (server TZ is authoritative)
+function dateLabel(T, d) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || '');
   if (!m) return '';
   const dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  return `${Number(m[2])}月${Number(m[3])}日 · 星期${WEEKDAYS[dt.getDay()]}`;
+  return T.dateLabel(Number(m[2]), Number(m[3]), T.weekday(dt.getDay()));
 }
 
 // Auto-reconnect backoff after an unexpected drop; then a manual retry button.
@@ -45,6 +46,12 @@ export default function TalkApp() {
   // loading | invalid | idle | connecting | listening | speaking |
   // reconnecting | disconnected | done
   const [phase, setPhase] = useState('loading');
+  // Browser language is the pre-session guess; the server's per-member
+  // language (from /api/talk/session) takes over as soon as it loads.
+  const [lang, setLang] = useState(browserLang());
+  const T = MESSAGES[lang] || MESSAGES.zh;
+  const tRef = useRef(T);
+  tRef.current = T;
   const [name, setName] = useState('');
   const [isTest, setIsTest] = useState(false);
   const [task, setTask] = useState(null); // oneshot task {id,title} — null = daily standup
@@ -84,6 +91,9 @@ export default function TalkApp() {
         const data = await res.json();
         setName(data.name || '');
         setIsTest(Boolean(data.is_test));
+        const memberLang = data.language === 'en' ? 'en' : 'zh';
+        setLang(memberLang);
+        const M = MESSAGES[memberLang];
         // v0.7: every link carries a task; the built-in daily keeps the
         // standup wording, so only generic tasks flip the copy below
         const generic = data.task && !data.task.is_builtin ? data.task : null;
@@ -92,9 +102,9 @@ export default function TalkApp() {
         setReportDate(data.date || '');
         setPrior(data.prior || null);
         setPhase('idle');
-        if (data.prior?.status === 'submitted') say('点击麦克风继续补充');
-        else if (data.prior?.status === 'draft') say('点击麦克风继续，Luna 会接着刚才的聊');
-        else say('点击麦克风开始');
+        if (data.prior?.status === 'submitted') say(M.tapToAdd);
+        else if (data.prior?.status === 'draft') say(M.tapToContinue);
+        else say(M.tapToStart);
       } catch {
         if (!cancelled) {
           setPhase('invalid');
@@ -133,26 +143,27 @@ export default function TalkApp() {
     const engine = new TalkEngine({
       base: BASE,
       token: TOKEN,
+      errorFallback: tRef.current.serviceError,
       on: {
-        connecting: () => say('正在接通 Luna…'),
+        connecting: () => say(tRef.current.connecting),
         ready: () => {
           if (doneRef.current) return;
           const wasReconnect = reconnectRef.current.attempts > 0;
           reconnectRef.current.attempts = 0;
           setPaused(false);
           setPhase('listening');
-          say(wasReconnect ? '已重新接通，Luna 会接着刚才的继续' : 'Luna 正在跟你打招呼…');
+          say(wasReconnect ? tRef.current.reconnected : tRef.current.greeting);
         },
         error: (msg) => { setSubmitting(false); say(msg, true); },
         speechStarted: () => {
           if (doneRef.current || engineRef.current?.paused) return;
           setPhase('listening');
-          say('在听你说…');
+          say(tRef.current.listening);
         },
         aiAudio: () => {
           if (doneRef.current || engineRef.current?.paused) return;
           setPhase('speaking');
-          say('Luna 在说话（直接开口可打断）');
+          say(tRef.current.speaking);
         },
         aiDelta: appendAiDelta,
         aiDone: () => {
@@ -172,13 +183,13 @@ export default function TalkApp() {
         responseDone: () => {
           if (doneRef.current || engineRef.current?.paused) return;
           setPhase('listening');
-          say('轮到你说了');
+          say(tRef.current.yourTurn);
         },
         saved: (s) => {
           doneRef.current = true;
           setSummary(s || {});
           setPhase('done');
-          say('小结已保存，Luna 道别后可直接关闭页面');
+          say(tRef.current.savedStatus);
           setTimeout(() => summaryRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
         },
         closed: () => {
@@ -189,11 +200,11 @@ export default function TalkApp() {
             const delay = RETRY_DELAYS[r.attempts];
             r.attempts++;
             setPhase('reconnecting');
-            say(`连接断开，正在重连（第 ${r.attempts}/${RETRY_DELAYS.length} 次）…`, true);
+            say(tRef.current.reconnectingN(r.attempts, RETRY_DELAYS.length), true);
             r.timer = setTimeout(() => engineRef.current?.reconnect(), delay);
           } else {
             setPhase('disconnected');
-            say('连接断开，自动重连没成功', true);
+            say(tRef.current.reconnectFailed, true);
           }
         },
       },
@@ -203,7 +214,7 @@ export default function TalkApp() {
       engineRef.current = engine;
     } catch {
       setPhase('idle');
-      say('无法获取麦克风权限，请在浏览器设置里允许后刷新', true);
+      say(tRef.current.micDenied, true);
     }
   }, [appendAiDelta, say]);
 
@@ -214,12 +225,12 @@ export default function TalkApp() {
       engine.resume();
       setPaused(false);
       setPhase('listening');
-      say('在听你说…');
+      say(tRef.current.listening);
     } else {
       engine.pause();
       setPaused(true);
       setPhase('listening');
-      say('已暂停，Luna 暂时听不到你');
+      say(tRef.current.paused);
     }
   }, [say]);
 
@@ -231,18 +242,18 @@ export default function TalkApp() {
       await engine.setMode(toText ? 'text' : 'voice');
     } catch {
       // mic re-acquire denied — engine stays in text mode
-      say('麦克风获取失败，请检查权限后重试');
+      say(tRef.current.micFailed);
       return;
     }
     setTextMode(toText);
     if (toText) {
       setPaused(false);
       setPhase('listening');
-      say('文字模式，Luna 会用文字回复');
+      say(tRef.current.textModeOn);
       setTimeout(() => inputRef.current?.focus(), 50);
     } else {
       setPhase('listening');
-      say('语音模式，直接开口说话');
+      say(tRef.current.voiceModeOn);
     }
   }, [say]);
 
@@ -258,7 +269,7 @@ export default function TalkApp() {
   const retryNow = useCallback(() => {
     reconnectRef.current.attempts = 0;
     setPhase('reconnecting');
-    say('正在重连…');
+    say(tRef.current.reconnecting);
     engineRef.current?.reconnect();
   }, [say]);
 
@@ -267,13 +278,13 @@ export default function TalkApp() {
     if (engineRef.current && !doneRef.current) {
       setSubmitting(true);
       engineRef.current.end();
-      say('正在生成小结…');
+      say(tRef.current.generating);
     }
   }, [say]);
 
   if (phase === 'loading') {
     return (
-      <div className="flex min-h-dvh items-center justify-center text-sm text-muted-foreground">加载中…</div>
+      <div className="flex min-h-dvh items-center justify-center text-sm text-muted-foreground">{T.loading}</div>
     );
   }
 
@@ -285,9 +296,9 @@ export default function TalkApp() {
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
               <Link2Off className="h-6 w-6" strokeWidth={1.75} />
             </div>
-            <div className="text-xl font-bold tracking-tight">链接无效</div>
+            <div className="text-xl font-bold tracking-tight">{T.invalidTitle}</div>
             <p className="max-w-[300px] text-[0.95rem] leading-relaxed text-muted-foreground">
-              这个专属链接不存在或已失效，请联系管理员获取新的专属链接。
+              {T.invalidBody}
             </p>
           </CardContent>
         </Card>
@@ -303,7 +314,7 @@ export default function TalkApp() {
   const orb = (
     <button
       type="button"
-      aria-label="开始对话"
+      aria-label={T.ariaStart}
       disabled={phase !== 'idle'}
       onClick={startCall}
       className={cn(
@@ -356,41 +367,41 @@ export default function TalkApp() {
           {reportDate ? (
             <div className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-primary-line bg-primary-soft px-3.5 py-1 text-[0.92rem] font-semibold text-primary">
               <CalendarDays className="h-4 w-4" strokeWidth={1.75} />
-              今天 {dateLabel(reportDate)}
+              {T.today} {dateLabel(T, reportDate)}
             </div>
           ) : null}
           <h1 className="mt-3 text-4xl font-bold leading-tight tracking-tight max-sm:text-3xl">
             {submittedToday
-              ? (task ? `${name}，「${task.title}」已提交` : `${name}，今天的日报已提交`)
+              ? (task ? T.titleTaskSubmitted(name, task.title) : T.titleDailySubmitted(name))
               : draftToday
-                ? `${name}，上次聊到一半`
-                : task ? `${name}，聊聊「${task.title}」` : `${name}，和 Luna 聊 3-5 分钟`}
+                ? T.titleDraft(name)
+                : task ? T.titleTask(name, task.title) : T.titleDaily(name)}
           </h1>
           <p className="mt-4 text-[1.05rem] leading-relaxed text-muted-foreground max-sm:text-base">
             {submittedToday
-              ? '想到新内容可以继续补充，Luna 会把补充合并进小结'
+              ? T.subSubmitted
               : draftToday
-                ? 'Luna 会接着刚才聊到的地方继续'
-                : task ? 'Luna 代表负责人和你做一次一对一沟通，想到什么说什么' : '昨天做了什么 · 今天计划 · 卡点 · 想在日会讨论的问题'}
+                ? T.subDraft
+                : task ? T.subTask : T.subDaily}
           </p>
           {submittedToday && prior.summary ? (
             <Card className="mt-7 w-full max-w-[460px] text-left">
               <CardContent className="py-5">
                 <div className="flex items-center gap-2 text-[1.02rem] font-bold tracking-tight text-success">
                   <CircleCheck className="h-[18px] w-[18px]" strokeWidth={1.75} />
-                  {task ? '已提交的小结' : '今天已提交的日报'}
+                  {task ? T.cardTaskSubmitted : T.cardDailySubmitted}
                 </div>
                 {task ? (
                   <>
-                    <SummarySection icon={Target} title="小结" items={prior.summary.summary} />
-                    <SummarySection icon={MessageCircle} title="要点" items={prior.summary.highlights} />
+                    <SummarySection icon={Target} title={T.secSummary} none={T.none} items={prior.summary.summary} />
+                    <SummarySection icon={MessageCircle} title={T.secHighlights} none={T.none} items={prior.summary.highlights} />
                   </>
                 ) : (
                   <>
-                    <SummarySection icon={History} title="昨天" items={prior.summary.yesterday} />
-                    <SummarySection icon={Target} title="今天" items={prior.summary.today} />
-                    <SummarySection icon={TriangleAlert} title="卡点" items={prior.summary.blockers} />
-                    <SummarySection icon={MessageCircle} title="日会待议" items={prior.summary.topics_for_meeting} />
+                    <SummarySection icon={History} title={T.secYesterday} none={T.none} items={prior.summary.yesterday} />
+                    <SummarySection icon={Target} title={T.secToday} none={T.none} items={prior.summary.today} />
+                    <SummarySection icon={TriangleAlert} title={T.secBlockers} none={T.none} items={prior.summary.blockers} />
+                    <SummarySection icon={MessageCircle} title={T.secTopics} none={T.none} items={prior.summary.topics_for_meeting} />
                   </>
                 )}
               </CardContent>
@@ -399,19 +410,19 @@ export default function TalkApp() {
           {isTest ? (
             <p className="mt-2 inline-flex items-center gap-1.5 text-[0.85rem] text-faint">
               <FlaskConical className="h-4 w-4" strokeWidth={1.75} />
-              体验模式 · 内容不计入正式汇报
+              {T.testModeHint}
             </p>
           ) : null}
           <p className="mt-2 inline-flex items-center gap-1.5 text-[0.85rem] text-faint">
             <Headphones className="h-4 w-4" strokeWidth={1.75} />
-            建议戴耳机，回声更少、听得更清
+            {T.headphones}
           </p>
           <div className="mt-12 max-sm:mt-10">{orb}</div>
           <div className="mt-5">{statusLine}</div>
           {phase === 'disconnected' && (
             <Button variant="secondary" className="mt-3" onClick={retryNow}>
               <RotateCw strokeWidth={1.75} />
-              重新连接
+              {T.btnRetry}
             </Button>
           )}
         </div>
@@ -433,7 +444,7 @@ export default function TalkApp() {
               {reportDate ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-primary-line bg-primary-soft px-2 py-px text-[0.7rem] font-medium text-primary">
                   <CalendarDays className="h-3 w-3" strokeWidth={1.75} />
-                  {dateLabel(reportDate)}
+                  {dateLabel(T, reportDate)}
                 </span>
               ) : null}
               {task ? (
@@ -444,7 +455,7 @@ export default function TalkApp() {
               {isTest ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-accent px-2 py-px text-[0.7rem] font-medium">
                   <FlaskConical className="h-3 w-3" strokeWidth={1.75} />
-                  体验模式
+                  {T.testMode}
                 </span>
               ) : null}
             </div>
@@ -468,30 +479,30 @@ export default function TalkApp() {
             <>
               <Button variant="secondary" onClick={toggleMode} disabled={submitting}>
                 {textMode ? <Mic strokeWidth={1.75} /> : <Keyboard strokeWidth={1.75} />}
-                {textMode ? '语音' : '文字'}
+                {textMode ? T.btnVoice : T.btnText}
               </Button>
               {!textMode && (
                 <Button variant="secondary" onClick={togglePause} disabled={submitting}>
                   {paused ? <Play strokeWidth={1.75} /> : <Pause strokeWidth={1.75} />}
-                  {paused ? '继续' : '暂停'}
+                  {paused ? T.btnResume : T.btnPause}
                 </Button>
               )}
               <Button variant="secondary" onClick={endCall} disabled={submitting}>
                 {submitting ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : <Check strokeWidth={1.75} />}
-                {submitting ? '正在生成小结…' : '结束并提交'}
+                {submitting ? T.generating : T.btnEnd}
               </Button>
             </>
           )}
           {phase === 'reconnecting' && (
             <Button variant="secondary" disabled>
               <Loader2 className="animate-spin" strokeWidth={1.75} />
-              正在重连…
+              {T.reconnecting}
             </Button>
           )}
           {phase === 'disconnected' && (
             <Button variant="secondary" onClick={retryNow}>
               <RotateCw strokeWidth={1.75} />
-              重新连接
+              {T.btnRetry}
             </Button>
           )}
         </div>
@@ -523,12 +534,21 @@ export default function TalkApp() {
             <CardContent className="py-5">
               <div className="flex items-center gap-2 text-[1.05rem] font-bold tracking-tight text-success">
                 <CircleCheck className="h-[18px] w-[18px]" strokeWidth={1.75} />
-                日报已提交
+                {task ? T.cardTaskSubmitted : T.doneCardTitle}
               </div>
-              <SummarySection icon={History} title="昨天" items={summary.yesterday} />
-              <SummarySection icon={Target} title="今天" items={summary.today} />
-              <SummarySection icon={TriangleAlert} title="卡点" items={summary.blockers} />
-              <SummarySection icon={MessageCircle} title="日会待议" items={summary.topics_for_meeting} />
+              {task ? (
+                <>
+                  <SummarySection icon={Target} title={T.secSummary} none={T.none} items={summary.summary} />
+                  <SummarySection icon={MessageCircle} title={T.secHighlights} none={T.none} items={summary.highlights} />
+                </>
+              ) : (
+                <>
+                  <SummarySection icon={History} title={T.secYesterday} none={T.none} items={summary.yesterday} />
+                  <SummarySection icon={Target} title={T.secToday} none={T.none} items={summary.today} />
+                  <SummarySection icon={TriangleAlert} title={T.secBlockers} none={T.none} items={summary.blockers} />
+                  <SummarySection icon={MessageCircle} title={T.secTopics} none={T.none} items={summary.topics_for_meeting} />
+                </>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -542,10 +562,10 @@ export default function TalkApp() {
             ref={inputRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="输入消息，回车发送…"
+            placeholder={T.composerPlaceholder}
             className="h-[38px] min-w-0 flex-1 rounded-md border border-border-strong bg-card px-3 text-[0.92rem] shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
-          <Button type="submit" size="icon" className="h-[38px] w-[38px]" disabled={!draft.trim() || submitting} aria-label="发送">
+          <Button type="submit" size="icon" className="h-[38px] w-[38px]" disabled={!draft.trim() || submitting} aria-label={T.ariaSend}>
             <Send strokeWidth={1.75} />
           </Button>
         </form>
@@ -554,7 +574,7 @@ export default function TalkApp() {
   );
 }
 
-function SummarySection({ icon: Icon, title, items }) {
+function SummarySection({ icon: Icon, title, none, items }) {
   return (
     <>
       <h3 className="mb-1 mt-3.5 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
@@ -565,34 +585,9 @@ function SummarySection({ icon: Icon, title, items }) {
         {items && items.length ? (
           items.map((x, i) => <li key={i}>{x}</li>)
         ) : (
-          <li className="text-faint">（无）</li>
+          <li className="text-faint">{none}</li>
         )}
       </ul>
     </>
-  );
-}
-
-function Shell({ name, task, children }) {
-  return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-[560px] flex-col px-5 pb-[calc(16px+env(safe-area-inset-bottom))]">
-      <header className="pb-1 pt-[18px]">
-        <h1 className="flex items-center gap-2 text-[1.05rem] font-semibold">
-          <Mic className="h-[18px] w-[18px] text-primary" strokeWidth={1.75} />
-          Rounds
-        </h1>
-        {name ? (
-          <p className="mt-1.5 text-[0.82rem] leading-normal text-muted-foreground">
-            {task ? `${name}，正在聊「${task.title}」——Luna 代表负责人和你做一次一对一沟通。` : `${name}，和 Luna 聊 3-5 分钟：昨天做了什么 · 今天计划 · 卡点 · 想在日会讨论的问题。`}
-          </p>
-        ) : null}
-        {name ? (
-          <p className="mt-1 inline-flex items-center gap-1.5 text-[0.78rem] text-faint">
-            <Headphones className="h-3.5 w-3.5" strokeWidth={1.75} />
-            建议戴耳机，回声更少、听得更清
-          </p>
-        ) : null}
-      </header>
-      {children}
-    </div>
   );
 }

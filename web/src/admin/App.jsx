@@ -1,9 +1,35 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Mic, Users, LogOut, Brain, Settings as SettingsIcon, ClipboardList, CircleDollarSign } from 'lucide-react';
+import { Mic, Users, LogOut, Brain, Settings as SettingsIcon, ClipboardList, CircleDollarSign, Languages } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { api } from './api';
 import { useRoute, navigate } from './router';
+import { useI18n, useLangDict } from './i18n';
+
+const APP_DICT = {
+  zh: {
+    loading: '加载中…',
+    redirecting: '跳转中…',
+    navTasks: '任务',
+    navMembers: '成员',
+    navBrain: '大脑',
+    navUsage: '用量',
+    navSettings: '设置',
+    logout: '退出登录',
+    switchLang: 'Switch to English',
+  },
+  en: {
+    loading: 'Loading…',
+    redirecting: 'Redirecting…',
+    navTasks: 'Tasks',
+    navMembers: 'Members',
+    navBrain: 'Brain',
+    navUsage: 'Usage',
+    navSettings: 'Settings',
+    logout: 'Log out',
+    switchLang: '切换到中文',
+  },
+};
 import LoginPage from './pages/LoginPage';
 import MembersPage from './pages/MembersPage';
 import BrainPage from './pages/BrainPage';
@@ -13,6 +39,7 @@ import { TasksPage, TaskDetailPage } from './pages/TasksPage';
 
 export default function App() {
   const route = useRoute();
+  const T = useLangDict(APP_DICT);
   const [authed, setAuthed] = useState(null); // null = checking
 
   useEffect(() => {
@@ -59,7 +86,7 @@ export default function App() {
   if (route.name === 'login') return <LoginPage onLoggedIn={onLoggedIn} />;
 
   if (authed === null) {
-    return <div className="flex min-h-dvh items-center justify-center text-sm text-muted-foreground">加载中…</div>;
+    return <div className="flex min-h-dvh items-center justify-center text-sm text-muted-foreground">{T.loading}</div>;
   }
   if (!authed) return null; // redirecting to #/login
 
@@ -90,11 +117,18 @@ function LegacyDailyRedirect({ date }) {
       .catch(() => { if (!cancelled) navigate('#/'); });
     return () => { cancelled = true; };
   }, [date]);
-  return <p className="text-sm text-muted-foreground">跳转中…</p>;
+  return <RedirectingNote />;
+}
+
+function RedirectingNote() {
+  const T = useLangDict(APP_DICT);
+  return <p className="text-sm text-muted-foreground">{T.redirecting}</p>;
 }
 
 function Layout({ route, onLogout, children }) {
   const navRef = useRef(null);
+  const T = useLangDict(APP_DICT);
+  const { lang, setLang } = useI18n();
 
   // desktop only — on narrow screens the tabs live in the bottom bar instead
   useEffect(() => {
@@ -104,11 +138,11 @@ function Layout({ route, onLogout, children }) {
     }
   }, [route.name]);
   const nav = [
-    { label: '任务', hash: '#/', icon: ClipboardList, active: route.name === 'tasks' || route.name === 'task' || route.name === 'legacyReport' },
-    { label: '成员', hash: '#/members', icon: Users, active: route.name === 'members' },
-    { label: '大脑', hash: '#/brain', icon: Brain, active: route.name === 'brain' },
-    { label: '用量', hash: '#/usage', icon: CircleDollarSign, active: route.name === 'usage' },
-    { label: '设置', hash: '#/settings', icon: SettingsIcon, active: route.name === 'settings' },
+    { label: T.navTasks, hash: '#/', icon: ClipboardList, active: route.name === 'tasks' || route.name === 'task' || route.name === 'legacyReport' },
+    { label: T.navMembers, hash: '#/members', icon: Users, active: route.name === 'members' },
+    { label: T.navBrain, hash: '#/brain', icon: Brain, active: route.name === 'brain' },
+    { label: T.navUsage, hash: '#/usage', icon: CircleDollarSign, active: route.name === 'usage' },
+    { label: T.navSettings, hash: '#/settings', icon: SettingsIcon, active: route.name === 'settings' },
   ];
 
   return (
@@ -139,8 +173,19 @@ function Layout({ route, onLogout, children }) {
               </a>
             ))}
           </nav>
-          <div className="ml-auto">
-            <Button variant="ghost" size="icon" title="退出登录" aria-label="退出登录" onClick={onLogout}>
+          <div className="ml-auto flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              title={T.switchLang}
+              aria-label={T.switchLang}
+              className="gap-1.5 text-muted-foreground"
+              onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}
+            >
+              <Languages className="h-4 w-4" strokeWidth={1.75} />
+              {lang === 'zh' ? 'EN' : '中'}
+            </Button>
+            <Button variant="ghost" size="icon" title={T.logout} aria-label={T.logout} onClick={onLogout}>
               <LogOut strokeWidth={1.75} />
             </Button>
           </div>

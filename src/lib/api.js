@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sendJson, readJsonBody, browserOrigin, todayLocal } from './http-util.js';
-import { MODEL_OPTIONS, VOICE_OPTIONS, SLOTS, providerProtocol } from './settings.js';
+import { MODEL_OPTIONS, VOICE_OPTIONS, SLOTS, LANGUAGES, providerProtocol } from './settings.js';
 import { GEMINI_VOICES } from './gemini-live.js';
 import { ONESHOT_CYCLE, currentCycleKey, cadenceLabel, parseDowSet } from './cycle.js';
 
@@ -113,6 +113,7 @@ export class Api {
       }
       return sendJson(res, 200, {
         name: ts.member.name, is_test: Boolean(ts.member.is_test),
+        language: this.settings.memberLanguage(ts.member),
         task: {
           id: ts.task.id, title: ts.task.title, type: ts.task.type,
           is_builtin: Boolean(ts.task.is_builtin),
@@ -160,6 +161,9 @@ export class Api {
 
     m = p.match(/^\/api\/members\/(\d+)\/profile$/);
     if (m && req.method === 'PUT') return await this.putMemberProfile(req, res, Number(m[1])), true;
+
+    m = p.match(/^\/api\/members\/(\d+)\/language$/);
+    if (m && req.method === 'PUT') return await this.putMemberLanguage(req, res, Number(m[1])), true;
 
     if (p === '/api/members' && req.method === 'GET') return this.listMembers(req, res), true;
     if (p === '/api/members' && req.method === 'POST') return await this.addMember(req, res), true;
@@ -399,6 +403,10 @@ export class Api {
       model_options: MODEL_OPTIONS, // suggestions only since v0.8
       voice_options: VOICE_OPTIONS,
       gemini_voice_options: GEMINI_VOICES,
+      // team default language: stored value ('' = unset, default applies)
+      language: this.settings.storedLanguage(),
+      language_default: this.settings.defaultLanguage(),
+      language_effective: this.settings.resolveLanguage(),
       // time zone: stored value ('' = unset, default applies) + layering info
       time_zone: this.settings.storedTimeZone(),
       time_zone_default: this.settings.defaultTimeZone(),
@@ -437,6 +445,12 @@ export class Api {
         return sendJson(res, 400, { error: 'invalid_voice' });
       }
       this.settings.setVoice(body.voice);
+    }
+    // '' reverts to the default (config.json > zh)
+    if (body.language !== undefined) {
+      const v = String(body.language).trim();
+      if (v && !LANGUAGES.includes(v)) return sendJson(res, 400, { error: 'invalid_language' });
+      this.settings.setLanguage(v);
     }
     // '' reverts to the default (config.json > Asia/Singapore)
     if (body.time_zone !== undefined) {
@@ -540,6 +554,22 @@ export class Api {
     if (v.length > 8000) return sendJson(res, 400, { error: 'too_long' });
     this.store.setMemberContext(id, v || null);
     sendJson(res, 200, { id, context: v });
+  }
+
+  // '' reverts the member to the team default language.
+  async putMemberLanguage(req, res, id) {
+    const member = this.store.getMemberById(id);
+    if (!member) return sendJson(res, 404, { error: 'not_found' });
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      return sendJson(res, 400, { error: 'bad_request' });
+    }
+    const v = String(body.language ?? '').trim();
+    if (v && !LANGUAGES.includes(v)) return sendJson(res, 400, { error: 'invalid_language' });
+    this.store.setMemberLanguage(id, v || null);
+    sendJson(res, 200, { id, language: v, language_effective: this.settings.memberLanguage(this.store.getMemberById(id)) });
   }
 
   // Manual correction surface for the auto-maintained profile (动态画像).
@@ -879,6 +909,8 @@ export class Api {
       id: mb.id,
       name: mb.name,
       active: Boolean(mb.active),
+      language: mb.language || '',
+      language_effective: this.settings.memberLanguage(mb),
       context: mb.context || '',
       profile: mb.profile || '',
       profile_updated_at: mb.profile_updated_at || null,
@@ -921,9 +953,12 @@ export class Api {
     }
     const name = String(body.name || '').trim();
     if (!name || name.length > 64) return sendJson(res, 400, { error: 'invalid_name' });
+    const language = String(body.language ?? '').trim();
+    if (language && !LANGUAGES.includes(language)) return sendJson(res, 400, { error: 'invalid_language' });
     try {
       const info = this.store.addMember(name, newToken());
       const id = Number(info.lastInsertRowid);
+      if (language) this.store.setMemberLanguage(id, language);
       this.mintDailyLink(id);
       sendJson(res, 201, this.memberJson(req, this.store.getMemberById(id)));
     } catch (err) {
@@ -931,6 +966,7 @@ export class Api {
       const inactive = this.store.getInactiveMemberByName(name);
       if (!inactive) return sendJson(res, 409, { error: 'duplicate_name' });
       this.store.reactivateMember(inactive.id, newToken());
+      if (language) this.store.setMemberLanguage(inactive.id, language);
       // returning member: fresh daily link — the pre-deactivation one stays dead
       this.mintDailyLink(inactive.id, { rotate: true });
       sendJson(res, 201, this.memberJson(req, this.store.getMemberById(inactive.id)));

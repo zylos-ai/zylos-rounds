@@ -32,7 +32,18 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 
 export const GEMINI_VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Leda', 'Orus', 'Zephyr'];
 
-const GREETING_KICK = '（同事已接通，请按你的流程直接开口，不要提到这条消息）';
+// These kick strings are relayed as user-role turns and steer the model, so
+// they follow the member's conversation language.
+const KICK_STRINGS = {
+  zh: {
+    greeting: '（同事已接通，请按你的流程直接开口，不要提到这条消息）',
+    system: '（系统指令）',
+  },
+  en: {
+    greeting: '(The colleague is connected — start speaking per your flow. Do not mention this message.)',
+    system: '(System instruction) ',
+  },
+};
 
 // 15-tap windowed-sinc low-pass (cutoff ~7.2kHz at 24k input) applied before
 // the 24k→16k decimation — bare linear interpolation aliases 8–12kHz content
@@ -52,8 +63,9 @@ const LP = (() => {
 
 export class GeminiUpstream {
   /** `_socket` injects a fake upstream for unit tests. */
-  constructor({ wsUrl, key, model, proxy, _socket }) {
+  constructor({ wsUrl, key, model, proxy, lang, _socket }) {
     this.handlers = { open: [], message: [], error: [], close: [] };
+    this.kick = KICK_STRINGS[lang] || KICK_STRINGS.zh;
     this.mode = 'voice';
     this.greeted = false;
     this.pendingCalls = new Map(); // call id -> name (for toolResponse)
@@ -185,10 +197,10 @@ export class GeminiUpstream {
           // greeting: without marking it, the bare response.create after the
           // first tool result would fire the greeting kick mid-conversation.
           this.greeted = true;
-          this.toGemini({ clientContent: { turns: [{ role: 'user', parts: [{ text: `（系统指令）${instructions}` }] }], turnComplete: true } });
+          this.toGemini({ clientContent: { turns: [{ role: 'user', parts: [{ text: `${this.kick.system}${instructions}` }] }], turnComplete: true } });
         } else if (!this.greeted) {
           this.greeted = true;
-          this.toGemini({ clientContent: { turns: [{ role: 'user', parts: [{ text: GREETING_KICK }] }], turnComplete: true } });
+          this.toGemini({ clientContent: { turns: [{ role: 'user', parts: [{ text: this.kick.greeting }] }], turnComplete: true } });
         }
         // bare response.create after a tool response: Gemini continues on its own
         return;

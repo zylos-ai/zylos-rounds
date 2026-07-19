@@ -20,23 +20,67 @@ import { todayLocal } from './http-util.js';
 
 const MAX_TRANSCRIPT_TAIL = 2000;
 
-const DEFAULT_ONESHOT_INSTRUCTION = `请输出给负责人看的汇总报告（Markdown），结构：
+// Digests are owner-facing, so all prompt scaffolding follows the TEAM default
+// language (per-member language only affects the member's own conversation).
+// A custom digest_instruction is used verbatim in whatever language it's in.
+const DIGEST_STRINGS = {
+  zh: {
+    oneshot: `请输出给负责人看的汇总报告（Markdown），结构：
 ## 共识
 成员间观点一致或方向相同的点，合并表述，标注支持的人。
 ## 分歧
 观点不一致的点，逐条列出各方立场和归属。
 ## 重点信号
-值得负责人单独注意的信息：强烈诉求、风险、情绪、超出问题框架但重要的内容，标注来源成员。`;
-
-const DEFAULT_RECURRING_INSTRUCTION = `请输出给负责人看的本周期汇总报告（Markdown），结构：
+值得负责人单独注意的信息：强烈诉求、风险、情绪、超出问题框架但重要的内容，标注来源成员。`,
+    recurring: `请输出给负责人看的本周期汇总报告（Markdown），结构：
 ## 进展要点
 按成员归并本周期的关键进展和结论，标注归属。
 ## 共性主题
 多位成员都提到的主题、模式或问题，合并表述。
 ## 重点信号
-值得负责人单独注意的信息：风险、强烈诉求、情绪、需要负责人介入的点，标注来源成员。`;
-
-const SHARED_RULES = '要求：只依据上面提供的内容，不要编造；未完成对话的成员在结尾单独列出名单；语言简洁，直接给结论。';
+值得负责人单独注意的信息：风险、强烈诉求、情绪、需要负责人介入的点，标注来源成员。`,
+    sharedRules: '要求：只依据上面提供的内容，不要编造；未完成对话的成员在结尾单独列出名单；语言简洁，直接给结论。',
+    notSubmitted: '（未完成对话）',
+    points: '要点：',
+    highlights: '重点信号：',
+    excerpt: '对话摘录：',
+    empty: '（无内容）',
+    intro: '你替团队负责人整理一轮一对一沟通的汇总报告。负责人委托语音助手就同一主题分别与多位成员沟通，下面是每个人的沟通结果。',
+    task: '【任务】',
+    cycle: key => `【周期】${key} 起始的这一期`,
+    brief: '【任务背景】',
+    questions: '【问题框架】',
+    results: '【各成员的沟通结果】',
+  },
+  en: {
+    oneshot: `Write the summary report for the team lead (Markdown), structured as:
+## Consensus
+Points where members agree or point the same way — merge them and note who supports each.
+## Disagreements
+Points of disagreement — list each side's position and who holds it.
+## Key signals
+Information the lead should note individually: strong asks, risks, emotions, important content beyond the question frame — attribute each to its member.`,
+    recurring: `Write this cycle's summary report for the team lead (Markdown), structured as:
+## Progress highlights
+Key progress and conclusions this cycle, grouped by member with attribution.
+## Common themes
+Topics, patterns or problems multiple members raised — merge them.
+## Key signals
+Information the lead should note individually: risks, strong asks, emotions, points needing the lead's involvement — attribute each to its member.`,
+    sharedRules: 'Requirements: base everything strictly on the content above, never invent; list members who did not complete their conversation separately at the end; be concise and lead with conclusions.',
+    notSubmitted: ' (conversation not completed)',
+    points: 'Key points:',
+    highlights: 'Key signals:',
+    excerpt: 'Transcript excerpt:',
+    empty: '(no content)',
+    intro: "You compile a summary report for the team lead. The lead delegated a voice assistant to talk with several members one-on-one about the same topic; below are each member's results.",
+    task: '[Task] ',
+    cycle: key => `[Cycle] the round starting ${key}`,
+    brief: '[Task background]',
+    questions: '[Question frame]',
+    results: "[Each member's results]",
+  },
+};
 
 const parseList = v => {
   try {
@@ -57,34 +101,35 @@ export class DigestGenerator {
   }
 
   buildPrompt(task, rows, cycleKey) {
+    const L = DIGEST_STRINGS[this.settings.resolveLanguage()] || DIGEST_STRINGS.zh;
     const sections = rows.map(r => {
-      const parts = [`### ${r.name}${r.status === 'submitted' ? '' : '（未完成对话）'}`];
+      const parts = [`### ${r.name}${r.status === 'submitted' ? '' : L.notSubmitted}`];
       const summary = parseList(r.summary);
       const highlights = parseList(r.highlights);
-      if (summary.length) parts.push(`要点：\n${summary.map(s => `- ${s}`).join('\n')}`);
-      if (highlights.length) parts.push(`重点信号：\n${highlights.map(s => `- ${s}`).join('\n')}`);
+      if (summary.length) parts.push(`${L.points}\n${summary.map(s => `- ${s}`).join('\n')}`);
+      if (highlights.length) parts.push(`${L.highlights}\n${highlights.map(s => `- ${s}`).join('\n')}`);
       let t = (r.transcript || '').trim();
       if (t) {
         if (t.length > MAX_TRANSCRIPT_TAIL) t = `…${t.slice(-MAX_TRANSCRIPT_TAIL)}`;
-        parts.push(`对话摘录：\n${t}`);
+        parts.push(`${L.excerpt}\n${t}`);
       }
-      if (parts.length === 1) parts.push('（无内容）');
+      if (parts.length === 1) parts.push(L.empty);
       return parts.join('\n');
     });
 
     const custom = (task.digest_instruction || '').trim();
-    const instruction = custom || (task.type === 'recurring' ? DEFAULT_RECURRING_INSTRUCTION : DEFAULT_ONESHOT_INSTRUCTION);
+    const instruction = custom || (task.type === 'recurring' ? L.recurring : L.oneshot);
     const cycleLine = task.type === 'recurring' && cycleKey && cycleKey !== ONESHOT_CYCLE
-      ? `【周期】${cycleKey} 起始的这一期` : null;
+      ? L.cycle(cycleKey) : null;
 
     return [
-      `你替团队负责人整理一轮一对一沟通的汇总报告。负责人委托语音助手就同一主题分别与多位成员沟通，下面是每个人的沟通结果。`,
-      `【任务】${task.title}`,
+      L.intro,
+      `${L.task}${task.title}`,
       cycleLine,
-      (task.brief || '').trim() ? `【任务背景】\n${task.brief.trim()}` : null,
-      (task.questions || '').trim() ? `【问题框架】\n${task.questions.trim()}` : null,
-      `【各成员的沟通结果】\n${sections.join('\n\n')}`,
-      `${instruction}\n${SHARED_RULES}`,
+      (task.brief || '').trim() ? `${L.brief}\n${task.brief.trim()}` : null,
+      (task.questions || '').trim() ? `${L.questions}\n${task.questions.trim()}` : null,
+      `${L.results}\n${sections.join('\n\n')}`,
+      `${instruction}\n${L.sharedRules}`,
     ].filter(Boolean).join('\n\n');
   }
 

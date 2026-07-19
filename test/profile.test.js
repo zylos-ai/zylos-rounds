@@ -13,7 +13,7 @@ function setup() {
     store,
     () => ({}),
     { openaiApiKey: 'sk-test', proxy: null },
-    { textConnection: () => ({ key: 'sk-test', base: null, model: 'model-x' }) },
+    { textConnection: () => ({ key: 'sk-test', base: null, model: 'model-x' }), memberLanguage: () => 'zh' },
   );
   return { store, updater };
 }
@@ -91,7 +91,7 @@ test('updateAfterReport skips test members, drafts, missing reports; soft-fails 
 
 test('updateAfterReport without any API key is a no-op', async () => {
   const { store } = setup();
-  const updater = new ProfileUpdater(store, () => ({}), { openaiApiKey: '', proxy: null }, { resolveKey: () => '' });
+  const updater = new ProfileUpdater(store, () => ({}), { openaiApiKey: '', proxy: null }, { resolveKey: () => '', memberLanguage: () => 'zh' });
   const id = Number(store.addMember('无钥', 't6').lastInsertRowid);
   submit(store, id, '2026-07-18');
   assert.equal(await updater.updateAfterReport(id, '2026-07-18'), false);

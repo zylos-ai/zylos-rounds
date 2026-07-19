@@ -9,18 +9,192 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { api } from '../api';
+import { useLangDict } from '../i18n';
 
-const TEST_ERRORS = {
-  no_key: '未配置 API key',
-  invalid_key: 'API key 无效（401）',
-  timeout: '连接超时，请检查网络或代理',
-  network: '网络错误，无法连接',
-  invalid_model: '模型不可用，请检查模型名',
-  bad_response: '返回格式异常，不是 OpenAI 兼容接口？',
-  model_required: '该 provider 不支持模型列表，请填模型名后测试',
+const DICT = {
+  zh: {
+    testErrors: {
+      no_key: '未配置 API key',
+      invalid_key: 'API key 无效（401）',
+      timeout: '连接超时，请检查网络或代理',
+      network: '网络错误，无法连接',
+      invalid_model: '模型不可用，请检查模型名',
+      bad_response: '返回格式异常，不是 OpenAI 兼容接口？',
+      model_required: '该 provider 不支持模型列表，请填模型名后测试',
+    },
+    testFailed: (err) => `失败（${err}）`,
+    slotLabels: { voice: '语音', profile: '画像', digest: '汇总' },
+    slotJoiner: '、',
+    // provider form
+    nameLabel: '名称',
+    namePlaceholder: '如 Gemini（OpenAI 兼容）',
+    apiKeyKeepSuffix: '（留空不修改）',
+    capModelsLabel: '支持模型列表（/v1/models）',
+    capRealtimeLabel: '支持 Realtime 语音（OpenAI 协议）',
+    invalidBaseUrl: 'base URL 无效（需 http/https 开头）',
+    invalidName: '名称不能为空',
+    slugTaken: '标识重复',
+    saveFailed: '保存失败，请重试',
+    save: '保存',
+    cancel: '取消',
+    // model picker
+    providerDefaultOption: 'OpenAI 官方（默认）',
+    modelLabel: '模型',
+    refreshTitle: '从 provider 拉取模型列表',
+    refreshList: '刷新列表',
+    test: '测试',
+    // page
+    loading: '加载中…',
+    loadFailed: '加载失败，请刷新重试',
+    pageTitle: '设置',
+    pageDesc: '管理模型服务 provider，并为语音对话、画像与汇总分别选择 provider 和模型',
+    // providers card
+    providersTitle: '模型服务 Provider',
+    providersDesc: '每个 provider 一套 base URL + API key，统一按 OpenAI 兼容接口访问',
+    add: '新增',
+    builtinBadge: '内置',
+    noKeyBadge: '未配置 key',
+    keyFromEnvBadge: 'key 来自 .env',
+    keySetBadge: 'key 已配置',
+    voiceBadge: '语音',
+    modelListBadge: '模型列表',
+    inUse: (slots) => `正在用于：${slots}`,
+    testConn: '测连通',
+    changeKey: '改 key',
+    edit: '编辑',
+    delete: '删除',
+    connOk: '连接正常',
+    requestFailed: '请求失败，请重试',
+    inUseError: (slots) => `正在被「${slots}」使用，先把对应配置改为其他 provider`,
+    deleteFailed: '删除失败，请重试',
+    // voice model card
+    voiceCardTitle: '对话模型',
+    voiceCardDesc: '语音通话使用的 provider 与实时模型（仅支持 Realtime 语音的 provider 可选），修改后作用于下一次通话',
+    voiceLabel: '音色',
+    stopPreviewTitle: '停止试听',
+    previewTitle: (voice) => `试听 ${voice}`,
+    stop: '停止',
+    preview: '试听',
+    previewLoadFailed: '试听音频加载失败',
+    voiceSaved: '已保存，下一次通话生效',
+    modelRequired: '模型名不能为空',
+    // text models card
+    textCardTitle: '文本模型',
+    textCardDesc: '动态画像更新与任务汇总使用的文字模型，在对话结束后异步运行，不影响语音通话',
+    profileModelLabel: '画像模型',
+    digestModelLabel: '汇总模型',
+    defaultPlaceholder: (model) => `留空使用默认（${model}）`,
+    followProfilePlaceholder: '留空则跟随画像模型',
+    textSaved: '已保存，下一次画像更新 / 汇总生效',
+    modelOk: (model) => `${model} 可用`,
+    modelTestFailed: (model, err) => `${model}：${err}`,
+    // time-zone card
+    tzCardTitle: '时区',
+    tzCardDesc: '影响对话里的时间感知（问候语、"今天/昨天"）和日报的归属日期',
+    tzLabel: 'IANA 时区',
+    tzSaved: (effective) => `已保存，当前生效：${effective}（下一次通话生效）`,
+    invalidTz: '无效时区，请填 IANA 名称（如 Asia/Singapore）',
+    tzFooter: (def, effective) => `留空使用默认（${def}）· 当前生效：${effective}`,
+    // team default language
+    langLabel: '团队默认语言',
+    langDesc: '新成员和未单独设置语言的成员使用该语言；负责人看的汇总报告也用它。',
+    langNames: { zh: '中文', en: 'English' },
+    langDefaultOption: (name) => `默认（${name}）`,
+    langEffective: (name) => `当前生效：${name}`,
+    langSaved: (name) => `已保存，当前生效：${name}`,
+  },
+  en: {
+    testErrors: {
+      no_key: 'API key not configured',
+      invalid_key: 'Invalid API key (401)',
+      timeout: 'Connection timed out — check network or proxy',
+      network: 'Network error, unable to connect',
+      invalid_model: 'Model unavailable — check the model name',
+      bad_response: 'Unexpected response format — not an OpenAI-compatible API?',
+      model_required: 'This provider has no model list; enter a model name before testing',
+    },
+    testFailed: (err) => `Failed (${err})`,
+    slotLabels: { voice: 'voice', profile: 'profile', digest: 'digest' },
+    slotJoiner: ', ',
+    // provider form
+    nameLabel: 'Name',
+    namePlaceholder: 'e.g. Gemini (OpenAI-compatible)',
+    apiKeyKeepSuffix: ' (leave blank to keep)',
+    capModelsLabel: 'Supports model list (/v1/models)',
+    capRealtimeLabel: 'Supports Realtime voice (OpenAI protocol)',
+    invalidBaseUrl: 'Invalid base URL (must start with http/https)',
+    invalidName: 'Name is required',
+    slugTaken: 'Identifier already taken',
+    saveFailed: 'Save failed, please retry',
+    save: 'Save',
+    cancel: 'Cancel',
+    // model picker
+    providerDefaultOption: 'OpenAI (default)',
+    modelLabel: 'Model',
+    refreshTitle: 'Fetch model list from the provider',
+    refreshList: 'Refresh list',
+    test: 'Test',
+    // page
+    loading: 'Loading…',
+    loadFailed: 'Failed to load, please refresh',
+    pageTitle: 'Settings',
+    pageDesc: 'Manage model providers, and pick a provider and model for voice calls, profiles, and digests',
+    // providers card
+    providersTitle: 'Model Providers',
+    providersDesc: 'Each provider is a base URL + API key pair, accessed through the OpenAI-compatible API',
+    add: 'Add',
+    builtinBadge: 'Built-in',
+    noKeyBadge: 'No key',
+    keyFromEnvBadge: 'key from .env',
+    keySetBadge: 'key configured',
+    voiceBadge: 'Voice',
+    modelListBadge: 'Model list',
+    inUse: (slots) => `In use: ${slots}`,
+    testConn: 'Test connection',
+    changeKey: 'Change key',
+    edit: 'Edit',
+    delete: 'Delete',
+    connOk: 'Connection OK',
+    requestFailed: 'Request failed, please retry',
+    inUseError: (slots) => `In use by ${slots} — switch those settings to another provider first`,
+    deleteFailed: 'Delete failed, please retry',
+    // voice model card
+    voiceCardTitle: 'Conversation Model',
+    voiceCardDesc: 'Provider and realtime model used for voice calls (only providers with Realtime voice support are selectable); changes apply to the next call',
+    voiceLabel: 'Voice',
+    stopPreviewTitle: 'Stop preview',
+    previewTitle: (voice) => `Preview ${voice}`,
+    stop: 'Stop',
+    preview: 'Preview',
+    previewLoadFailed: 'Failed to load preview audio',
+    voiceSaved: 'Saved — applies to the next call',
+    modelRequired: 'Model name is required',
+    // text models card
+    textCardTitle: 'Text Models',
+    textCardDesc: 'Text models for dynamic profile updates and task digests; they run asynchronously after each call and do not affect voice conversations',
+    profileModelLabel: 'Profile model',
+    digestModelLabel: 'Digest model',
+    defaultPlaceholder: (model) => `Leave blank for default (${model})`,
+    followProfilePlaceholder: 'Leave blank to follow the profile model',
+    textSaved: 'Saved — applies to the next profile update / digest',
+    modelOk: (model) => `${model} works`,
+    modelTestFailed: (model, err) => `${model}: ${err}`,
+    // time-zone card
+    tzCardTitle: 'Time Zone',
+    tzCardDesc: 'Affects time awareness in conversations (greetings, "today/yesterday") and which date daily reports belong to',
+    tzLabel: 'IANA time zone',
+    tzSaved: (effective) => `Saved — now effective: ${effective} (applies to the next call)`,
+    invalidTz: 'Invalid time zone — use an IANA name (e.g. Asia/Singapore)',
+    tzFooter: (def, effective) => `Leave blank for default (${def}) · Currently effective: ${effective}`,
+    // team default language
+    langLabel: 'Team default language',
+    langDesc: 'Used for members without their own language setting, and for owner-facing digest reports.',
+    langNames: { zh: 'Chinese', en: 'English' },
+    langDefaultOption: (name) => `Default (${name})`,
+    langEffective: (name) => `Currently effective: ${name}`,
+    langSaved: (name) => `Saved — now effective: ${name}`,
+  },
 };
-
-const SLOT_LABELS = { voice: '语音', profile: '画像', digest: '汇总' };
 
 // datalist suggestions only — any valid IANA zone is accepted
 const TZ_SUGGESTIONS = [
@@ -29,11 +203,12 @@ const TZ_SUGGESTIONS = [
   'Europe/London', 'Europe/Paris', 'America/New_York', 'America/Los_Angeles', 'UTC',
 ];
 
-const testErrorText = (r) => TEST_ERRORS[r.error] || `失败（${r.error}）`;
+const testErrorText = (T, r) => T.testErrors[r.error] || T.testFailed(r.error);
 
 
 /** Inline create/edit form. The builtin provider only exposes its API key. */
 function ProviderForm({ provider, onDone, onCancel }) {
+  const T = useLangDict(DICT);
   const isNew = !provider;
   const builtin = provider?.is_builtin;
   const [name, setName] = useState(provider?.name || '');
@@ -64,10 +239,10 @@ function ProviderForm({ provider, onDone, onCancel }) {
       onDone();
     } catch (err) {
       if (err.status !== 401) {
-        setMsg(err.data?.error === 'invalid_base_url' ? 'base URL 无效（需 http/https 开头）'
-          : err.data?.error === 'invalid_name' ? '名称不能为空'
-          : err.data?.error === 'slug_taken' ? '标识重复'
-          : '保存失败，请重试');
+        setMsg(err.data?.error === 'invalid_base_url' ? T.invalidBaseUrl
+          : err.data?.error === 'invalid_name' ? T.invalidName
+          : err.data?.error === 'slug_taken' ? T.slugTaken
+          : T.saveFailed);
       }
     } finally {
       setBusy(false);
@@ -80,8 +255,8 @@ function ProviderForm({ provider, onDone, onCancel }) {
         {!builtin ? (
           <>
             <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-muted-foreground">名称</span>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="如 Gemini（OpenAI 兼容）" className="h-10 w-[220px] text-sm" />
+              <span className="text-sm font-medium text-muted-foreground">{T.nameLabel}</span>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={T.namePlaceholder} className="h-10 w-[220px] text-sm" />
             </label>
             <label className="flex flex-col gap-1.5">
               <span className="text-sm font-medium text-muted-foreground">Base URL</span>
@@ -90,7 +265,7 @@ function ProviderForm({ provider, onDone, onCancel }) {
           </>
         ) : null}
         <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-muted-foreground">API key{!isNew ? '（留空不修改）' : ''}</span>
+          <span className="text-sm font-medium text-muted-foreground">API key{!isNew ? T.apiKeyKeepSuffix : ''}</span>
           <Input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-..." autoComplete="off" className="h-10 w-[240px] text-sm" />
         </label>
       </div>
@@ -98,20 +273,20 @@ function ProviderForm({ provider, onDone, onCancel }) {
         <div className="mt-3 flex flex-wrap gap-5">
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             <input type="checkbox" checked={capModels} onChange={(e) => setCapModels(e.target.checked)} className="h-4 w-4 accent-primary" />
-            支持模型列表（/v1/models）
+            {T.capModelsLabel}
           </label>
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             <input type="checkbox" checked={capRealtime} onChange={(e) => setCapRealtime(e.target.checked)} className="h-4 w-4 accent-primary" />
-            支持 Realtime 语音（OpenAI 协议）
+            {T.capRealtimeLabel}
           </label>
         </div>
       ) : null}
       <div className="mt-4 flex items-center gap-3">
         <Button type="submit" className="h-9 px-4 text-sm" disabled={busy || (isNew && (!name.trim() || !baseUrl.trim()))}>
           {busy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
-          保存
+          {T.save}
         </Button>
-        <Button type="button" variant="ghost" className="h-9 px-3 text-sm text-muted-foreground" onClick={onCancel}>取消</Button>
+        <Button type="button" variant="ghost" className="h-9 px-3 text-sm text-muted-foreground" onClick={onCancel}>{T.cancel}</Button>
         {msg ? <span className="text-sm text-destructive">{msg}</span> : null}
       </div>
     </form>
@@ -120,6 +295,7 @@ function ProviderForm({ provider, onDone, onCancel }) {
 
 /** provider dropdown + model text input with datalist suggestions + optional refresh/test. */
 function ModelPicker({ idBase, providers, realtimeOnly, providerValue, onProviderChange, modelValue, onModelChange, modelPlaceholder, suggestions, onRefresh, refreshBusy, onTest, testState }) {
+  const T = useLangDict(DICT);
   const list = realtimeOnly ? providers.filter((p) => p.cap_realtime) : providers;
   const selected = providers.find((p) => p.slug === (providerValue || 'openai'));
   return (
@@ -132,14 +308,14 @@ function ModelPicker({ idBase, providers, realtimeOnly, providerValue, onProvide
             onChange={(e) => onProviderChange(e.target.value)}
             className="h-11 min-w-[180px] rounded-md border border-input bg-transparent px-3 text-base text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <option value="">OpenAI 官方（默认）</option>
+            <option value="">{T.providerDefaultOption}</option>
             {list.filter((p) => !p.is_builtin).map((p) => (
               <option key={p.slug} value={p.slug}>{p.name}</option>
             ))}
           </select>
         </label>
         <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-muted-foreground">模型</span>
+          <span className="text-sm font-medium text-muted-foreground">{T.modelLabel}</span>
           <Input
             value={modelValue}
             onChange={(e) => onModelChange(e.target.value)}
@@ -154,15 +330,15 @@ function ModelPicker({ idBase, providers, realtimeOnly, providerValue, onProvide
           </datalist>
         </label>
         {selected?.cap_models && onRefresh ? (
-          <Button type="button" variant="outline" className="h-11 px-4 text-[0.95rem]" disabled={refreshBusy} onClick={onRefresh} title="从 provider 拉取模型列表">
+          <Button type="button" variant="outline" className="h-11 px-4 text-[0.95rem]" disabled={refreshBusy} onClick={onRefresh} title={T.refreshTitle}>
             {refreshBusy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : <RefreshCw strokeWidth={1.75} />}
-            刷新列表
+            {T.refreshList}
           </Button>
         ) : null}
         {onTest ? (
           <Button type="button" variant="outline" className="h-11 px-4 text-[0.95rem]" disabled={testState?.busy} onClick={onTest}>
             {testState?.busy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
-            测试
+            {T.test}
           </Button>
         ) : null}
       </div>
@@ -177,9 +353,10 @@ function ModelPicker({ idBase, providers, realtimeOnly, providerValue, onProvide
 }
 
 export default function SettingsPage() {
+  const T = useLangDict(DICT);
   const [settings, setSettings] = useState(null);
   const [providers, setProviders] = useState([]);
-  const [loadError, setLoadError] = useState('');
+  const [loadError, setLoadError] = useState(false);
 
   // provider card state
   const [editing, setEditing] = useState(null); // slug | 'new' | null
@@ -209,6 +386,12 @@ export default function SettingsPage() {
   const [tzBusy, setTzBusy] = useState(false);
   const [tzMsg, setTzMsg] = useState(null);
   const tzMsgTimer = useRef(null);
+
+  // team-default-language state (lives in the time-zone card)
+  const [language, setLanguage] = useState('');
+  const [langBusy, setLangBusy] = useState(false);
+  const [langMsg, setLangMsg] = useState(null);
+  const langMsgTimer = useRef(null);
 
   // model suggestion cache per provider slug ('' = builtin)
   const [modelCache, setModelCache] = useState({});
@@ -243,14 +426,14 @@ export default function SettingsPage() {
     audio.onerror = () => {
       audioRef.current = null;
       setPreviewing(false);
-      flash(setModelMsg, msgTimer, { ok: false, text: '试听音频加载失败' });
+      flash(setModelMsg, msgTimer, { ok: false, text: T.previewLoadFailed });
     };
     audio.play().catch(() => {
       audioRef.current = null;
       setPreviewing(false);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewing, voice, model, stopPreview]);
+  }, [previewing, voice, model, stopPreview, T]);
 
   useEffect(() => () => stopPreview(), [stopPreview]);
 
@@ -265,7 +448,7 @@ export default function SettingsPage() {
   }, [voice, voiceOptions.join(','), stopPreview]);
 
   const load = useCallback(async () => {
-    setLoadError('');
+    setLoadError(false);
     try {
       const [data, prov] = await Promise.all([api('api/settings'), api('api/providers')]);
       setSettings(data);
@@ -278,8 +461,9 @@ export default function SettingsPage() {
       setProfileModel(data.profile_model || '');
       setDigestModel(data.digest_model || '');
       setTz(data.time_zone || '');
+      setLanguage(data.language || '');
     } catch (err) {
-      if (err.status !== 401) setLoadError('加载失败，请刷新重试');
+      if (err.status !== 401) setLoadError(true);
     }
   }, []);
 
@@ -291,19 +475,36 @@ export default function SettingsPage() {
       const data = await api('api/settings', { method: 'PUT', body: { time_zone: tz.trim() } });
       setSettings(data);
       setTz(data.time_zone || '');
-      flash(setTzMsg, tzMsgTimer, { ok: true, text: `已保存，当前生效：${data.time_zone_effective}（下一次通话生效）` });
+      flash(setTzMsg, tzMsgTimer, { ok: true, text: T.tzSaved(data.time_zone_effective) });
     } catch (err) {
       if (err.status !== 401) {
         flash(setTzMsg, tzMsgTimer, {
           ok: false,
-          text: err.data?.error === 'invalid_time_zone' ? '无效时区，请填 IANA 名称（如 Asia/Singapore）' : '保存失败，请重试',
+          text: err.data?.error === 'invalid_time_zone' ? T.invalidTz : T.saveFailed,
         });
       }
     } finally {
       setTzBusy(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tz, tzBusy]);
+  }, [tz, tzBusy, T]);
+
+  const onSaveLang = useCallback(async (e) => {
+    e?.preventDefault();
+    if (langBusy) return;
+    setLangBusy(true);
+    try {
+      const data = await api('api/settings', { method: 'PUT', body: { language } });
+      setSettings(data);
+      setLanguage(data.language || '');
+      flash(setLangMsg, langMsgTimer, { ok: true, text: T.langSaved(T.langNames[data.language_effective] || data.language_effective) });
+    } catch (err) {
+      if (err.status !== 401) flash(setLangMsg, langMsgTimer, { ok: false, text: T.saveFailed });
+    } finally {
+      setLangBusy(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [language, langBusy, T]);
 
   useEffect(() => {
     load();
@@ -311,6 +512,7 @@ export default function SettingsPage() {
       clearTimeout(msgTimer.current);
       clearTimeout(textMsgTimer.current);
       clearTimeout(tzMsgTimer.current);
+      clearTimeout(langMsgTimer.current);
     };
   }, [load]);
 
@@ -333,10 +535,10 @@ export default function SettingsPage() {
     setProvMsg(null);
     try {
       const r = await api(`api/providers/${p.slug}/test`, { method: 'POST', body: {} });
-      setProvMsg({ slug: p.slug, ok: r.ok, text: r.ok ? '连接正常' : testErrorText(r) });
+      setProvMsg({ slug: p.slug, ok: r.ok, text: r.ok ? T.connOk : testErrorText(T, r) });
     } catch (err) {
       if (err.status !== 401) {
-        setProvMsg({ slug: p.slug, ok: false, text: err.data?.error === 'model_required' ? TEST_ERRORS.model_required : '请求失败，请重试' });
+        setProvMsg({ slug: p.slug, ok: false, text: err.data?.error === 'model_required' ? T.testErrors.model_required : T.requestFailed });
       }
     } finally {
       setProvBusy((s) => ({ ...s, [p.slug]: undefined }));
@@ -352,8 +554,8 @@ export default function SettingsPage() {
       await Promise.all([reloadProviders(), load()]);
     } catch (err) {
       if (err.status !== 401) {
-        const slots = (err.data?.slots || []).map((s) => SLOT_LABELS[s] || s).join('、');
-        setProvMsg({ slug: p.slug, ok: false, text: err.data?.error === 'in_use' ? `正在被「${slots}」使用，先把对应配置改为其他 provider` : '删除失败，请重试' });
+        const slots = (err.data?.slots || []).map((s) => T.slotLabels[s] || s).join(T.slotJoiner);
+        setProvMsg({ slug: p.slug, ok: false, text: err.data?.error === 'in_use' ? T.inUseError(slots) : T.deleteFailed });
       }
     } finally {
       setProvBusy((s) => ({ ...s, [p.slug]: undefined }));
@@ -381,10 +583,10 @@ export default function SettingsPage() {
     try {
       const data = await api('api/settings', { method: 'PUT', body: { model: model.trim(), voice, voice_provider: voiceProvider } });
       setSettings(data);
-      flash(setModelMsg, msgTimer, { ok: true, text: '已保存，下一次通话生效' });
+      flash(setModelMsg, msgTimer, { ok: true, text: T.voiceSaved });
       reloadProviders();
     } catch (err) {
-      if (err.status !== 401) flash(setModelMsg, msgTimer, { ok: false, text: err.data?.error === 'invalid_model' ? '模型名不能为空' : '保存失败，请重试' });
+      if (err.status !== 401) flash(setModelMsg, msgTimer, { ok: false, text: err.data?.error === 'invalid_model' ? T.modelRequired : T.saveFailed });
     } finally {
       setModelBusy(false);
     }
@@ -408,10 +610,10 @@ export default function SettingsPage() {
       setProfileModel(data.profile_model || '');
       setDigestModel(data.digest_model || '');
       setTextTest({});
-      flash(setTextMsg, textMsgTimer, { ok: true, text: '已保存，下一次画像更新 / 汇总生效' });
+      flash(setTextMsg, textMsgTimer, { ok: true, text: T.textSaved });
       reloadProviders();
     } catch (err) {
-      if (err.status !== 401) flash(setTextMsg, textMsgTimer, { ok: false, text: '保存失败，请重试' });
+      if (err.status !== 401) flash(setTextMsg, textMsgTimer, { ok: false, text: T.saveFailed });
     } finally {
       setTextBusy(false);
     }
@@ -430,23 +632,23 @@ export default function SettingsPage() {
       const r = await api('api/settings/test-text-model', { method: 'POST', body: { model: testModel, provider: provSlug } });
       setTextTest((s) => ({
         ...s,
-        [which]: { busy: false, result: r.ok ? { ok: true, text: `${testModel} 可用` } : { ok: false, text: `${testModel}：${testErrorText(r)}` } },
+        [which]: { busy: false, result: r.ok ? { ok: true, text: T.modelOk(testModel) } : { ok: false, text: T.modelTestFailed(testModel, testErrorText(T, r)) } },
       }));
     } catch (err) {
-      setTextTest((s) => ({ ...s, [which]: { busy: false, result: err.status !== 401 ? { ok: false, text: '请求失败，请重试' } : null } }));
+      setTextTest((s) => ({ ...s, [which]: { busy: false, result: err.status !== 401 ? { ok: false, text: T.requestFailed } : null } }));
     }
   };
 
   if (settings === null) {
-    return <p className="text-sm text-muted-foreground">{loadError || '加载中…'}</p>;
+    return <p className="text-sm text-muted-foreground">{loadError ? T.loadFailed : T.loading}</p>;
   }
 
   return (
     <>
-      <h1 className="text-4xl font-bold tracking-tight max-sm:text-3xl">设置</h1>
-      <p className="mt-3 text-base text-muted-foreground">管理模型服务 provider，并为语音对话、画像与汇总分别选择 provider 和模型</p>
+      <h1 className="text-4xl font-bold tracking-tight max-sm:text-3xl">{T.pageTitle}</h1>
+      <p className="mt-3 text-base text-muted-foreground">{T.pageDesc}</p>
 
-      {loadError ? <p className="mt-6 text-sm text-destructive">{loadError}</p> : null}
+      {loadError ? <p className="mt-6 text-sm text-destructive">{T.loadFailed}</p> : null}
 
       {/* providers */}
       <Card className="mt-8">
@@ -456,12 +658,12 @@ export default function SettingsPage() {
               <Server className="h-5 w-5" strokeWidth={1.75} />
             </span>
             <div className="min-w-0 flex-1">
-              <h2 className="text-lg font-semibold leading-tight">模型服务 Provider</h2>
-              <p className="mt-0.5 text-sm text-muted-foreground">每个 provider 一套 base URL + API key，统一按 OpenAI 兼容接口访问</p>
+              <h2 className="text-lg font-semibold leading-tight">{T.providersTitle}</h2>
+              <p className="mt-0.5 text-sm text-muted-foreground">{T.providersDesc}</p>
             </div>
             <Button type="button" variant="outline" className="h-9 px-3 text-sm" onClick={() => setEditing(editing === 'new' ? null : 'new')}>
               <Plus strokeWidth={1.75} />
-              新增
+              {T.add}
             </Button>
           </div>
 
@@ -474,29 +676,29 @@ export default function SettingsPage() {
               <li key={p.slug} className="rounded-lg border border-border px-4 py-3">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                   <span className="text-[0.95rem] font-medium">{p.name}</span>
-                  {p.is_builtin ? <Badge variant="accent">内置</Badge> : null}
+                  {p.is_builtin ? <Badge variant="accent">{T.builtinBadge}</Badge> : null}
                   {p.key_source === 'none'
-                    ? <Badge>未配置 key</Badge>
-                    : <Badge variant="success">{p.key_source === 'env' ? 'key 来自 .env' : 'key 已配置'}</Badge>}
-                  {p.cap_realtime ? <Badge>语音</Badge> : null}
-                  {p.cap_models ? <Badge>模型列表</Badge> : null}
+                    ? <Badge>{T.noKeyBadge}</Badge>
+                    : <Badge variant="success">{p.key_source === 'env' ? T.keyFromEnvBadge : T.keySetBadge}</Badge>}
+                  {p.cap_realtime ? <Badge>{T.voiceBadge}</Badge> : null}
+                  {p.cap_models ? <Badge>{T.modelListBadge}</Badge> : null}
                   {p.in_use.length ? (
-                    <span className="text-xs text-muted-foreground">正在用于：{p.in_use.map((s) => SLOT_LABELS[s]).join('、')}</span>
+                    <span className="text-xs text-muted-foreground">{T.inUse(p.in_use.map((s) => T.slotLabels[s] || s).join(T.slotJoiner))}</span>
                   ) : null}
                   <span className="grow" />
                   <div className="flex items-center gap-1.5">
                     <Button type="button" variant="ghost" className="h-8 px-2.5 text-sm text-muted-foreground" disabled={Boolean(provBusy[p.slug])} onClick={() => onTestProvider(p)}>
                       {provBusy[p.slug] === 'test' ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
-                      测连通
+                      {T.testConn}
                     </Button>
                     <Button type="button" variant="ghost" className="h-8 px-2.5 text-sm text-muted-foreground" onClick={() => setEditing(editing === p.slug ? null : p.slug)}>
                       <Pencil strokeWidth={1.75} />
-                      {p.is_builtin ? '改 key' : '编辑'}
+                      {p.is_builtin ? T.changeKey : T.edit}
                     </Button>
                     {!p.is_builtin ? (
                       <Button type="button" variant="ghost" className="h-8 px-2.5 text-sm text-muted-foreground hover:text-destructive" disabled={Boolean(provBusy[p.slug])} onClick={() => onDeleteProvider(p)}>
                         {provBusy[p.slug] === 'delete' ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : <Trash2 strokeWidth={1.75} />}
-                        删除
+                        {T.delete}
                       </Button>
                     ) : null}
                   </div>
@@ -525,8 +727,8 @@ export default function SettingsPage() {
               <AudioLines className="h-5 w-5" strokeWidth={1.75} />
             </span>
             <div>
-              <h2 className="text-lg font-semibold leading-tight">对话模型</h2>
-              <p className="mt-0.5 text-sm text-muted-foreground">语音通话使用的 provider 与实时模型（仅支持 Realtime 语音的 provider 可选），修改后作用于下一次通话</p>
+              <h2 className="text-lg font-semibold leading-tight">{T.voiceCardTitle}</h2>
+              <p className="mt-0.5 text-sm text-muted-foreground">{T.voiceCardDesc}</p>
             </div>
           </div>
 
@@ -546,7 +748,7 @@ export default function SettingsPage() {
             />
             <div className="flex flex-wrap items-end gap-4">
               <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium text-muted-foreground">音色</span>
+                <span className="text-sm font-medium text-muted-foreground">{T.voiceLabel}</span>
                 <select
                   value={voice}
                   onChange={(e) => { stopPreview(); setVoice(e.target.value); }}
@@ -562,14 +764,14 @@ export default function SettingsPage() {
                 variant="outline"
                 className={cn('h-11 px-4 text-[0.95rem]', previewing && 'text-primary')}
                 onClick={onPreview}
-                title={previewing ? '停止试听' : `试听 ${voice}`}
+                title={previewing ? T.stopPreviewTitle : T.previewTitle(voice)}
               >
                 {previewing ? <Square strokeWidth={1.75} /> : <Volume2 strokeWidth={1.75} />}
-                {previewing ? '停止' : '试听'}
+                {previewing ? T.stop : T.preview}
               </Button>
               <Button type="submit" className="h-11 px-6 text-[0.95rem]" disabled={modelBusy || !model.trim()}>
                 {modelBusy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
-                保存
+                {T.save}
               </Button>
             </div>
           </form>
@@ -588,14 +790,14 @@ export default function SettingsPage() {
               <FileText className="h-5 w-5" strokeWidth={1.75} />
             </span>
             <div>
-              <h2 className="text-lg font-semibold leading-tight">文本模型</h2>
-              <p className="mt-0.5 text-sm text-muted-foreground">动态画像更新与任务汇总使用的文字模型，在对话结束后异步运行，不影响语音通话</p>
+              <h2 className="text-lg font-semibold leading-tight">{T.textCardTitle}</h2>
+              <p className="mt-0.5 text-sm text-muted-foreground">{T.textCardDesc}</p>
             </div>
           </div>
 
           <form onSubmit={onSaveTextModels} className="mt-6 flex flex-col gap-5">
             <div>
-              <p className="mb-2 text-sm font-semibold">画像模型</p>
+              <p className="mb-2 text-sm font-semibold">{T.profileModelLabel}</p>
               <ModelPicker
                 idBase="profile-models"
                 providers={providers}
@@ -603,7 +805,7 @@ export default function SettingsPage() {
                 onProviderChange={(v) => { setProfileProvider(v); setTextTest((s) => ({ ...s, profile: undefined })); }}
                 modelValue={profileModel}
                 onModelChange={(v) => { setProfileModel(v); setTextTest((s) => ({ ...s, profile: undefined })); }}
-                modelPlaceholder={`留空使用默认（${settings.profile_model_default}）`}
+                modelPlaceholder={T.defaultPlaceholder(settings.profile_model_default)}
                 suggestions={suggestionsFor(profileProvider)}
                 onRefresh={() => refreshModels(profileProvider)}
                 refreshBusy={Boolean(refreshBusy[profileProvider || 'openai'])}
@@ -612,7 +814,7 @@ export default function SettingsPage() {
               />
             </div>
             <div>
-              <p className="mb-2 text-sm font-semibold">汇总模型</p>
+              <p className="mb-2 text-sm font-semibold">{T.digestModelLabel}</p>
               <ModelPicker
                 idBase="digest-models"
                 providers={providers}
@@ -620,7 +822,7 @@ export default function SettingsPage() {
                 onProviderChange={(v) => { setDigestProvider(v); setTextTest((s) => ({ ...s, digest: undefined })); }}
                 modelValue={digestModel}
                 onModelChange={(v) => { setDigestModel(v); setTextTest((s) => ({ ...s, digest: undefined })); }}
-                modelPlaceholder={settings.digest_model_default ? `留空使用默认（${settings.digest_model_default}）` : '留空则跟随画像模型'}
+                modelPlaceholder={settings.digest_model_default ? T.defaultPlaceholder(settings.digest_model_default) : T.followProfilePlaceholder}
                 suggestions={suggestionsFor(digestProvider)}
                 onRefresh={() => refreshModels(digestProvider)}
                 refreshBusy={Boolean(refreshBusy[digestProvider || 'openai'])}
@@ -631,7 +833,7 @@ export default function SettingsPage() {
             <div>
               <Button type="submit" className="h-11 px-6 text-[0.95rem]" disabled={textBusy}>
                 {textBusy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
-                保存
+                {T.save}
               </Button>
             </div>
           </form>
@@ -642,7 +844,7 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* time zone */}
+      {/* time zone + team default language */}
       <Card className="mt-6">
         <CardContent className="px-6 py-6">
           <div className="flex items-center gap-3">
@@ -650,14 +852,14 @@ export default function SettingsPage() {
               <Globe className="h-5 w-5" strokeWidth={1.75} />
             </span>
             <div>
-              <h2 className="text-lg font-semibold leading-tight">时区</h2>
-              <p className="mt-0.5 text-sm text-muted-foreground">影响对话里的时间感知（问候语、"今天/昨天"）和日报的归属日期</p>
+              <h2 className="text-lg font-semibold leading-tight">{T.tzCardTitle}</h2>
+              <p className="mt-0.5 text-sm text-muted-foreground">{T.tzCardDesc}</p>
             </div>
           </div>
 
           <form onSubmit={onSaveTz} className="mt-6 flex flex-wrap items-end gap-4">
             <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-muted-foreground">IANA 时区</span>
+              <span className="text-sm font-medium text-muted-foreground">{T.tzLabel}</span>
               <Input
                 value={tz}
                 onChange={(e) => setTz(e.target.value)}
@@ -672,13 +874,37 @@ export default function SettingsPage() {
             </label>
             <Button type="submit" className="h-11 px-6 text-[0.95rem]" disabled={tzBusy}>
               {tzBusy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
-              保存
+              {T.save}
             </Button>
           </form>
-          <p className="mt-2 text-sm text-muted-foreground">留空使用默认（{settings.time_zone_default}）· 当前生效：{settings.time_zone_effective}</p>
+          <p className="mt-2 text-sm text-muted-foreground">{T.tzFooter(settings.time_zone_default, settings.time_zone_effective)}</p>
 
           {tzMsg ? (
             <p className={cn('mt-3 text-sm', tzMsg.ok ? 'text-success' : 'text-destructive')}>{tzMsg.text}</p>
+          ) : null}
+
+          <form onSubmit={onSaveLang} className="mt-8 flex flex-wrap items-end gap-4 border-t border-border pt-6">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium text-muted-foreground">{T.langLabel}</span>
+              <select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                className="h-11 min-w-[200px] rounded-md border border-input bg-transparent px-3 text-base text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="">{T.langDefaultOption(T.langNames[settings.language_default] || settings.language_default)}</option>
+                <option value="zh">{T.langNames.zh}</option>
+                <option value="en">{T.langNames.en}</option>
+              </select>
+            </label>
+            <Button type="submit" className="h-11 px-6 text-[0.95rem]" disabled={langBusy}>
+              {langBusy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
+              {T.save}
+            </Button>
+          </form>
+          <p className="mt-2 text-sm text-muted-foreground">{T.langDesc} · {T.langEffective(T.langNames[settings.language_effective] || settings.language_effective)}</p>
+
+          {langMsg ? (
+            <p className={cn('mt-3 text-sm', langMsg.ok ? 'text-success' : 'text-destructive')}>{langMsg.text}</p>
           ) : null}
         </CardContent>
       </Card>

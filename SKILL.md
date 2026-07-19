@@ -1,9 +1,10 @@
 ---
 name: rounds
-version: 0.11.3
+version: 0.12.0
 description: >-
   Rounds (formerly standup) — delegated 1:1 structured voice conversations for
-  teams. An AI agent (OpenAI Realtime, Chinese voice) talks to each member via
+  teams. An AI agent (realtime voice, Chinese or English per member — member
+  language falls back to the team default language) talks to each member via
   a personal no-login link on the owner's behalf; the daily standup
   (yesterday/today/blockers/meeting-topics with per-day team digests) is the
   first built-in scenario. The agent has a maintainable "brain" — editable
@@ -141,8 +142,10 @@ CLI="node ~/zylos/.claude/skills/rounds/scripts/cli.js"
 
 $CLI member list                       # roster + links + today's status
 $CLI member add 小王
+$CLI member add Alex --language en     # English member: talk page + voice + profile in English
 $CLI member remove 3                   # deactivate (history kept)
 $CLI member reset-link 3
+$CLI member set-language 3 en          # zh|en; empty arg = follow team default
 echo "前端负责人，关注上线节奏" | $CLI member set-context 3
 echo "- [2026-07-18] 在做发布系统" | $CLI member set-profile 3   # correct the 动态画像
 
@@ -159,6 +162,7 @@ $CLI knowledge remove 2
 $CLI report today                      # or: report 2026-07-18 / report history
 $CLI settings get
 $CLI settings set --voice cedar
+$CLI settings set --language en        # team default language (zh|en; digests follow it)
 ```
 
 Credential resolution: `--url`/`--key` flags → `ROUNDS_URL`/`ROUNDS_API_KEY`

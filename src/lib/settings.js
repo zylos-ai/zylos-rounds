@@ -38,6 +38,8 @@ export const VOICE_OPTIONS = ['marin', 'cedar', 'coral', 'sage', 'shimmer', 'all
 
 export const SLOTS = ['voice', 'profile', 'digest'];
 
+export const LANGUAGES = ['zh', 'en'];
+
 export class Settings {
   constructor(store, getConfig, env) {
     this.store = store;
@@ -121,6 +123,32 @@ export class Settings {
 
   setModel(value) {
     this.store.setSetting('model', value);
+  }
+
+  // ---- language (DB > config.json > zh). 'zh' | 'en' ----
+
+  storedLanguage() {
+    return this.store.getSetting('language') || '';
+  }
+
+  defaultLanguage() {
+    return LANGUAGES.includes(this.getConfig().language) ? this.getConfig().language : 'zh';
+  }
+
+  /** Team default language — owner-facing output (digests) and member fallback. */
+  resolveLanguage() {
+    const stored = this.storedLanguage();
+    return LANGUAGES.includes(stored) ? stored : this.defaultLanguage();
+  }
+
+  setLanguage(value) {
+    if (value) this.store.setSetting('language', value);
+    else this.store.deleteSetting('language');
+  }
+
+  /** A member's conversation/UI language: per-member value > team default. */
+  memberLanguage(member) {
+    return LANGUAGES.includes(member?.language) ? member.language : this.resolveLanguage();
   }
 
   // ---- time zone (DB > config.json > Singapore default) ----

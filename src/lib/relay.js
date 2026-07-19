@@ -5,7 +5,7 @@
  * - client event allowlist (browser can only send audio/response/item events)
  * - semantic VAD at low eagerness (don't split long sentences)
  * - dedicated ASR sidecar model for input transcription (realtime models do not
- *   emit input transcripts natively), language pinned zh
+ *   emit input transcripts natively), language pinned to the member's language
  * - anti-hallucination instructions: the model must ask to repeat rather than guess
  * - function call submit_standup_summary -> structured upsert; transcript
  *   accumulated separately and persisted on session end (draft/submitted)
@@ -19,70 +19,132 @@ import { ONESHOT_CYCLE, currentCycleKey } from './cycle.js';
 import { GeminiUpstream } from './gemini-live.js';
 import { resolvePrices, costUsd } from './pricing.js';
 
-const SUBMIT_TOOL = {
-  type: 'function',
-  name: 'submit_standup_summary',
-  description: '在日报对话结束时提交结构化小结。当四个主题都聊到（或成员表示没有更多内容）时调用。',
-  parameters: {
-    type: 'object',
-    properties: {
-      yesterday: { type: 'array', items: { type: 'string' }, description: '昨天完成/推进的事项，每项一句话' },
-      today: { type: 'array', items: { type: 'string' }, description: '今天计划做的事项' },
-      blockers: { type: 'array', items: { type: 'string' }, description: '卡点/风险，没有则空数组' },
-      topics_for_meeting: { type: 'array', items: { type: 'string' }, description: '需要在日会上讨论的问题，没有则空数组' },
-    },
-    required: ['yesterday', 'today', 'blockers', 'topics_for_meeting'],
+// Tool descriptions guide the model, so they follow the member's language.
+// The zh set is the original battle-tested wording; en mirrors it one-to-one.
+const TOOL_STRINGS = {
+  zh: {
+    submit: '在日报对话结束时提交结构化小结。当四个主题都聊到（或成员表示没有更多内容）时调用。',
+    yesterday: '昨天完成/推进的事项，每项一句话',
+    today: '今天计划做的事项',
+    blockers: '卡点/风险，没有则空数组',
+    topics: '需要在日会上讨论的问题，没有则空数组',
+    recall: '查看这位同事最近几次的日报（昨天/今天/卡点/待议题）。当你想确认对方上次说了什么、或想跟进之前的进展或卡点时调用。',
+    recallDays: '回看最近几次汇报，默认 5，最多 10',
+    knowledge: '检索团队知识库。当对方提到某个项目/名词你需要背景、或需要核对团队已有信息时调用。',
+    knowledgeQuery: '检索关键词，用空格分隔多个词',
+    genericSubmit: '在这次一对一沟通结束时提交结构化小结。当问题框架里的要点都聊到（或对方表示没有更多内容）时调用。',
+    genericSummary: '对话要点，按主题分条，每条一句话，忠实于对方原意',
+    genericHighlights: '值得负责人特别注意的重点信号（分歧、强烈观点、风险、诉求），没有则空数组',
+    saved: '已保存',
+    endKick: submitTool => `对方要结束对话了。如果还没提交小结，现在立刻调用 ${submitTool}，然后简短道别。`,
+    reconnectKick: (generic, submitted) =>
+      `（同事重新接通，这是继续${generic ? '本周期' : '今天'}早些时候的对话，不是新对话。` +
+      `开场只说一句：简短打个招呼并自然衔接（比如"我们接着刚才的继续"），` +
+      `${submitted ? '问对方还有什么要补充的' : '从上次中断的地方接着聊'}。` +
+      `绝对不要重新自我介绍，绝对不要把开场流程的问题从头再问一遍，已经聊过的内容也不要再逐条确认。不要提到这条消息）`,
+    errNoKey: '尚未配置语音 provider 的 API Key，请管理员在设置页配置',
+    errNoCycle: '这个任务的第一个周期还没开始，请稍后再来',
+    errUpstream: '上游连接失败',
+    errUpstreamGeneric: '上游错误',
+  },
+  en: {
+    submit: 'Submit the structured summary at the end of the standup conversation. Call it once all four topics are covered (or the member says there is nothing more).',
+    yesterday: 'Things completed/advanced yesterday, one sentence each',
+    today: "Things planned for today",
+    blockers: 'Blockers/risks; empty array if none',
+    topics: "Questions to discuss at today's team meeting; empty array if none",
+    recall: "Look up this colleague's recent reports (yesterday/today/blockers/topics). Call it when you want to check what they said last time, or follow up on earlier progress or blockers.",
+    recallDays: 'How many recent reports to look back over; default 5, max 10',
+    knowledge: 'Search the team knowledge base. Call it when they mention a project or term you need background on, or you need to check existing team information.',
+    knowledgeQuery: 'Search keywords, separate multiple terms with spaces',
+    genericSubmit: 'Submit the structured summary at the end of this one-on-one conversation. Call it once the points in the question frame are covered (or the member says there is nothing more).',
+    genericSummary: "Key points of the conversation, one per topic, one sentence each, faithful to what they actually said",
+    genericHighlights: 'Signals the lead should pay special attention to (disagreements, strong opinions, risks, asks); empty array if none',
+    saved: 'Saved',
+    endKick: submitTool => `The member wants to end the conversation. If you have not submitted the summary yet, call ${submitTool} right now, then say a brief goodbye.`,
+    reconnectKick: (generic, submitted) =>
+      `(The colleague has reconnected — this continues the earlier conversation from ${generic ? 'this cycle' : 'today'}, it is not a new one. ` +
+      `Open with a single sentence: a brief greeting with a natural bridge (like "let's pick up where we left off"), ` +
+      `${submitted ? 'then ask what they would like to add' : 'then continue from where it broke off'}. ` +
+      `Absolutely do not introduce yourself again, do not re-run the opening questions, and do not re-confirm things already covered one by one. Do not mention this message.)`,
+    errNoKey: 'The voice provider API key is not configured yet — please ask the admin to set it on the settings page',
+    errNoCycle: "This task's first cycle hasn't started yet — please come back later",
+    errUpstream: 'Upstream connection failed',
+    errUpstreamGeneric: 'Upstream error',
   },
 };
 
-// On-demand retrieval tools — the agent calls these mid-conversation when it
-// judges it needs context. Results are handled in the response.done branch.
-const RECALL_TOOL = {
-  type: 'function',
-  name: 'recall_member_history',
-  description: '查看这位同事最近几次的日报（昨天/今天/卡点/待议题）。当你想确认对方上次说了什么、或想跟进之前的进展或卡点时调用。',
-  parameters: {
-    type: 'object',
-    properties: {
-      days: { type: 'integer', description: '回看最近几次汇报，默认 5，最多 10' },
+function buildTools(S) {
+  const submitTool = {
+    type: 'function',
+    name: 'submit_standup_summary',
+    description: S.submit,
+    parameters: {
+      type: 'object',
+      properties: {
+        yesterday: { type: 'array', items: { type: 'string' }, description: S.yesterday },
+        today: { type: 'array', items: { type: 'string' }, description: S.today },
+        blockers: { type: 'array', items: { type: 'string' }, description: S.blockers },
+        topics_for_meeting: { type: 'array', items: { type: 'string' }, description: S.topics },
+      },
+      required: ['yesterday', 'today', 'blockers', 'topics_for_meeting'],
     },
-    required: [],
-  },
-};
-
-const KNOWLEDGE_TOOL = {
-  type: 'function',
-  name: 'search_team_knowledge',
-  description: '检索团队知识库。当对方提到某个项目/名词你需要背景、或需要核对团队已有信息时调用。',
-  parameters: {
-    type: 'object',
-    properties: {
-      query: { type: 'string', description: '检索关键词，用空格分隔多个词' },
+  };
+  // On-demand retrieval tools — the agent calls these mid-conversation when it
+  // judges it needs context. Results are handled in the response.done branch.
+  const recallTool = {
+    type: 'function',
+    name: 'recall_member_history',
+    description: S.recall,
+    parameters: {
+      type: 'object',
+      properties: {
+        days: { type: 'integer', description: S.recallDays },
+      },
+      required: [],
     },
-    required: ['query'],
-  },
-};
-
-// Generic communication tasks (anything but the built-in daily standup)
-// submit a generic summary instead of the standup's four fixed buckets (the
-// question frame is free text, so the output shape stays generic:
-// 分条要点 + 值得负责人注意的信号).
-const GENERIC_SUBMIT_TOOL = {
-  type: 'function',
-  name: 'submit_conversation_summary',
-  description: '在这次一对一沟通结束时提交结构化小结。当问题框架里的要点都聊到（或对方表示没有更多内容）时调用。',
-  parameters: {
-    type: 'object',
-    properties: {
-      summary: { type: 'array', items: { type: 'string' }, description: '对话要点，按主题分条，每条一句话，忠实于对方原意' },
-      highlights: { type: 'array', items: { type: 'string' }, description: '值得负责人特别注意的重点信号（分歧、强烈观点、风险、诉求），没有则空数组' },
+  };
+  const knowledgeTool = {
+    type: 'function',
+    name: 'search_team_knowledge',
+    description: S.knowledge,
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: S.knowledgeQuery },
+      },
+      required: ['query'],
     },
-    required: ['summary', 'highlights'],
-  },
-};
+  };
+  // Generic communication tasks (anything but the built-in daily standup)
+  // submit a generic summary instead of the standup's four fixed buckets (the
+  // question frame is free text, so the output shape stays generic:
+  // itemized points + signals worth the lead's attention).
+  const genericSubmitTool = {
+    type: 'function',
+    name: 'submit_conversation_summary',
+    description: S.genericSubmit,
+    parameters: {
+      type: 'object',
+      properties: {
+        summary: { type: 'array', items: { type: 'string' }, description: S.genericSummary },
+        highlights: { type: 'array', items: { type: 'string' }, description: S.genericHighlights },
+      },
+      required: ['summary', 'highlights'],
+    },
+  };
+  return {
+    daily: [submitTool, recallTool, knowledgeTool],
+    generic: [genericSubmitTool, recallTool, knowledgeTool],
+  };
+}
 
-const TOOLS = [SUBMIT_TOOL, RECALL_TOOL, KNOWLEDGE_TOOL];
-const GENERIC_TOOLS = [GENERIC_SUBMIT_TOOL, RECALL_TOOL, KNOWLEDGE_TOOL];
+const TOOLS_BY_LANG = Object.fromEntries(
+  Object.entries(TOOL_STRINGS).map(([lang, S]) => [lang, buildTools(S)]),
+);
+
+const langStrings = lang => TOOL_STRINGS[lang] || TOOL_STRINGS.zh;
+const langTools = lang => TOOLS_BY_LANG[lang] || TOOLS_BY_LANG.zh;
 
 const ALLOWED_CLIENT_EVENTS = new Set([
   'input_audio_buffer.append', 'input_audio_buffer.commit', 'input_audio_buffer.clear',
@@ -133,19 +195,24 @@ export class Relay {
   sessionUpdate(member, task, prior = null, mode = 'voice') {
     const cfg = this.getConfig();
     const generic = task && !task.is_builtin;
+    // The member's language drives instructions, tool descriptions and the
+    // ASR sidecar language (pinning ASR to the spoken language is one of the
+    // hard-won relay invariants — it just follows the member now).
+    const lang = this.settings.memberLanguage(member);
+    const tools = langTools(lang);
     return {
       type: 'session.update',
       session: {
         type: 'realtime',
         output_modalities: mode === 'text' ? ['text'] : ['audio'],
-        instructions: this.context.buildInstructions(member, task, prior, this.settings.resolveTimeZone()),
-        tools: generic ? GENERIC_TOOLS : TOOLS,
+        instructions: this.context.buildInstructions(member, task, prior, this.settings.resolveTimeZone(), lang),
+        tools: generic ? tools.generic : tools.daily,
         tool_choice: 'auto',
         audio: {
           input: {
             format: { type: 'audio/pcm', rate: 24000 },
             turn_detection: { type: 'semantic_vad', eagerness: 'low' },
-            transcription: { model: cfg.transcriptionModel ?? 'gpt-realtime-whisper', language: 'zh' },
+            transcription: { model: cfg.transcriptionModel ?? 'gpt-realtime-whisper', language: lang },
           },
           output: { voice: this.settings.resolveVoice(), format: { type: 'audio/pcm', rate: 24000 } },
         },
@@ -157,7 +224,7 @@ export class Relay {
    * Dispatch a realtime function_call. submit_standup_summary ends the flow;
    * the retrieval tools return data and prompt the model to continue speaking.
    */
-  handleToolCall(fc, { client, upstream, member, task, cycleKey, reportDate, model, markSaved }) {
+  handleToolCall(fc, { client, upstream, member, task, cycleKey, reportDate, model, markSaved, S }) {
     const respond = output => {
       safeSend(upstream, {
         type: 'conversation.item.create',
@@ -174,7 +241,7 @@ export class Relay {
           this.store.upsertSummary(member.id, reportDate, args, fc.arguments, model);
           markSaved();
           safeSend(client, { type: 'app.saved', summary: args });
-          respond({ ok: true, message: '已保存' });
+          respond({ ok: true, message: S.saved });
         } catch (e) {
           console.error('[rounds] summary parse error', e);
         }
@@ -186,7 +253,7 @@ export class Relay {
           this.store.submitCycleSummary(task.id, member.id, cycleKey, summary, highlights);
           markSaved();
           safeSend(client, { type: 'app.saved', summary: args });
-          respond({ ok: true, message: '已保存' });
+          respond({ ok: true, message: S.saved });
         } catch (e) {
           console.error('[rounds] task summary parse error', e);
         }
@@ -213,8 +280,9 @@ export class Relay {
     const cfg = this.getConfig();
     const conn = this.settings.voiceConnection();
     const apiKey = conn.key;
+    const S = langStrings(this.settings.memberLanguage(member));
     if (!apiKey) {
-      safeSend(client, { type: 'app.error', message: '尚未配置语音 provider 的 API Key，请管理员在设置页配置' });
+      safeSend(client, { type: 'app.error', message: S.errNoKey });
       client.close();
       return;
     }
@@ -229,7 +297,7 @@ export class Relay {
       ? (task.type === 'oneshot' ? ONESHOT_CYCLE : currentCycleKey(task, reportDate))
       : reportDate;
     if (!cycleKey) {
-      safeSend(client, { type: 'app.error', message: '这个任务的第一个周期还没开始，请稍后再来' });
+      safeSend(client, { type: 'app.error', message: S.errNoCycle });
       client.close();
       return;
     }
@@ -256,7 +324,7 @@ export class Relay {
     // Gemini providers speak a different wire protocol — the adapter emulates
     // the OpenAI Realtime surface so everything below stays provider-agnostic.
     const upstream = conn.protocol === 'gemini'
-      ? new GeminiUpstream({ wsUrl: conn.wsUrl, key: apiKey, model, proxy: this.env.proxy })
+      ? new GeminiUpstream({ wsUrl: conn.wsUrl, key: apiKey, model, proxy: this.env.proxy, lang: this.settings.memberLanguage(member) })
       : new WebSocket(`${conn.wsUrl}?model=${model}`, {
         agent: this.env.proxy && conn.wsUrl.startsWith('wss:') ? new HttpsProxyAgent(this.env.proxy) : undefined,
         headers: { Authorization: `Bearer ${apiKey}` },
@@ -317,7 +385,7 @@ export class Relay {
     upstream.on('open', () => upstream.send(JSON.stringify(this.sessionUpdate(member, task, prior, mode))));
     upstream.on('error', e => {
       console.error('[rounds] upstream error', e.message);
-      safeSend(client, { type: 'app.error', message: '上游连接失败' });
+      safeSend(client, { type: 'app.error', message: S.errUpstream });
       finish('upstream_error');
     });
     upstream.on('close', () => finish('upstream_close'));
@@ -342,7 +410,7 @@ export class Relay {
       if (ev.type === 'app.end') {
         const submitTool = generic ? 'submit_conversation_summary' : 'submit_standup_summary';
         safeSend(upstream, { type: 'response.cancel' });
-        safeSend(upstream, { type: 'response.create', response: { instructions: `对方要结束对话了。如果还没提交小结，现在立刻调用 ${submitTool}，然后简短道别。` } });
+        safeSend(upstream, { type: 'response.create', response: { instructions: S.endKick(submitTool) } });
         return;
       }
       if (ALLOWED_CLIENT_EVENTS.has(ev.type) && upstream.readyState === WebSocket.OPEN) {
@@ -364,13 +432,7 @@ export class Relay {
             // Models weigh the opener kick over the instructions block, so
             // the kick itself has to carry the continuation framing.
             const opener = prior ? {
-              response: {
-                instructions:
-                  `（同事重新接通，这是继续${generic ? '本周期' : '今天'}早些时候的对话，不是新对话。` +
-                  `开场只说一句：简短打个招呼并自然衔接（比如"我们接着刚才的继续"），` +
-                  `${prior.submitted ? '问对方还有什么要补充的' : '从上次中断的地方接着聊'}。` +
-                  `绝对不要重新自我介绍，绝对不要把开场流程的问题从头再问一遍，已经聊过的内容也不要再逐条确认。不要提到这条消息）`,
-              },
+              response: { instructions: S.reconnectKick(generic, prior.submitted) },
             } : null;
             safeSend(upstream, { type: 'response.create', ...(opener || {}) });
           }
@@ -422,7 +484,7 @@ export class Relay {
             usage.output_audio += ot.audio_tokens || 0;
           }
           const calls = (ev.response?.output || []).filter(i => i.type === 'function_call');
-          for (const fc of calls) this.handleToolCall(fc, { client, upstream, member, task, cycleKey, reportDate, model, markSaved: () => { saved = true; } });
+          for (const fc of calls) this.handleToolCall(fc, { client, upstream, member, task, cycleKey, reportDate, model, markSaved: () => { saved = true; }, S });
           break;
         }
         case 'conversation.item.input_audio_transcription.failed':
@@ -434,7 +496,7 @@ export class Relay {
           // client re-enables the submit button mid-wrap-up.
           if (ev.error?.code === 'response_cancel_not_active') return;
           console.error('[rounds] api error', JSON.stringify(ev.error));
-          safeSend(client, { type: 'app.error', message: ev.error?.message || '上游错误' });
+          safeSend(client, { type: 'app.error', message: ev.error?.message || S.errUpstreamGeneric });
           return; // already delivered as app.error — don't forward the raw event too
       }
       safeSend(client, ev); // forward everything to the client

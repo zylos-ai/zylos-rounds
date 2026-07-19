@@ -234,6 +234,16 @@ export const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_usage_log_date ON usage_log(date);
     `,
   },
+  {
+    // v0.12 multi-language: per-member conversation/UI language. NULL follows
+    // the team default (settings key 'language', default zh). The value drives
+    // the member's talk-page UI, the agent's spoken language, ASR language and
+    // profile language; owner-facing digests follow the team default.
+    version: 10,
+    sql: `
+      ALTER TABLE members ADD COLUMN language TEXT;
+    `,
+  },
 ];
 
 export class Store {
@@ -374,6 +384,10 @@ export class Store {
   }
 
   // ---- members ----
+  setMemberLanguage(id, language) {
+    return this.db.prepare('UPDATE members SET language=? WHERE id=?').run(language ?? null, id);
+  }
+
   setMemberContext(id, context) {
     return this.db.prepare('UPDATE members SET context=? WHERE id=?').run(context ?? null, id);
   }

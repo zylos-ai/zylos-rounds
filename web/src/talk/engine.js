@@ -45,10 +45,11 @@ export class TalkEngine {
    *   closed: () => void,
    * }}} opts
    */
-  constructor({ base, token, on }) {
+  constructor({ base, token, on, errorFallback }) {
     this.base = base;
     this.token = token;
     this.on = on;
+    this.errorFallback = errorFallback || '服务出错';
     this.ws = null;
     this.ctx = null;
     this.micStream = null;
@@ -169,7 +170,7 @@ export class TalkEngine {
           this.send({ type: 'app.client_info', ua: navigator.userAgent, ctx_rate: this.ctx ? this.ctx.sampleRate : null });
           break;
         case 'app.error':
-          this.on.error(ev.message || '服务出错');
+          this.on.error(ev.message || this.errorFallback);
           break;
         case 'input_audio_buffer.speech_started':
           if (this.curItemId && this.nextPlayTime > this.ctx.currentTime) {
@@ -226,7 +227,7 @@ export class TalkEngine {
           this.on.responseDone();
           break;
         case 'error':
-          this.on.error(ev.error?.message || '服务出错');
+          this.on.error(ev.error?.message || this.errorFallback);
           break;
         case 'app.saved':
           this.done = true;

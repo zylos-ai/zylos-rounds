@@ -256,7 +256,7 @@ test('recurring task: create with cadence, cycle detail, per-cycle digest, custo
     assert.ok(detail.data.cycles.includes(cycle));
 
     // custom digest instruction lands in the real prompt builder
-    const prompt = new DigestGenerator(store, () => ({ timeZone: 'Asia/Shanghai' }), {}, { resolveKey: () => null })
+    const prompt = new DigestGenerator(store, () => ({ timeZone: 'Asia/Shanghai' }), {}, { resolveKey: () => null, resolveLanguage: () => 'zh' })
       .buildPrompt(store.getTask(tid), store.cycleRecords(tid, cycle), cycle);
     assert.match(prompt, /只列三条最重要的进展/);
     assert.doesNotMatch(prompt, /进展要点/); // default template replaced
