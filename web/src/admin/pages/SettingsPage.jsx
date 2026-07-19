@@ -200,6 +200,11 @@ export default function SettingsPage() {
   const [modelCache, setModelCache] = useState({});
   const [refreshBusy, setRefreshBusy] = useState({}); // { [cacheKey]: true }
 
+  // voice names are protocol-specific: show the list matching the selected
+  // voice provider's protocol (OpenAI marin/cedar/… vs Gemini Puck/Charon/…)
+  const voiceProtocol = providers.find((p) => p.slug === (voiceProvider || 'openai'))?.protocol || 'openai';
+  const voiceOptions = (voiceProtocol === 'gemini' ? settings?.gemini_voice_options : settings?.voice_options) || [];
+
   // voice preview
   const [previewing, setPreviewing] = useState(false);
   const audioRef = useRef(null);
@@ -231,6 +236,16 @@ export default function SettingsPage() {
   }, [previewing, voice, stopPreview]);
 
   useEffect(() => () => stopPreview(), [stopPreview]);
+
+  // switching the provider to the other protocol invalidates the selected
+  // voice — snap to that protocol's first option
+  useEffect(() => {
+    if (voice && voiceOptions.length && !voiceOptions.includes(voice)) {
+      stopPreview();
+      setVoice(voiceOptions[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voice, voiceOptions.join(','), stopPreview]);
 
   const load = useCallback(async () => {
     setLoadError('');
@@ -496,7 +511,7 @@ export default function SettingsPage() {
                   onChange={(e) => { stopPreview(); setVoice(e.target.value); }}
                   className="h-11 min-w-[160px] rounded-md border border-input bg-transparent px-3 text-base text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  {settings.voice_options.map((v) => (
+                  {voiceOptions.map((v) => (
                     <option key={v} value={v}>{v}</option>
                   ))}
                 </select>

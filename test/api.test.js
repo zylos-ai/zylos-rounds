@@ -419,3 +419,46 @@ test('talk session: date + prior record for the builtin daily (v0.9.2)', async (
     close();
   }
 });
+
+test('gemini voices: per-protocol options, resolveVoice fallback, sample serving (v0.10.2)', async () => {
+  const { call, close } = await boot();
+  try {
+    // both voice lists exposed; providers carry their wire protocol
+    let s = (await call('GET', '/api/settings')).data;
+    assert.ok(s.voice_options.includes('marin'));
+    assert.ok(s.gemini_voice_options.includes('Puck'));
+    let list = (await call('GET', '/api/providers')).data.providers;
+    assert.equal(list[0].protocol, 'openai');
+
+    // gemini voice names are valid to store; garbage is not
+    assert.equal((await call('PUT', '/api/settings', { voice: 'Kore' })).status, 200);
+    assert.equal((await call('PUT', '/api/settings', { voice: 'NotAVoice' })).status, 400);
+
+    // a generativelanguage base URL marks the provider as gemini-protocol
+    const created = await call('POST', '/api/providers', {
+      name: 'Gemini', base_url: 'https://generativelanguage.googleapis.com', api_key: 'k', cap_realtime: true,
+    });
+    assert.equal(created.status, 201);
+    assert.equal(created.data.protocol, 'gemini');
+
+    // voice resolution follows the voice slot's protocol: an OpenAI-side
+    // voice under a gemini provider falls back to the gemini default…
+    await call('PUT', '/api/settings', { voice: 'marin', voice_provider: 'gemini' });
+    s = (await call('GET', '/api/settings')).data;
+    assert.equal(s.voice, 'Puck');
+    // …an explicit gemini voice sticks…
+    await call('PUT', '/api/settings', { voice: 'Kore' });
+    s = (await call('GET', '/api/settings')).data;
+    assert.equal(s.voice, 'Kore');
+    // …and switching back to the builtin snaps to the OpenAI default
+    await call('PUT', '/api/settings', { voice_provider: '' });
+    s = (await call('GET', '/api/settings')).data;
+    assert.equal(s.voice, 'marin');
+
+    // pre-generated gemini samples served like the OpenAI ones
+    assert.equal((await call('GET', '/api/settings/voice-sample/Kore')).status, 200);
+    assert.equal((await call('GET', '/api/settings/voice-sample/Nope')).status, 404);
+  } finally {
+    close();
+  }
+});

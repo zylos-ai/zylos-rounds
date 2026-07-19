@@ -18,6 +18,7 @@ import { request as httpRequest } from 'node:http';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { callChatModel } from './llm.js';
 import { DEFAULT_PROFILE_MODEL } from './profile.js';
+import { GEMINI_VOICES } from './gemini-live.js';
 
 export const BUILTIN_PROVIDER = 'openai';
 // Suggestions (datalist) — no longer a validation whitelist since v0.8.
@@ -104,8 +105,18 @@ export class Settings {
     return this.store.getSetting('model') || this.getConfig().model || MODEL_OPTIONS[0];
   }
 
+  /**
+   * Voice names are protocol-specific (OpenAI: marin/cedar/…, Gemini:
+   * Puck/Charon/…). A single stored value is kept; when the voice slot's
+   * provider speaks the other protocol, fall back to that protocol's default
+   * so switching providers never sends an unknown voice upstream.
+   */
   resolveVoice() {
-    return this.store.getSetting('voice') || this.getConfig().voice || VOICE_OPTIONS[0];
+    const stored = this.store.getSetting('voice') || this.getConfig().voice || '';
+    if (providerProtocol(this.slotProvider('voice')) === 'gemini') {
+      return GEMINI_VOICES.find(v => v.toLowerCase() === stored.toLowerCase()) || GEMINI_VOICES[0];
+    }
+    return VOICE_OPTIONS.includes(stored) ? stored : VOICE_OPTIONS[0];
   }
 
   setModel(value) {

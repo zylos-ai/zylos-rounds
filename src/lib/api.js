@@ -8,7 +8,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sendJson, readJsonBody, browserOrigin, todayLocal } from './http-util.js';
-import { MODEL_OPTIONS, VOICE_OPTIONS, SLOTS } from './settings.js';
+import { MODEL_OPTIONS, VOICE_OPTIONS, SLOTS, providerProtocol } from './settings.js';
+import { GEMINI_VOICES } from './gemini-live.js';
 import { ONESHOT_CYCLE, currentCycleKey, cadenceLabel, parseDowSet } from './cycle.js';
 
 const SAMPLES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'assets', 'voice-samples');
@@ -212,17 +213,20 @@ export class Api {
       return await this.testTextModel(req, res), true;
     }
 
-    m = p.match(/^\/api\/settings\/voice-sample\/([a-z]+)$/);
+    m = p.match(/^\/api\/settings\/voice-sample\/([A-Za-z]+)$/);
     if (m && req.method === 'GET') return this.voiceSample(res, m[1]), true;
 
     sendJson(res, 404, { error: 'not_found' });
     return true;
   }
 
-  // Pre-generated wav samples (scripts/generate-voice-samples.mjs); the
-  // VOICE_OPTIONS check doubles as path sanitization for the file read.
+  // Pre-generated wav samples (scripts/generate-voice-samples.mjs and
+  // scripts/generate-gemini-voice-samples.mjs); the voice-list check doubles
+  // as path sanitization for the file read.
   voiceSample(res, voice) {
-    if (!VOICE_OPTIONS.includes(voice)) return sendJson(res, 404, { error: 'not_found' });
+    if (!VOICE_OPTIONS.includes(voice) && !GEMINI_VOICES.includes(voice)) {
+      return sendJson(res, 404, { error: 'not_found' });
+    }
     const file = path.join(SAMPLES_DIR, `${voice}.wav`);
     let data;
     try {
@@ -249,6 +253,7 @@ export class Api {
       key_source: this.settings.providerKeySource(p), // 'env' | 'db' | 'none'
       cap_realtime: Boolean(p.cap_realtime),
       cap_models: Boolean(p.cap_models),
+      protocol: providerProtocol(p),
       is_builtin: Boolean(p.is_builtin),
       in_use: SLOTS.filter(s => this.settings.slotProvider(s)?.slug === p.slug),
     };
@@ -372,6 +377,7 @@ export class Api {
       voice: this.settings.resolveVoice(),
       model_options: MODEL_OPTIONS, // suggestions only since v0.8
       voice_options: VOICE_OPTIONS,
+      gemini_voice_options: GEMINI_VOICES,
       // usage slots: stored provider slug ('' = default builtin) + effective slug
       voice_provider: this.settings.storedSlotProvider('voice'),
       profile_provider: this.settings.storedSlotProvider('profile'),
@@ -402,7 +408,9 @@ export class Api {
       this.settings.setModel(v);
     }
     if (body.voice !== undefined) {
-      if (!VOICE_OPTIONS.includes(body.voice)) return sendJson(res, 400, { error: 'invalid_voice' });
+      if (!VOICE_OPTIONS.includes(body.voice) && !GEMINI_VOICES.includes(body.voice)) {
+        return sendJson(res, 400, { error: 'invalid_voice' });
+      }
       this.settings.setVoice(body.voice);
     }
     // usage slots: '' reverts to the default (builtin) provider

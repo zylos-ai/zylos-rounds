@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.2] - 2026-07-19
+
+### Added
+- **Gemini voice picker with previews.** The settings voice dropdown now
+  follows the selected provider's protocol: a Gemini provider lists the
+  Gemini prebuilt voices (Puck / Charon / Kore / Fenrir / Aoede / Leda /
+  Orus / Zephyr) with pre-generated Chinese samples behind the existing 试听
+  button (`scripts/generate-gemini-voice-samples.mjs`). Providers expose
+  their wire `protocol` in the API; voice resolution falls back to the
+  active protocol's default when the stored voice belongs to the other
+  protocol, so switching providers never sends an unknown voice upstream
+
 ## [0.10.1] - 2026-07-19
 
 ### Fixed
