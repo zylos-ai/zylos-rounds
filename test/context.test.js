@@ -166,3 +166,16 @@ test('prior transcript injects a continuation section', () => {
   assert.match(long, /TAIL/);
   s.close();
 });
+
+test('submission-gate hard rule present in all instruction variants', () => {
+  const s = tmpStore();
+  const ctx = new AgentContext(s);
+  const member = { name: 'Nick', context: '' };
+  assert.match(ctx.buildInstructions(member), /提交时机的硬规则/);
+  const task = s.createTask({ type: 'oneshot', title: '复盘' });
+  assert.match(ctx.buildInstructions(member, task), /提交时机的硬规则/);
+  // continuation with prior submit must not encourage early wrap-up
+  const cont = ctx.buildInstructions(member, null, { transcript: 'x', submitted: true });
+  assert.match(cont, /已提交过不等于可以早点收尾/);
+  s.close();
+});

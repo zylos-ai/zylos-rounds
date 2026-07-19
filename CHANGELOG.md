@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-07-19
+
+### Fixed
+- **Premature summary submission.** A hard submission gate in the agent
+  instructions: submit only on an explicit end signal from the member
+  (closing words or the end button) — never while the member is
+  mid-answer, mid-correction, or has an unanswered question; when unsure,
+  ask "还有要补充的吗？" first. The continuation overlay for
+  already-submitted cycles now says an earlier submission is no license
+  to wrap up early
+
 ## [0.9.0] - 2026-07-19
 
 ### Added
