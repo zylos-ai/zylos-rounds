@@ -121,18 +121,21 @@ export class Relay {
       const cfg = this.getConfig();
       const resolved = this.resolveToken(url.searchParams.get('token') || '');
       if (!resolved || this.active >= (cfg.maxConcurrent ?? 4)) return socket.destroy();
-      this.wss.handleUpgrade(req, socket, head, ws => this.session(ws, resolved.member, resolved.task));
+      // mode=text starts the session with text replies (quiet environments;
+      // also lets a text-mode client reconnect without an audible greeting)
+      const mode = url.searchParams.get('mode') === 'text' ? 'text' : 'voice';
+      this.wss.handleUpgrade(req, socket, head, ws => this.session(ws, resolved.member, resolved.task, mode));
     });
   }
 
-  sessionUpdate(member, task, prior = null) {
+  sessionUpdate(member, task, prior = null, mode = 'voice') {
     const cfg = this.getConfig();
     const generic = task && !task.is_builtin;
     return {
       type: 'session.update',
       session: {
         type: 'realtime',
-        output_modalities: ['audio'],
+        output_modalities: mode === 'text' ? ['text'] : ['audio'],
         instructions: this.context.buildInstructions(member, task, prior),
         tools: generic ? GENERIC_TOOLS : TOOLS,
         tool_choice: 'auto',
@@ -204,7 +207,7 @@ export class Relay {
     }
   }
 
-  session(client, member, task = null) {
+  session(client, member, task = null, mode = 'voice') {
     const cfg = this.getConfig();
     const conn = this.settings.voiceConnection();
     const apiKey = conn.key;
@@ -250,6 +253,7 @@ export class Relay {
 
     const killTimer = setTimeout(() => finish('timeout'), maxSessionMs);
     let closed = false;
+    let greeted = false;
     const store = this.store;
     const self = this;
     function finish(reason) {
@@ -276,7 +280,7 @@ export class Relay {
       }
     }
 
-    upstream.on('open', () => upstream.send(JSON.stringify(this.sessionUpdate(member, task, prior))));
+    upstream.on('open', () => upstream.send(JSON.stringify(this.sessionUpdate(member, task, prior, mode))));
     upstream.on('error', e => {
       console.error('[rounds] upstream error', e.message);
       safeSend(client, { type: 'app.error', message: '上游连接失败' });
@@ -292,6 +296,13 @@ export class Relay {
       if (ev.type === 'app.client_info') {
         // device diagnostics — capture-side audio issues show up here first
         console.log(`[rounds] client ${member.name} ctx_rate=${ev.ctx_rate} ua=${ev.ua}`);
+        return;
+      }
+      if (ev.type === 'app.set_mode') {
+        // mid-call voice/text switch — flip the reply modality in place
+        mode = ev.mode === 'text' ? 'text' : 'voice';
+        if (mode === 'text') safeSend(upstream, { type: 'response.cancel' });
+        safeSend(upstream, { type: 'session.update', session: { type: 'realtime', output_modalities: mode === 'text' ? ['text'] : ['audio'] } });
         return;
       }
       if (ev.type === 'app.end') {
@@ -310,9 +321,13 @@ export class Relay {
       try { ev = JSON.parse(raw.toString()); } catch { return; }
       switch (ev.type) {
         case 'session.updated':
-          safeSend(client, { type: 'app.ready' });
-          // model opens the conversation
-          safeSend(upstream, { type: 'response.create' });
+          // fires again on every mid-call session.update (mode switches) —
+          // only the first one greets and opens the conversation
+          if (!greeted) {
+            greeted = true;
+            safeSend(client, { type: 'app.ready' });
+            safeSend(upstream, { type: 'response.create' });
+          }
           return;
         // A user message item appears in the event stream as soon as the turn
         // is committed — before the model's reply starts. Reserve its slot
@@ -322,7 +337,9 @@ export class Relay {
         case 'conversation.item.created':
           if (ev.item?.type === 'message' && ev.item?.role === 'user'
             && !transcript.some(e => e.id === ev.item.id)) {
-            transcript.push({ id: ev.item.id, text: null });
+            // typed messages carry their text up front — no ASR to wait for
+            const typed = (ev.item.content || []).find(c => c.type === 'input_text')?.text?.trim();
+            transcript.push({ id: ev.item.id, text: typed ? `${member.name}: ${typed}` : null });
           }
           break;
         case 'conversation.item.input_audio_transcription.completed': {
@@ -334,6 +351,10 @@ export class Relay {
         }
         case 'response.output_audio_transcript.done':
           if (ev.transcript?.trim()) transcript.push({ text: `Luna: ${ev.transcript.trim()}` });
+          break;
+        case 'response.output_text.done':
+        case 'response.text.done':
+          if (ev.text?.trim()) transcript.push({ text: `Luna: ${ev.text.trim()}` });
           break;
         case 'response.done': {
           const calls = (ev.response?.output || []).filter(i => i.type === 'function_call');

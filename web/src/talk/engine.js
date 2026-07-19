@@ -56,6 +56,7 @@ export class TalkEngine {
     this.analyser = null;
     this.done = false;
     this.paused = false;
+    this.textMode = false;
     // playback scheduling state
     this.nextPlayTime = 0;
     this.liveSources = [];
@@ -99,7 +100,7 @@ export class TalkEngine {
           o += a.length;
         }
         buf = [];
-        if (this.ws && this.ws.readyState === 1 && !this.paused) {
+        if (this.ws && this.ws.readyState === 1 && !this.paused && !this.textMode) {
           const pcm = this.downsampleTo24k(flat, SRC_RATE);
           const i16 = new Int16Array(pcm.length);
           for (let i = 0; i < pcm.length; i++) i16[i] = Math.max(-32768, Math.min(32767, pcm[i] * 32767));
@@ -115,7 +116,9 @@ export class TalkEngine {
 
   connect() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    this.ws = new WebSocket(`${proto}://${location.host}${this.base}/ws?token=${this.token}`);
+    // carry the mode so a text-mode reconnect greets silently in text
+    const mode = this.textMode ? '&mode=text' : '';
+    this.ws = new WebSocket(`${proto}://${location.host}${this.base}/ws?token=${this.token}${mode}`);
     this.on.connecting();
     this.ws.onclose = () => {
       if (!this.done) this.on.closed();
@@ -164,11 +167,25 @@ export class TalkEngine {
         case 'response.output_audio_transcript.done':
           this.on.aiDone();
           break;
+        // text-mode replies stream as plain text deltas
+        case 'response.output_text.delta':
+        case 'response.text.delta':
+          this.on.aiDelta(ev.delta);
+          break;
+        case 'response.output_text.done':
+        case 'response.text.done':
+          this.on.aiDone();
+          break;
         // User item appears (in true order) before the reply starts — let the
-        // app reserve a bubble; the async ASR text fills it in later.
+        // app reserve a bubble; the async ASR text fills it in later. Typed
+        // messages carry their text up front and render immediately.
         case 'conversation.item.added':
         case 'conversation.item.created':
-          if (ev.item?.type === 'message' && ev.item?.role === 'user') this.on.userPending(ev.item.id);
+          if (ev.item?.type === 'message' && ev.item?.role === 'user') {
+            const typed = (ev.item.content || []).find((c) => c.type === 'input_text')?.text;
+            if (typed) this.on.userText(typed, ev.item.id);
+            else this.on.userPending(ev.item.id);
+          }
           break;
         case 'conversation.item.input_audio_transcription.completed':
           this.on.userText((ev.transcript || '').trim(), ev.item_id);
@@ -212,6 +229,31 @@ export class TalkEngine {
 
   resume() {
     this.paused = false;
+  }
+
+  /**
+   * Switch reply modality mid-call. Text mode also gates the mic feed
+   * (quiet environments) and silences any in-flight audio.
+   */
+  setMode(mode) {
+    if (this.done) return;
+    this.textMode = mode === 'text';
+    if (this.textMode) {
+      this.flushPlayback();
+      this.curItemId = null;
+    }
+    this.send({ type: 'app.set_mode', mode: this.textMode ? 'text' : 'voice' });
+  }
+
+  /** Send a typed message (text mode). */
+  sendText(text) {
+    const t = (text || '').trim();
+    if (!t || this.done) return;
+    this.send({
+      type: 'conversation.item.create',
+      item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: t }] },
+    });
+    this.send({ type: 'response.create' });
   }
 
   reconnect() {

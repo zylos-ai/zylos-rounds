@@ -14,6 +14,8 @@ import {
   RotateCw,
   Pause,
   Play,
+  Keyboard,
+  Send,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -41,6 +43,9 @@ export default function TalkApp() {
   const [messages, setMessages] = useState([]);
   const [summary, setSummary] = useState(null);
   const [paused, setPaused] = useState(false);
+  const [textMode, setTextMode] = useState(false);
+  const [draft, setDraft] = useState('');
+  const inputRef = useRef(null);
   const engineRef = useRef(null);
   const aiIdRef = useRef(null);
   const doneRef = useRef(false);
@@ -202,6 +207,32 @@ export default function TalkApp() {
     }
   }, [say]);
 
+  const toggleMode = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine || doneRef.current) return;
+    const toText = !engine.textMode;
+    engine.setMode(toText ? 'text' : 'voice');
+    setTextMode(toText);
+    if (toText) {
+      setPaused(false);
+      setPhase('listening');
+      say('文字模式，Luna 会用文字回复');
+      setTimeout(() => inputRef.current?.focus(), 50);
+    } else {
+      setPhase('listening');
+      say('语音模式，直接开口说话');
+    }
+  }, [say]);
+
+  const sendDraft = useCallback((e) => {
+    e?.preventDefault();
+    const t = draft.trim();
+    if (!t || !engineRef.current || doneRef.current) return;
+    engineRef.current.sendText(t);
+    setDraft('');
+    inputRef.current?.focus();
+  }, [draft]);
+
   const retryNow = useCallback(() => {
     reconnectRef.current.attempts = 0;
     setPhase('reconnecting');
@@ -350,10 +381,10 @@ export default function TalkApp() {
 
       {/* stage — fixed; only the chat log below scrolls */}
       <div className="flex shrink-0 flex-col items-center pb-1.5 pt-4">
-        <div className={cn(paused && 'opacity-60')}>{orb}</div>
+        <div className={cn((paused || textMode) && 'opacity-60')}>{orb}</div>
 
-        <div className={cn('mt-3 flex h-9 items-center justify-center', (!inCall || paused) && 'invisible')}>
-          <Waveform analyser={engineRef.current?.analyser} active={inCall && !paused} />
+        <div className={cn('mt-3 flex h-9 items-center justify-center', (!inCall || paused || textMode) && 'invisible')}>
+          <Waveform analyser={engineRef.current?.analyser} active={inCall && !paused && !textMode} />
         </div>
 
         {statusLine}
@@ -362,10 +393,16 @@ export default function TalkApp() {
         <div className="mt-2.5 flex items-center justify-center gap-2">
           {inCall && (
             <>
-              <Button variant="secondary" onClick={togglePause} disabled={submitting}>
-                {paused ? <Play strokeWidth={1.75} /> : <Pause strokeWidth={1.75} />}
-                {paused ? '继续' : '暂停'}
+              <Button variant="secondary" onClick={toggleMode} disabled={submitting}>
+                {textMode ? <Mic strokeWidth={1.75} /> : <Keyboard strokeWidth={1.75} />}
+                {textMode ? '语音' : '文字'}
               </Button>
+              {!textMode && (
+                <Button variant="secondary" onClick={togglePause} disabled={submitting}>
+                  {paused ? <Play strokeWidth={1.75} /> : <Pause strokeWidth={1.75} />}
+                  {paused ? '继续' : '暂停'}
+                </Button>
+              )}
               <Button variant="secondary" onClick={endCall} disabled={submitting}>
                 {submitting ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : <Check strokeWidth={1.75} />}
                 {submitting ? '正在生成小结…' : '结束并提交'}
@@ -424,6 +461,22 @@ export default function TalkApp() {
         </div>
         )}
       </div>
+
+      {/* text-mode composer — pinned under the scroll region */}
+      {textMode && inCall && (
+        <form className="mt-2 flex shrink-0 items-center gap-2 pb-1" onSubmit={sendDraft}>
+          <input
+            ref={inputRef}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="输入消息，回车发送…"
+            className="h-[38px] min-w-0 flex-1 rounded-md border border-border-strong bg-card px-3 text-[0.92rem] shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          <Button type="submit" size="icon" className="h-[38px] w-[38px]" disabled={!draft.trim() || submitting} aria-label="发送">
+            <Send strokeWidth={1.75} />
+          </Button>
+        </form>
+      )}
     </div>
   );
 }

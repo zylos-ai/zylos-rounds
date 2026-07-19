@@ -1,6 +1,6 @@
 ---
 name: rounds
-version: 0.8.3
+version: 0.9.0
 description: >-
   Rounds (formerly standup) — delegated 1:1 structured voice conversations for
   teams. An AI agent (OpenAI Realtime, Chinese voice) talks to each member via

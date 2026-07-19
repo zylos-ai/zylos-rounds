@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-07-19
+
+### Added
+- **Text mode (文字模式).** Members in voice-unfriendly environments can
+  switch to typing at any point in the call — a 文字/语音 toggle in the
+  control row swaps the reply modality mid-session (`session.update`
+  output_modalities), gates the mic feed, silences in-flight audio, and
+  pins a composer (input + send) under the chat log. Replies stream back
+  as text bubbles; typed messages render instantly (no ASR round-trip)
+  and are archived in true order alongside spoken turns — one brain, one
+  transcript, one summary across both modalities. A text-mode reconnect
+  carries `mode=text` on the socket URL so the new session greets
+  silently in text. The pause button hides in text mode (mic is already
+  gated); switching back to voice restores it
+
 ## [0.8.3] - 2026-07-19
 
 ### Added
