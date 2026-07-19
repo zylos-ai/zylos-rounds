@@ -176,7 +176,11 @@ export class GeminiUpstream {
       case 'response.create': {
         const instructions = ev.response?.instructions;
         if (instructions) {
-          // system-side nudge (e.g. app.end wrap-up) — not rendered, not archived
+          // system-side nudge (e.g. app.end wrap-up, continuation opener) —
+          // not rendered, not archived. An instructed first response IS the
+          // greeting: without marking it, the bare response.create after the
+          // first tool result would fire the greeting kick mid-conversation.
+          this.greeted = true;
           this.toGemini({ clientContent: { turns: [{ role: 'user', parts: [{ text: `（系统指令）${instructions}` }] }], turnComplete: true } });
         } else if (!this.greeted) {
           this.greeted = true;

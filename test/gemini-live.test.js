@@ -178,3 +178,18 @@ test('providerProtocol: inferred from base_url', () => {
 test('GEMINI_VOICES exported for settings surface', () => {
   assert.ok(GEMINI_VOICES.includes('Kore'));
 });
+
+test('instructed first response.create counts as greeting — later bare one must not re-kick (v0.10.5)', () => {
+  const { sock, up } = boot();
+  up.send(SESSION_UPDATE);
+  const before = sock.sent.length;
+  // continuation opener: first response.create arrives WITH instructions
+  up.send(JSON.stringify({ type: 'response.create', response: { instructions: '继续之前的对话，自然衔接' } }));
+  const nudge = sock.sent[before];
+  assert.match(nudge.clientContent.turns[0].parts[0].text, /（系统指令）继续之前的对话/);
+  // bare response.create after a tool result: adapter must stay silent
+  // (previously this fired the greeting kick mid-conversation)
+  const n = sock.sent.length;
+  up.send(JSON.stringify({ type: 'response.create' }));
+  assert.equal(sock.sent.length, n);
+});

@@ -194,3 +194,21 @@ test('instructions carry fresh wall-clock time in the configured zone (v0.10.4)'
   assert.notEqual(hm(text), hm(other));
   s.close();
 });
+
+test('continuation replaces the scripted flow line instead of overriding it (v0.10.5)', () => {
+  const s = tmpStore();
+  const ctx = new AgentContext(s);
+  const member = { name: '小王', context: null, profile: null };
+  // fresh session keeps the scripted opening
+  assert.match(ctx.buildInstructions(member), /依次了解四件事/);
+  // submitted continuation: continuation flow, no scripted four-question line
+  const sub = ctx.buildInstructions(member, null, { transcript: 'T', submitted: true });
+  assert.match(sub, /流程（继续模式）/);
+  assert.match(sub, /有什么想补充或更新的/);
+  assert.doesNotMatch(sub, /依次了解四件事/);
+  // draft continuation: resume-from-interruption flow
+  const draft = ctx.buildInstructions(member, null, { transcript: 'T', submitted: false });
+  assert.match(draft, /从中断的地方继续/);
+  assert.doesNotMatch(draft, /依次了解四件事/);
+  s.close();
+});

@@ -331,7 +331,19 @@ export class Relay {
           if (!greeted) {
             greeted = true;
             safeSend(client, { type: 'app.ready' });
-            safeSend(upstream, { type: 'response.create' });
+            // Continuation sessions must not re-run the scripted opening.
+            // Models weigh the opener kick over the instructions block, so
+            // the kick itself has to carry the continuation framing.
+            const opener = prior ? {
+              response: {
+                instructions:
+                  `（同事重新接通，这是继续${generic ? '本周期' : '今天'}早些时候的对话，不是新对话。` +
+                  `开场只说一句：简短打个招呼并自然衔接（比如"我们接着刚才的继续"），` +
+                  `${prior.submitted ? '问对方还有什么要补充的' : '从上次中断的地方接着聊'}。` +
+                  `绝对不要重新自我介绍，绝对不要把开场流程的问题从头再问一遍，已经聊过的内容也不要再逐条确认。不要提到这条消息）`,
+              },
+            } : null;
+            safeSend(upstream, { type: 'response.create', ...(opener || {}) });
           }
           return;
         // A user message item appears in the event stream as soon as the turn

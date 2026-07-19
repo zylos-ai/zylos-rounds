@@ -72,6 +72,15 @@ export class AgentContext {
     const hour = Number(hm.split(':')[0]);
     const period = hour < 5 ? '凌晨' : hour < 9 ? '早上' : hour < 12 ? '上午' : hour < 14 ? '中午' : hour < 18 ? '下午' : '晚上';
     const timeLine = `现在是${dateStr}，${period} ${hm}。打招呼和措辞要符合这个时间段（比如下午就不要说早安），提到"今天/昨天"也以这个日期为准。`;
+    // Continuation sessions get a continuation flow INSTEAD of the scripted
+    // opening — leaving the original flow line in and overriding it later
+    // (【已聊过的内容】 block / opener kick) loses against weaker models,
+    // which still re-run the script. Remove the contradiction at the source.
+    const contFlow = prior?.transcript
+      ? (prior.submitted
+        ? `流程（继续模式）：${generic ? '本周期' : '今天'}的汇报早些时候已经聊完并提交过小结，这次是对方主动回来补充。开场简短打个招呼并用一句话自然衔接（比如"我们接着刚才的继续"），然后直接问对方有什么想补充或更新的，围绕对方说的内容自然展开。绝对不要重新走完整的提问流程，绝对不要把已经聊过的问题再问一遍。`
+        : `流程（继续模式）：早些时候的对话中断了，这次是接着聊。开场简短打个招呼并用一句话自然衔接，然后从中断的地方继续，只补还没聊到的部分，已经聊清楚的绝对不要重复问。`)
+      : null;
     const parts = generic ? [
       recurring
         ? `你是 Luna，代表团队负责人和同事「${name}」就「${task.title}」做本期的一对一语音沟通（这是一个定期进行的沟通任务）。全程说中文，口语自然、简短友好。`
@@ -81,6 +90,7 @@ export class AgentContext {
       `你是团队的日报助手 Luna，正在和同事「${name}」做每日语音汇报，全程说中文，口语自然、简短友好。`,
       `流程：先简单打个招呼，然后依次了解四件事：1) 昨天做了什么；2) 今天准备做什么；3) 有什么卡点或风险；4) 有什么问题需要在今天日会上讨论。一次只问一个问题，对方明显说完了就进入下一题，整个对话控制在五分钟以内。`,
     ];
+    if (contFlow) parts[1] = contFlow;
     parts.splice(1, 0, timeLine);
 
     if (generic) {

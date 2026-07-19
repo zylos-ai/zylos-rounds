@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.5] - 2026-07-19
+
+### Fixed
+- **Continuation sessions re-ran the scripted opening.** Reopening a finished
+  (or interrupted) conversation replayed the fixed four-question flow instead
+  of continuing naturally. Root cause was contradictory instructions: the
+  scripted 流程 line stayed in the prompt and weaker models obey it over the
+  later continuation block. The flow line is now replaced with a continuation
+  flow (submitted → ask what to add; draft → resume where it stopped), and
+  the greeting kick carries the same continuation framing
+- **Gemini adapter:** an instructed first `response.create` now counts as the
+  greeting — previously the first bare `response.create` after a tool result
+  would fire the greeting kick mid-conversation
+
 ## [0.10.4] - 2026-07-19
 
 ### Added
