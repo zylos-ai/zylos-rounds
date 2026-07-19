@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.1] - 2026-07-19
+
+### Changed
+- **Digest cards render Markdown.** Digest text was shown as raw
+  preformatted text; a lightweight built-in renderer (headings, lists,
+  bold, inline code — no raw-HTML pass-through) now formats it.
+- **Recurring digest template rewritten to be workstream-centric.** The
+  per-cycle digest no longer lists members one by one; content is grouped
+  by workstream (进展 / 卡点与风险 / 待议), merging all members' input per
+  item with names only as inline attribution, and the model is told not to
+  emit a top-level `#` heading. One-shot and custom digest instructions
+  are unchanged.
+
 ## [0.14.0] - 2026-07-19
 
 ### Added

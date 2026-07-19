@@ -7,6 +7,7 @@ import {
 import { cn, copyText } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Markdown } from '@/components/Markdown.jsx';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -607,7 +608,7 @@ function DigestCard({ task, digesting, digestError, onTrigger }) {
         </div>
         {digestError && <p className="mb-3 text-sm text-destructive">{digestError}</p>}
         {task.digest
-          ? <div className="whitespace-pre-wrap rounded-md bg-accent/50 px-4 py-3 text-[0.95rem] leading-relaxed">{task.digest}</div>
+          ? <Markdown text={task.digest} className="rounded-md bg-accent/50 px-4 py-3 text-[0.95rem] leading-relaxed" />
           : <p className="text-sm text-muted-foreground">{T.digestNotYet}{task.digest_instruction ? T.digestNotYetCustom : task.type === 'recurring' ? T.digestNotYetRecurring : T.digestNotYetOneshot}</p>}
       </CardContent>
     </Card>

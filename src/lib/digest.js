@@ -32,13 +32,13 @@ const DIGEST_STRINGS = {
 观点不一致的点，逐条列出各方立场和归属。
 ## 重点信号
 值得负责人单独注意的信息：强烈诉求、风险、情绪、超出问题框架但重要的内容，标注来源成员。`,
-    recurring: `请输出给负责人看的本周期汇总报告（Markdown），结构：
-## 进展要点
-按成员归并本周期的关键进展和结论，标注归属。
-## 共性主题
-多位成员都提到的主题、模式或问题，合并表述。
-## 重点信号
-值得负责人单独注意的信息：风险、强烈诉求、情绪、需要负责人介入的点，标注来源成员。`,
+    recurring: `请输出给负责人看的本周期汇总报告（Markdown）。视角要求：以事为中心组织内容，不要按成员逐人罗列——同一事项涉及多人时合并到一起讲，人名只在句中做归属标注（如"（张三）"）。不要输出一级大标题（#），直接从下面的小节开始：
+## 进展
+按事项归并本周期的进展和结论，每个事项一条或一小段，合并所有相关成员的信息并标注归属。
+## 卡点与风险
+受阻的事项和潜在风险，按事项列出，说明影响，标注相关成员。
+## 待议
+需要负责人决策、回应或介入的事项，按重要程度排列。`,
     sharedRules: '要求：只依据上面提供的内容，不要编造；未完成对话的成员在结尾单独列出名单；语言简洁，直接给结论。',
     notSubmitted: '（未完成对话）',
     points: '要点：',
@@ -64,13 +64,13 @@ Points where members agree or point the same way — merge them and note who sup
 Points of disagreement — list each side's position and who holds it.
 ## Key signals
 Information the lead should note individually: strong asks, risks, emotions, important content beyond the question frame — attribute each to its member.`,
-    recurring: `Write this cycle's summary report for the team lead (Markdown), structured as:
-## Progress highlights
-Key progress and conclusions this cycle, grouped by member with attribution.
-## Common themes
-Topics, patterns or problems multiple members raised — merge them.
-## Key signals
-Information the lead should note individually: risks, strong asks, emotions, points needing the lead's involvement — attribute each to its member.`,
+    recurring: `Write this cycle's summary report for the team lead (Markdown). Perspective: organize by workstream/topic, never member by member — when several members touch the same item, merge their input into one place and use names only as inline attribution (e.g. "(Alex)"). Do not emit a top-level heading (#); start directly with these sections:
+## Progress
+Progress and conclusions grouped by workstream — one entry or short block per item, merging all related members' input with attribution.
+## Blockers & risks
+Stalled items and potential risks, listed by item with impact and the members involved.
+## For discussion
+Items needing the lead's decision, response or involvement, ordered by importance.`,
     sharedRules: 'Requirements: base everything strictly on the content above, never invent; list members who did not complete their conversation separately at the end; be concise and lead with conclusions.',
     notSubmitted: ' (conversation not completed)',
     points: 'Key points:',
