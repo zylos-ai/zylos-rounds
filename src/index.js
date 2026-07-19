@@ -8,6 +8,7 @@
  */
 
 import http from 'node:http';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
@@ -62,21 +63,44 @@ for (const mb of [...store.listActiveMembers(), store.getTestMember()].filter(Bo
 const context = new AgentContext(store);
 context.seedDefaults();
 
-// Bearer API key for the management API — full admin scope (roster, brain,
-// knowledge, reports, settings) for agents and scripts/cli.js. Minted once and
-// persisted into the component config. v0.17: named per-client keys live in
-// the DB (/api/tokens, `cli.js token ...`); this config key stays honored as
-// a legacy credential until revoked, and is only minted when the DB has no
-// named keys yet (fresh install bootstrap).
-if (!config.serviceToken && !store.listApiTokens().length) {
-  config.serviceToken = crypto.randomBytes(24).toString('base64url');
+// Bearer API keys for the management API — full admin scope (roster, brain,
+// knowledge, reports, settings) for agents and scripts/cli.js. v0.18: keys
+// are named DB rows only (/api/tokens, `cli.js token ...`); config.json
+// carries no auth credential. A same-host cli.json is written at mint time
+// so the local CLI stays zero-config.
+const sha256hex = v => crypto.createHash('sha256').update(v).digest('hex');
+const writeCliJson = (plaintext) => {
+  const cliJsonPath = path.join(DATA_DIR, 'cli.json');
+  if (fs.existsSync(cliJsonPath)) return;
+  fs.writeFileSync(cliJsonPath,
+    `${JSON.stringify({ url: `http://127.0.0.1:${config.port ?? 3478}`, apiKey: plaintext }, null, 2)}\n`,
+    { mode: 0o600 });
+};
+if (config.serviceToken) {
+  // pre-v0.18 config: one-time migration of the shared serviceToken into the
+  // DB — same plaintext keeps working, existing clients are untouched
   try {
+    const name = store.getApiTokenByName('default') ? 'migrated' : 'default';
+    if (!store.getApiTokenByHash(sha256hex(config.serviceToken))) {
+      store.createApiToken(name, sha256hex(config.serviceToken));
+    }
+    writeCliJson(config.serviceToken);
+    delete config.serviceToken;
     saveConfig(config);
-    console.log('[rounds] minted management API service token (config.serviceToken)');
-    console.log(`[rounds] FIRST-START service token (for cli.js / remote clients): ${config.serviceToken}`);
+    console.log(`[rounds] migrated config.serviceToken into the DB as named API key "${name}" (same plaintext; local cli.json ensured)`);
   } catch (err) {
-    console.error(`[rounds] failed to persist service token: ${err.message}`);
+    console.error(`[rounds] serviceToken migration failed: ${err.message}`);
   }
+} else if (!store.listApiTokens().length) {
+  // fresh install (or everything revoked): bootstrap one named key
+  const plaintext = `rk_${crypto.randomBytes(24).toString('base64url')}`;
+  store.createApiToken('default', sha256hex(plaintext));
+  try {
+    writeCliJson(plaintext);
+  } catch (err) {
+    console.error(`[rounds] failed to write cli.json: ${err.message}`);
+  }
+  console.log(`[rounds] FIRST-START API key "default" (for cli.js / remote clients): ${plaintext}`);
 }
 
 // Standalone first start: auth is on but no password exists yet (the zylos
@@ -94,7 +118,7 @@ if (config.auth?.enabled && !config.auth.password) {
 
 const auth = new AuthGate(config, store, CONFIG_PATH);
 const digests = new DigestGenerator(store, getConfig, env, settings);
-const api = new Api(store, auth, getConfig, settings, context, digests, saveConfig);
+const api = new Api(store, auth, getConfig, settings, context, digests);
 const statics = new Static(path.join(__dirname, 'public'));
 const profiles = new ProfileUpdater(store, getConfig, env, settings);
 const relay = new Relay(store, getConfig, env, settings, context, profiles);

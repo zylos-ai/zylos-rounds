@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.0] - 2026-07-20
+
+### Changed
+- **Named DB keys are now the only bearer credentials** (owner's ruling: no
+  legacy compatibility). `config.serviceToken` is no longer checked at auth
+  time; a pre-v0.18 value migrates once into the DB as key `default` at
+  startup (same plaintext keeps working) and is removed from config.json.
+- First start mints a named `default` key (printed once) instead of a config
+  serviceToken, and writes a same-host `cli.json` into the data dir so the
+  local CLI stays zero-config.
+- CLI credential resolution drops the `config.json` fallback tier (cli.json
+  in `$ROUNDS_HOME` / `~/.rounds` / zylos data dir remains).
+
+### Removed
+- `DELETE /api/tokens/legacy`, `cli.js token revoke legacy`, the legacy row
+  in the settings API Keys card, and the `legacy` field of `GET /api/tokens`
+  (all introduced hours earlier in v0.17.0).
+
 ## [0.17.0] - 2026-07-20
 
 ### Added

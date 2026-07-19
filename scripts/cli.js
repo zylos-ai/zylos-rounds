@@ -2,17 +2,17 @@
 /**
  * rounds CLI — agent-friendly management client for zylos-rounds.
  *
- * Talks to the admin API with the bearer API key (config.serviceToken); never
- * touches the database. Designed for AI agents: JSON output, stdin for long
- * text, zero interactive prompts.
+ * Talks to the admin API with a bearer API key (named keys in the server DB,
+ * managed via `token` commands); never touches the database. Designed for AI
+ * agents: JSON output, stdin for long text, zero interactive prompts.
  *
  * Credential resolution (first hit wins):
  *   1. --url / --key flags
  *   2. ROUNDS_URL / ROUNDS_API_KEY environment variables
  *   3. cli.json {"url": "...", "apiKey": "..."} in, in order:
  *      $ROUNDS_HOME → ~/.rounds → ~/zylos/components/rounds
- *   4. config.json (same-host install: 127.0.0.1:<port> + serviceToken),
- *      searched in the same directory order
+ *      (the server writes a same-host cli.json into its data dir at key
+ *      mint/migration time, so a local install works with zero setup)
  *
  * A remote agent (Claude Code, Codex, the coco avatar, any framework — no
  * zylos required) only needs ~/.rounds/cli.json pointing at the server's
@@ -77,11 +77,11 @@ Reports & settings
                                       models for 画像/汇总 + provider slug per slot + IANA time zone; '' reverts to default
 
 API keys (v0.17)
-  token list                          named management API keys (+ whether the legacy config key exists)
+  token list                          named management API keys (never shows secrets)
   token create <name>                 mint a named key — plaintext shown ONCE in the response
   token rotate <id>                   re-mint the secret for a key (old plaintext dies immediately)
-  token revoke <id|legacy>            revoke a key; 'legacy' kills the shared config.serviceToken
-                                      (rotate flow: create new -> switch clients -> revoke old/legacy)
+  token revoke <id>                   revoke a key
+                                      (rotate flow: create new -> switch clients -> revoke old)
 
 Providers (v0.8)
   provider list
@@ -130,13 +130,6 @@ export function resolveTarget(flags, env, home) {
     try {
       const c = JSON.parse(fs.readFileSync(path.join(dir, 'cli.json'), 'utf8'));
       if (c.url && c.apiKey) return { url: c.url, key: c.apiKey };
-    } catch { /* keep searching */ }
-  }
-  // same-host install: talk to the local service with its own token
-  for (const dir of dirs) {
-    try {
-      const c = JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8'));
-      if (c.serviceToken) return { url: `http://127.0.0.1:${c.port || 3478}`, key: c.serviceToken };
     } catch { /* keep searching */ }
   }
   return null;
@@ -341,10 +334,7 @@ async function run(target, cmd, sub, args, flags) {
       return post('/api/tokens', { name: args[0] });
     }
     case 'token rotate': return post(`/api/tokens/${id(args[0])}/rotate`, {});
-    case 'token revoke': {
-      if (args[0] === 'legacy') return del('/api/tokens/legacy');
-      return del(`/api/tokens/${id(args[0])}`);
-    }
+    case 'token revoke': return del(`/api/tokens/${id(args[0])}`);
 
     case 'provider list': return get('/api/providers');
     case 'provider add': {

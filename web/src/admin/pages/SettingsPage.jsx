@@ -114,9 +114,6 @@ const DICT = {
     tokenCopied: '已复制',
     tokenRotate: '轮换',
     tokenRevoke: '吊销',
-    tokenLegacyName: '旧版共享密钥（config.serviceToken）',
-    tokenLegacyBadge: '旧版',
-    tokenLegacyHint: '建议：创建命名密钥并迁移客户端后，吊销这把共享密钥',
     tokenCreatedAt: (t) => `创建于 ${t}`,
     tokenLastUsed: (t) => (t ? `最近使用 ${t}` : '从未使用'),
     tokenEmpty: '暂无命名密钥',
@@ -224,9 +221,6 @@ const DICT = {
     tokenCopied: 'Copied',
     tokenRotate: 'Rotate',
     tokenRevoke: 'Revoke',
-    tokenLegacyName: 'Legacy shared key (config.serviceToken)',
-    tokenLegacyBadge: 'Legacy',
-    tokenLegacyHint: 'Recommended: create named keys, migrate clients, then revoke this shared key',
     tokenCreatedAt: (t) => `Created ${t}`,
     tokenLastUsed: (t) => (t ? `Last used ${t}` : 'Never used'),
     tokenEmpty: 'No named keys yet',
@@ -335,10 +329,9 @@ function ProviderForm({ provider, onDone, onCancel }) {
 function TokensCard() {
   const T = useLangDict(DICT);
   const [tokens, setTokens] = useState([]);
-  const [legacy, setLegacy] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
-  const [busy, setBusy] = useState({}); // { [id|'legacy'|'create']: true }
+  const [busy, setBusy] = useState({}); // { [id|'create']: true }
   const [msg, setMsg] = useState(null); // { ok, text }
   // { name, token } — plaintext shown exactly once after create/rotate
   const [minted, setMinted] = useState(null);
@@ -348,7 +341,6 @@ function TokensCard() {
     try {
       const r = await api('api/tokens');
       setTokens(r.tokens);
-      setLegacy(r.legacy);
     } catch { /* page-level load error handling covers the rest */ }
   }, []);
 
@@ -391,17 +383,17 @@ function TokensCard() {
     }
   };
 
-  const onRevoke = async (key, apiPath) => {
-    if (busy[key]) return;
-    setBusy((s) => ({ ...s, [key]: true }));
+  const onRevoke = async (t) => {
+    if (busy[t.id]) return;
+    setBusy((s) => ({ ...s, [t.id]: true }));
     setMsg(null);
     try {
-      await api(apiPath, { method: 'DELETE' });
+      await api(`api/tokens/${t.id}`, { method: 'DELETE' });
       await load();
     } catch (err) {
       if (err.status !== 401) setMsg({ ok: false, text: T.tokenRevokeFailed });
     } finally {
-      setBusy((s) => ({ ...s, [key]: false }));
+      setBusy((s) => ({ ...s, [t.id]: false }));
     }
   };
 
@@ -477,7 +469,7 @@ function TokensCard() {
                     {busy[t.id] ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : <RefreshCw strokeWidth={1.75} />}
                     {T.tokenRotate}
                   </Button>
-                  <Button type="button" variant="ghost" className="h-8 px-2.5 text-sm text-muted-foreground hover:text-destructive" disabled={Boolean(busy[t.id])} onClick={() => onRevoke(t.id, `api/tokens/${t.id}`)}>
+                  <Button type="button" variant="ghost" className="h-8 px-2.5 text-sm text-muted-foreground hover:text-destructive" disabled={Boolean(busy[t.id])} onClick={() => onRevoke(t)}>
                     <Trash2 strokeWidth={1.75} />
                     {T.tokenRevoke}
                   </Button>
@@ -485,21 +477,7 @@ function TokensCard() {
               </div>
             </li>
           ))}
-          {legacy ? (
-            <li className="rounded-lg border border-border px-4 py-3">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <span className="text-[0.95rem] font-medium">{T.tokenLegacyName}</span>
-                <Badge>{T.tokenLegacyBadge}</Badge>
-                <span className="grow" />
-                <Button type="button" variant="ghost" className="h-8 px-2.5 text-sm text-muted-foreground hover:text-destructive" disabled={Boolean(busy.legacy)} onClick={() => onRevoke('legacy', 'api/tokens/legacy')}>
-                  {busy.legacy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : <Trash2 strokeWidth={1.75} />}
-                  {T.tokenRevoke}
-                </Button>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">{T.tokenLegacyHint}</p>
-            </li>
-          ) : null}
-          {!tokens.length && !legacy ? (
+          {!tokens.length ? (
             <li className="text-sm text-muted-foreground">{T.tokenEmpty}</li>
           ) : null}
         </ul>

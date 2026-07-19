@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -13,13 +14,15 @@ import { DigestGenerator } from '../src/lib/digest.js';
 import { sendJson } from '../src/lib/http-util.js';
 
 const KEY = 'test-api-key-abcdef';
+const sha256hex = v => crypto.createHash('sha256').update(v).digest('hex');
 
 /** Boot the real Api over a real HTTP server — bearer-scope integration tests. */
 async function boot() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'standup-api-'));
   const store = new Store(path.join(dir, 'test.db'));
+  // v0.18: bearer keys live in the DB only — seed the fixture key
+  store.createApiToken('test', sha256hex(KEY));
   const config = {
-    serviceToken: KEY,
     timeZone: 'Asia/Shanghai',
     auth: { enabled: true, password: hashPassword('pw') },
   };
@@ -42,8 +45,7 @@ async function boot() {
     else store.setCycleDigest(id, key, '## 共识\n- stub');
     return '## 共识\n- stub';
   };
-  const api = new Api(store, auth, getConfig, settings, new AgentContext(store), digests,
-    () => { /* persistConfig stub — config object already mutated in place */ });
+  const api = new Api(store, auth, getConfig, settings, new AgentContext(store), digests);
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://internal');
     if (await api.handle(req, res, url)) return;
@@ -522,7 +524,7 @@ test('time zone setting: layering, validation, blank revert (v0.10.4)', async ()
   }
 });
 
-test('named API tokens: create/list/auth/rotate/revoke + legacy revoke (v0.17)', async () => {
+test('named API tokens: create/list/auth/rotate/revoke (v0.17/v0.18)', async () => {
   const { call, close } = await boot();
   try {
     // create — plaintext returned exactly once
@@ -534,10 +536,9 @@ test('named API tokens: create/list/auth/rotate/revoke + legacy revoke (v0.17)',
     assert.equal((await call('POST', '/api/tokens', { name: 'luna' })).status, 409);
     assert.equal((await call('POST', '/api/tokens', { name: '  ' })).status, 400);
 
-    // list never exposes secrets; legacy config key is flagged
+    // list never exposes secrets
     const list = await call('GET', '/api/tokens');
     assert.equal(list.status, 200);
-    assert.equal(list.data.legacy, true);
     const row = list.data.tokens.find(t => t.id === tid);
     assert.equal(row.name, 'luna');
     assert.equal(Object.hasOwn(row, 'token'), false);
@@ -558,15 +559,14 @@ test('named API tokens: create/list/auth/rotate/revoke + legacy revoke (v0.17)',
     const asRotated = { Authorization: `Bearer ${rotated.data.token}` };
     assert.equal((await call('GET', '/api/members', null, asRotated)).status, 200);
 
-    // legacy config.serviceToken can be revoked remotely (rotation end-state)
-    assert.equal((await call('DELETE', '/api/tokens/legacy', null, asRotated)).status, 200);
-    assert.equal((await call('GET', '/api/members')).status, 401); // boot()'s default KEY header
-    assert.equal((await call('GET', '/api/tokens', null, asRotated)).data.legacy, false);
-
-    // revoke the named token — bearer access fully gone
+    // revoke the named token — its bearer access fully gone
     assert.equal((await call('DELETE', `/api/tokens/${tid}`, null, asRotated)).status, 200);
     assert.equal((await call('GET', '/api/members', null, asRotated)).status, 401);
-    assert.equal((await call('DELETE', '/api/tokens/999', null, asRotated)).status, 401);
+    assert.equal((await call('DELETE', '/api/tokens/999')).status, 404);
+
+    // v0.18: config.serviceToken is not a credential — even if present in config
+    const cfgTok = { Authorization: 'Bearer some-config-service-token' };
+    assert.equal((await call('GET', '/api/members', null, cfgTok)).status, 401);
   } finally {
     close();
   }

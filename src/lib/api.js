@@ -28,14 +28,13 @@ function newToken() {
 }
 
 export class Api {
-  constructor(store, auth, getConfig, settings, context, digests, persistConfig = null) {
+  constructor(store, auth, getConfig, settings, context, digests) {
     this.store = store;
     this.auth = auth;
     this.getConfig = getConfig;
     this.settings = settings;
     this.context = context;
     this.digests = digests;
-    this.persistConfig = persistConfig;
   }
 
   // The whole admin surface is reachable by a human admin (session cookie) OR
@@ -43,9 +42,9 @@ export class Api {
   // reports and settings alike. Owner's 2026-07-18 ruling: the API key is a
   // full management credential so agents can operate the app (via
   // scripts/cli.js) without touching the database; only the login itself
-  // stays session-only. v0.17: keys are named DB rows (sha256 at rest,
-  // create/rotate/revoke via /api/tokens); config.serviceToken remains
-  // honored as an unlisted legacy key until revoked.
+  // stays session-only. v0.18: keys are named DB rows only (sha256 at rest,
+  // create/rotate/revoke via /api/tokens); a pre-v0.18 config.serviceToken
+  // is migrated into the DB at startup.
   isManager(req) {
     if (this.auth.isAuthenticated(req)) return true;
     const m = /^Bearer\s+(.+)$/i.exec(req.headers.authorization || '');
@@ -53,17 +52,9 @@ export class Api {
     if (!tok) return false;
     const row = this.store.getApiTokenByHash(
       crypto.createHash('sha256').update(tok).digest('hex'));
-    if (row) {
-      this.store.touchApiToken(row.id);
-      return true;
-    }
-    const svc = this.getConfig().serviceToken;
-    if (!svc || tok.length !== svc.length) return false;
-    try {
-      return crypto.timingSafeEqual(Buffer.from(tok), Buffer.from(svc));
-    } catch {
-      return false;
-    }
+    if (!row) return false;
+    this.store.touchApiToken(row.id);
+    return true;
   }
 
   // publicOrigin covers TLS-terminating proxies that forward plain http
@@ -234,7 +225,6 @@ export class Api {
 
     if (p === '/api/tokens' && req.method === 'GET') return this.listTokens(res), true;
     if (p === '/api/tokens' && req.method === 'POST') return await this.createToken(req, res), true;
-    if (p === '/api/tokens/legacy' && req.method === 'DELETE') return this.revokeLegacyToken(res), true;
 
     m = p.match(/^\/api\/tokens\/(\d+)\/rotate$/);
     if (m && req.method === 'POST') return this.rotateToken(res, Number(m[1])), true;
@@ -249,10 +239,7 @@ export class Api {
   // ---- management API tokens (v0.17) ----
 
   listTokens(res) {
-    sendJson(res, 200, {
-      tokens: this.store.listApiTokens(),
-      legacy: Boolean(this.getConfig().serviceToken),
-    });
+    sendJson(res, 200, { tokens: this.store.listApiTokens() });
   }
 
   async createToken(req, res) {
@@ -283,21 +270,6 @@ export class Api {
   revokeToken(res, id) {
     if (!this.store.deleteApiToken(id)) return sendJson(res, 404, { error: 'not_found' });
     sendJson(res, 200, { ok: true, revoked: id });
-  }
-
-  // Revoke the legacy config.serviceToken (rotation end-state: mint named
-  // tokens, move clients over, then kill the shared legacy key).
-  revokeLegacyToken(res) {
-    const config = this.getConfig();
-    if (!config.serviceToken) return sendJson(res, 404, { error: 'not_found' });
-    if (!this.persistConfig) return sendJson(res, 501, { error: 'not_supported' });
-    delete config.serviceToken;
-    try {
-      this.persistConfig(config);
-    } catch {
-      return sendJson(res, 500, { error: 'persist_failed' });
-    }
-    sendJson(res, 200, { ok: true, revoked: 'legacy' });
   }
 
   // Pre-generated wav samples (scripts/generate-voice-samples.mjs and

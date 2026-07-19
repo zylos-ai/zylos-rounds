@@ -12,15 +12,16 @@ test('parseArgs separates flags (anywhere) from positionals', () => {
   assert.equal(flags.tags, 'release');
 });
 
-test('resolveTarget precedence: flags > env > cli.json > config.json', () => {
+test('resolveTarget precedence: flags > env > cli.json', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'standup-cli-'));
   const dataDir = path.join(home, 'zylos/components/rounds');
   fs.mkdirSync(dataDir, { recursive: true });
 
   assert.equal(resolveTarget({}, {}, home), null); // nothing configured
 
+  // v0.18: config.json is not a credential source anymore
   fs.writeFileSync(path.join(dataDir, 'config.json'), JSON.stringify({ port: 4000, serviceToken: 'cfg-key' }));
-  assert.deepEqual(resolveTarget({}, {}, home), { url: 'http://127.0.0.1:4000', key: 'cfg-key' });
+  assert.equal(resolveTarget({}, {}, home), null);
 
   fs.writeFileSync(path.join(dataDir, 'cli.json'), JSON.stringify({ url: 'https://host/standup', apiKey: 'cli-key' }));
   assert.deepEqual(resolveTarget({}, {}, home), { url: 'https://host/standup', key: 'cli-key' });
@@ -55,15 +56,10 @@ test('resolveTarget searches ROUNDS_HOME and ~/.rounds before the zylos data dir
   fs.writeFileSync(path.join(customDir, 'cli.json'), JSON.stringify({ url: 'https://custom/rounds', apiKey: 'c-key' }));
   assert.deepEqual(resolveTarget({}, { ROUNDS_HOME: customDir }, home), { url: 'https://custom/rounds', key: 'c-key' });
 
-  // any cli.json wins over any config.json (mode beats directory order)
+  // config.json in any dir never resolves (v0.18: cli.json only)
   fs.rmSync(path.join(customDir, 'cli.json'));
   fs.rmSync(path.join(dotDir, 'cli.json'));
   fs.rmSync(path.join(zylosDir, 'cli.json'));
   fs.writeFileSync(path.join(customDir, 'config.json'), JSON.stringify({ port: 5000, serviceToken: 'local-key' }));
-  fs.writeFileSync(path.join(zylosDir, 'cli.json'), JSON.stringify({ url: 'https://zylos/rounds', apiKey: 'z-key' }));
-  assert.deepEqual(resolveTarget({}, { ROUNDS_HOME: customDir }, home), { url: 'https://zylos/rounds', key: 'z-key' });
-
-  // ROUNDS_HOME config.json (standalone same-host) resolves when no cli.json anywhere
-  fs.rmSync(path.join(zylosDir, 'cli.json'));
-  assert.deepEqual(resolveTarget({}, { ROUNDS_HOME: customDir }, home), { url: 'http://127.0.0.1:5000', key: 'local-key' });
+  assert.equal(resolveTarget({}, { ROUNDS_HOME: customDir }, home), null);
 });

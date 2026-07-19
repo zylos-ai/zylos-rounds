@@ -246,8 +246,9 @@ export const MIGRATIONS = [
   },
   {
     // v0.17 named management API keys: per-client bearer tokens (create /
-    // rotate / revoke without touching the server), sha256 at rest. The
-    // config.json serviceToken keeps working as an unlisted legacy key.
+    // rotate / revoke without touching the server), sha256 at rest. Since
+    // v0.18 these are the only bearer credentials (config.serviceToken is
+    // migrated into this table at startup).
     version: 11,
     sql: `
       CREATE TABLE IF NOT EXISTS api_tokens (
