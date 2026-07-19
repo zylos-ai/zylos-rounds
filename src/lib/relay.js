@@ -137,7 +137,7 @@ export class Relay {
       session: {
         type: 'realtime',
         output_modalities: mode === 'text' ? ['text'] : ['audio'],
-        instructions: this.context.buildInstructions(member, task, prior),
+        instructions: this.context.buildInstructions(member, task, prior, this.settings.resolveTimeZone()),
         tools: generic ? GENERIC_TOOLS : TOOLS,
         tool_choice: 'auto',
         audio: {
@@ -220,7 +220,7 @@ export class Relay {
     const generic = task && !task.is_builtin;
     const model = conn.model;
     const maxSessionMs = cfg.maxSessionMs ?? 10 * 60 * 1000;
-    const reportDate = todayLocal(cfg.timeZone);
+    const reportDate = todayLocal(this.settings.resolveTimeZone());
     // Conversations bind to the cycle current at connect time (lenient windows).
     // A recurring task whose first cycle hasn't started yet has no cycle to
     // record into — reject up front rather than losing the conversation.

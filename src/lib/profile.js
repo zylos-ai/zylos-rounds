@@ -99,7 +99,7 @@ export class ProfileUpdater {
       const conn = this.settings.textConnection('profile');
       if (!conn.key) return false;
 
-      const today = new Date().toLocaleDateString('sv', { timeZone: this.getConfig().timeZone || 'Asia/Shanghai' });
+      const today = new Date().toLocaleDateString('sv', { timeZone: this.settings.resolveTimeZone() });
       let transcript = (rec.transcript || '').trim();
       if (transcript.length > MAX_TRANSCRIPT_CHARS) transcript = `…${transcript.slice(-MAX_TRANSCRIPT_CHARS)}`;
       const prompt = [

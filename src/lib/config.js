@@ -22,7 +22,7 @@ export const DEFAULT_CONFIG = {
   transcriptionModel: 'gpt-realtime-whisper',
   maxConcurrent: 4,
   maxSessionMs: 10 * 60 * 1000,
-  timeZone: 'Asia/Shanghai',
+  timeZone: '', // blank = settings default (Asia/Singapore); override in settings UI
   auth: {
     enabled: true,
     password: '', // scrypt hash; plaintext is auto-migrated to a hash on first start

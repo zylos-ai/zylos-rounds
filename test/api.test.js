@@ -462,3 +462,28 @@ test('gemini voices: per-protocol options, resolveVoice fallback, sample serving
     close();
   }
 });
+
+test('time zone setting: layering, validation, blank revert (v0.10.4)', async () => {
+  const { call, close } = await boot();
+  try {
+    // nothing stored -> config.json layer wins (fixture sets Asia/Shanghai;
+    // with no config value the built-in default is Asia/Singapore)
+    let s = (await call('GET', '/api/settings')).data;
+    assert.equal(s.time_zone, '');
+    assert.equal(s.time_zone_default, 'Asia/Shanghai');
+    assert.equal(s.time_zone_effective, 'Asia/Shanghai');
+
+    // set a valid zone; garbage rejected
+    s = (await call('PUT', '/api/settings', { time_zone: 'Asia/Tokyo' })).data;
+    assert.equal(s.time_zone, 'Asia/Tokyo');
+    assert.equal(s.time_zone_effective, 'Asia/Tokyo');
+    assert.equal((await call('PUT', '/api/settings', { time_zone: 'Mars/Olympus' })).status, 400);
+
+    // blank reverts to the default
+    s = (await call('PUT', '/api/settings', { time_zone: '' })).data;
+    assert.equal(s.time_zone, '');
+    assert.equal(s.time_zone_effective, 'Asia/Shanghai');
+  } finally {
+    close();
+  }
+});

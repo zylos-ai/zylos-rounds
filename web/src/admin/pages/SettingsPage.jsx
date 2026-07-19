@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AudioLines, CheckCircle2, FileText, Loader2, Pencil, Plus, RefreshCw,
+  AudioLines, CheckCircle2, FileText, Globe, Loader2, Pencil, Plus, RefreshCw,
   Server, Square, Trash2, Volume2, XCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -21,6 +21,13 @@ const TEST_ERRORS = {
 };
 
 const SLOT_LABELS = { voice: '语音', profile: '画像', digest: '汇总' };
+
+// datalist suggestions only — any valid IANA zone is accepted
+const TZ_SUGGESTIONS = [
+  'Asia/Singapore', 'Asia/Shanghai', 'Asia/Hong_Kong', 'Asia/Taipei', 'Asia/Tokyo',
+  'Asia/Seoul', 'Asia/Bangkok', 'Asia/Jakarta', 'Asia/Kolkata', 'Asia/Dubai',
+  'Europe/London', 'Europe/Paris', 'America/New_York', 'America/Los_Angeles', 'UTC',
+];
 
 const testErrorText = (r) => TEST_ERRORS[r.error] || `失败（${r.error}）`;
 
@@ -196,6 +203,12 @@ export default function SettingsPage() {
   const textMsgTimer = useRef(null);
   const [textTest, setTextTest] = useState({}); // { profile|digest: { busy, result } }
 
+  // time-zone card state
+  const [tz, setTz] = useState('');
+  const [tzBusy, setTzBusy] = useState(false);
+  const [tzMsg, setTzMsg] = useState(null);
+  const tzMsgTimer = useRef(null);
+
   // model suggestion cache per provider slug ('' = builtin)
   const [modelCache, setModelCache] = useState({});
   const [refreshBusy, setRefreshBusy] = useState({}); // { [cacheKey]: true }
@@ -260,16 +273,40 @@ export default function SettingsPage() {
       setDigestProvider(data.digest_provider || '');
       setProfileModel(data.profile_model || '');
       setDigestModel(data.digest_model || '');
+      setTz(data.time_zone || '');
     } catch (err) {
       if (err.status !== 401) setLoadError('加载失败，请刷新重试');
     }
   }, []);
+
+  const onSaveTz = useCallback(async (e) => {
+    e?.preventDefault();
+    if (tzBusy) return;
+    setTzBusy(true);
+    try {
+      const data = await api('api/settings', { method: 'PUT', body: { time_zone: tz.trim() } });
+      setSettings(data);
+      setTz(data.time_zone || '');
+      flash(setTzMsg, tzMsgTimer, { ok: true, text: `已保存，当前生效：${data.time_zone_effective}（下一次通话生效）` });
+    } catch (err) {
+      if (err.status !== 401) {
+        flash(setTzMsg, tzMsgTimer, {
+          ok: false,
+          text: err.data?.error === 'invalid_time_zone' ? '无效时区，请填 IANA 名称（如 Asia/Singapore）' : '保存失败，请重试',
+        });
+      }
+    } finally {
+      setTzBusy(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tz, tzBusy]);
 
   useEffect(() => {
     load();
     return () => {
       clearTimeout(msgTimer.current);
       clearTimeout(textMsgTimer.current);
+      clearTimeout(tzMsgTimer.current);
     };
   }, [load]);
 
@@ -597,6 +634,47 @@ export default function SettingsPage() {
 
           {textMsg ? (
             <p className={cn('mt-3 text-sm', textMsg.ok ? 'text-success' : 'text-destructive')}>{textMsg.text}</p>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      {/* time zone */}
+      <Card className="mt-6">
+        <CardContent className="px-6 py-6">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent text-muted-foreground">
+              <Globe className="h-5 w-5" strokeWidth={1.75} />
+            </span>
+            <div>
+              <h2 className="text-lg font-semibold leading-tight">时区</h2>
+              <p className="mt-0.5 text-sm text-muted-foreground">影响对话里的时间感知（问候语、"今天/昨天"）和日报的归属日期</p>
+            </div>
+          </div>
+
+          <form onSubmit={onSaveTz} className="mt-6 flex flex-wrap items-end gap-4">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium text-muted-foreground">IANA 时区</span>
+              <Input
+                value={tz}
+                onChange={(e) => setTz(e.target.value)}
+                placeholder={settings.time_zone_default}
+                autoComplete="off"
+                list="tz-suggestions"
+                className="h-11 w-[260px] max-w-full text-base"
+              />
+              <datalist id="tz-suggestions">
+                {TZ_SUGGESTIONS.map((z) => <option key={z} value={z} />)}
+              </datalist>
+            </label>
+            <Button type="submit" className="h-11 px-6 text-[0.95rem]" disabled={tzBusy}>
+              {tzBusy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
+              保存
+            </Button>
+          </form>
+          <p className="mt-2 text-sm text-muted-foreground">留空使用默认（{settings.time_zone_default}）· 当前生效：{settings.time_zone_effective}</p>
+
+          {tzMsg ? (
+            <p className={cn('mt-3 text-sm', tzMsg.ok ? 'text-success' : 'text-destructive')}>{tzMsg.text}</p>
           ) : null}
         </CardContent>
       </Card>

@@ -73,7 +73,7 @@ export class Api {
     if (p === '/api/auth/login') return this.auth.handleLogin(req, res), true;
     if (p === '/api/auth/logout') return this.auth.handleLogout(req, res), true;
     if (p === '/api/auth/me') {
-      const date = todayLocal(this.getConfig().timeZone);
+      const date = todayLocal(this.settings.resolveTimeZone());
       sendJson(res, 200, { authenticated: this.auth.isAuthenticated(req), date });
       return true;
     }
@@ -84,7 +84,7 @@ export class Api {
       const token = url.searchParams.get('token') || '';
       const ts = this.store.getTaskSessionByToken(token);
       if (!ts) return sendJson(res, 404, { error: 'invalid_token' }), true;
-      const date = todayLocal(this.getConfig().timeZone);
+      const date = todayLocal(this.settings.resolveTimeZone());
       // today's existing record (if any) so the talk page can open in
       // "continue" mode showing the submitted summary instead of a cold start
       let prior = null;
@@ -378,6 +378,10 @@ export class Api {
       model_options: MODEL_OPTIONS, // suggestions only since v0.8
       voice_options: VOICE_OPTIONS,
       gemini_voice_options: GEMINI_VOICES,
+      // time zone: stored value ('' = unset, default applies) + layering info
+      time_zone: this.settings.storedTimeZone(),
+      time_zone_default: this.settings.defaultTimeZone(),
+      time_zone_effective: this.settings.resolveTimeZone(),
       // usage slots: stored provider slug ('' = default builtin) + effective slug
       voice_provider: this.settings.storedSlotProvider('voice'),
       profile_provider: this.settings.storedSlotProvider('profile'),
@@ -412,6 +416,18 @@ export class Api {
         return sendJson(res, 400, { error: 'invalid_voice' });
       }
       this.settings.setVoice(body.voice);
+    }
+    // '' reverts to the default (config.json > Asia/Singapore)
+    if (body.time_zone !== undefined) {
+      const tz = String(body.time_zone).trim();
+      if (tz) {
+        try {
+          new Intl.DateTimeFormat('en-US', { timeZone: tz });
+        } catch {
+          return sendJson(res, 400, { error: 'invalid_time_zone' });
+        }
+      }
+      this.settings.setTimeZone(tz);
     }
     // usage slots: '' reverts to the default (builtin) provider
     for (const slot of SLOTS) {
@@ -594,7 +610,7 @@ export class Api {
   }
 
   listTasks(req, res) {
-    const today = todayLocal(this.getConfig().timeZone);
+    const today = todayLocal(this.settings.resolveTimeZone());
     const tasks = this.store.listTasks().map(t => {
       const base = this.taskJson(t);
       if (t.is_builtin) {
@@ -623,7 +639,7 @@ export class Api {
   taskDetail(req, res, id, cycleParam = null) {
     const task = this.store.getTask(id);
     if (!task) return sendJson(res, 404, { error: 'not_found' });
-    const today = todayLocal(this.getConfig().timeZone);
+    const today = todayLocal(this.settings.resolveTimeZone());
     const requested = /^\d{4}-\d{2}-\d{2}$/.test(cycleParam || '') ? cycleParam : null;
 
     if (task.is_builtin) {
@@ -751,7 +767,7 @@ export class Api {
     const type = body.type === 'recurring' ? 'recurring' : 'oneshot';
     let cadence = {};
     if (type === 'recurring') {
-      const c = this.readCadence(body, todayLocal(this.getConfig().timeZone));
+      const c = this.readCadence(body, todayLocal(this.settings.resolveTimeZone()));
       if (c.error) return sendJson(res, 400, { error: c.error });
       cadence = c.fields;
     }
@@ -782,7 +798,7 @@ export class Api {
       // cadence is only meaningful on user-created recurring tasks; the
       // built-in daily stays daily
       if (task.type !== 'recurring' || task.is_builtin) return sendJson(res, 400, { error: 'cadence_not_editable' });
-      const c = this.readCadence(body, todayLocal(this.getConfig().timeZone));
+      const c = this.readCadence(body, todayLocal(this.settings.resolveTimeZone()));
       if (c.error) return sendJson(res, 400, { error: c.error });
       cadence = c.fields;
     }

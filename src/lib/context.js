@@ -56,10 +56,22 @@ export class AgentContext {
    * behaviour, not code). Custom recurring tasks add a "this round" framing
    * so members understand it repeats.
    */
-  buildInstructions(member, task = null, prior = null) {
+  buildInstructions(member, task = null, prior = null, timeZone = 'Asia/Shanghai') {
     const name = member.name;
     const generic = task && !task.is_builtin;
     const recurring = generic && task.type === 'recurring';
+    // Fresh wall-clock time every session — the model has no clock of its own
+    // and defaults to morning-greeting phrasing ("早安") at any hour without it.
+    const now = new Date();
+    const dateStr = new Intl.DateTimeFormat('zh-CN', {
+      timeZone, year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
+    }).format(now);
+    const hm = new Intl.DateTimeFormat('zh-CN', {
+      timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).format(now);
+    const hour = Number(hm.split(':')[0]);
+    const period = hour < 5 ? '凌晨' : hour < 9 ? '早上' : hour < 12 ? '上午' : hour < 14 ? '中午' : hour < 18 ? '下午' : '晚上';
+    const timeLine = `现在是${dateStr}，${period} ${hm}。打招呼和措辞要符合这个时间段（比如下午就不要说早安），提到"今天/昨天"也以这个日期为准。`;
     const parts = generic ? [
       recurring
         ? `你是 Luna，代表团队负责人和同事「${name}」就「${task.title}」做本期的一对一语音沟通（这是一个定期进行的沟通任务）。全程说中文，口语自然、简短友好。`
@@ -69,6 +81,7 @@ export class AgentContext {
       `你是团队的日报助手 Luna，正在和同事「${name}」做每日语音汇报，全程说中文，口语自然、简短友好。`,
       `流程：先简单打个招呼，然后依次了解四件事：1) 昨天做了什么；2) 今天准备做什么；3) 有什么卡点或风险；4) 有什么问题需要在今天日会上讨论。一次只问一个问题，对方明显说完了就进入下一题，整个对话控制在五分钟以内。`,
     ];
+    parts.splice(1, 0, timeLine);
 
     if (generic) {
       const brief = (task.brief || '').trim();

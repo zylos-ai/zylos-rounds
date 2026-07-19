@@ -179,3 +179,18 @@ test('submission-gate hard rule present in all instruction variants', () => {
   assert.match(cont, /已提交过不等于可以早点收尾/);
   s.close();
 });
+
+test('instructions carry fresh wall-clock time in the configured zone (v0.10.4)', () => {
+  const s = tmpStore();
+  const ctx = new AgentContext(s);
+  const member = { name: '小王', context: null, profile: null };
+  const text = ctx.buildInstructions(member, null, null, 'Asia/Singapore');
+  assert.match(text, /现在是\d{4}年\d{1,2}月\d{1,2}日星期./);
+  assert.match(text, /(凌晨|早上|上午|中午|下午|晚上) \d{2}:\d{2}/);
+  assert.match(text, /下午就不要说早安/);
+  // a very different zone must produce a different clock time
+  const other = ctx.buildInstructions(member, null, null, 'America/New_York');
+  const hm = t => t.match(/(\d{2}:\d{2})。/)?.[1];
+  assert.notEqual(hm(text), hm(other));
+  s.close();
+});

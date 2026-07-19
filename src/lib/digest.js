@@ -98,7 +98,7 @@ export class DigestGenerator {
     if (!task || task.is_builtin) return null;
     const key = cycleKey ?? (task.type === 'oneshot'
       ? ONESHOT_CYCLE
-      : currentCycleKey(task, todayLocal(this.getConfig().timeZone)));
+      : currentCycleKey(task, todayLocal(this.settings.resolveTimeZone())));
     if (!key) return null;
     const rows = this.store.cycleRecords(taskId, key);
     if (!rows.some(r => r.status === 'submitted')) return null;
@@ -147,7 +147,7 @@ export class DigestGenerator {
   }
 
   async runDue() {
-    const tz = this.getConfig().timeZone || 'Asia/Shanghai';
+    const tz = this.settings.resolveTimeZone();
     const now = new Date().toLocaleString('sv', { timeZone: tz }).replace(' ', 'T');
     for (const task of this.store.dueAutoDigestTasks(now)) {
       // fired even when generation is skipped (nothing submitted) — an empty

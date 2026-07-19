@@ -123,6 +123,25 @@ export class Settings {
     this.store.setSetting('model', value);
   }
 
+  // ---- time zone (DB > config.json > Singapore default) ----
+
+  storedTimeZone() {
+    return this.store.getSetting('time_zone') || '';
+  }
+
+  defaultTimeZone() {
+    return this.getConfig().timeZone || 'Asia/Singapore';
+  }
+
+  resolveTimeZone() {
+    return this.storedTimeZone() || this.defaultTimeZone();
+  }
+
+  setTimeZone(value) {
+    if (value) this.store.setSetting('time_zone', value);
+    else this.store.deleteSetting('time_zone');
+  }
+
   setVoice(value) {
     this.store.setSetting('voice', value);
   }

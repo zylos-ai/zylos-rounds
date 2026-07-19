@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.4] - 2026-07-19
+
+### Added
+- **Session-start wall-clock injection.** Instructions now open with the
+  current date, weekday and a period-labelled time (凌晨/早上/上午/中午/下午/晚上)
+  in the configured time zone, with an explicit rule to match greetings to
+  the time of day — the model has no clock and greeted "早安" at any hour
+- **Configurable time zone.** New settings-DB `time_zone` (admin UI card with
+  IANA suggestions, `PUT /api/settings {time_zone}`, CLI `--time-zone`),
+  layered DB > config.json > `Asia/Singapore` default and validated via Intl.
+  Every timeZone consumer (session instructions, report dates, cycle keys,
+  digests, profile dates) now resolves through it
+
+### Fixed
+- SKILL.md frontmatter version had fallen behind since 0.10.2 — realigned
+
 ## [0.10.3] - 2026-07-19
 
 ### Fixed

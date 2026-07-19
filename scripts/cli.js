@@ -68,9 +68,9 @@ Reports & settings
   report today | report <YYYY-MM-DD>  day digest (structured + transcripts)
   report history                      per-day submission counts
   settings get
-  settings set [--model M] [--voice V] [--profile-model M] [--digest-model M]
+  settings set [--model M] [--voice V] [--time-zone TZ] [--profile-model M] [--digest-model M]
                [--voice-provider S] [--profile-provider S] [--digest-provider S]
-                                      models for 画像/汇总 + provider slug per slot; '' reverts to default
+                                      models for 画像/汇总 + provider slug per slot + IANA time zone; '' reverts to default
 
 Providers (v0.8)
   provider list
@@ -301,10 +301,11 @@ async function run(target, cmd, sub, args, flags) {
       if (flags.voice) body.voice = flags.voice;
       if (flags['profile-model'] !== undefined) body.profile_model = flags['profile-model'];
       if (flags['digest-model'] !== undefined) body.digest_model = flags['digest-model'];
+      if (flags['time-zone'] !== undefined) body.time_zone = flags['time-zone'];
       for (const slot of ['voice', 'profile', 'digest']) {
         if (flags[`${slot}-provider`] !== undefined) body[`${slot}_provider`] = flags[`${slot}-provider`];
       }
-      if (!Object.keys(body).length) fail('usage: settings set [--model M] [--voice V] [--profile-model M] [--digest-model M] [--voice-provider S] [--profile-provider S] [--digest-provider S]');
+      if (!Object.keys(body).length) fail('usage: settings set [--model M] [--voice V] [--time-zone TZ] [--profile-model M] [--digest-model M] [--voice-provider S] [--profile-provider S] [--digest-provider S]');
       return put('/api/settings', body);
     }
 
