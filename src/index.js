@@ -70,8 +70,22 @@ if (!config.serviceToken) {
   try {
     saveConfig(config);
     console.log('[rounds] minted management API service token (config.serviceToken)');
+    console.log(`[rounds] FIRST-START service token (for cli.js / remote clients): ${config.serviceToken}`);
   } catch (err) {
     console.error(`[rounds] failed to persist service token: ${err.message}`);
+  }
+}
+
+// Standalone first start: auth is on but no password exists yet (the zylos
+// component install seeds one via its post-install hook). Generate one,
+// print it once, and persist — AuthGate hashes it in place right after.
+if (config.auth?.enabled && !config.auth.password) {
+  config.auth.password = crypto.randomBytes(9).toString('base64url');
+  try {
+    saveConfig(config);
+    console.log(`[rounds] FIRST-START admin password (change it in config.json anytime): ${config.auth.password}`);
+  } catch (err) {
+    console.error(`[rounds] failed to persist generated admin password: ${err.message}`);
   }
 }
 
@@ -132,8 +146,11 @@ const server = http.createServer(async (req, res) => {
 relay.attach(server);
 
 const port = config.port ?? 3478;
-server.listen(port, '127.0.0.1', () => {
-  console.log(`[rounds] Listening on 127.0.0.1:${port} (model=${settings.resolveModel()}, voice=${settings.resolveVoice()}, key=${settings.keySource()}, proxy=${env.proxy ? 'on' : 'off'}, auth=${auth.enabled ? 'on' : 'OFF'})`);
+// Bind host: 127.0.0.1 behind the zylos reverse proxy (default); Docker /
+// standalone set ROUNDS_BIND=0.0.0.0 (or config.host) to expose the port.
+const host = process.env.ROUNDS_BIND || config.host || '127.0.0.1';
+server.listen(port, host, () => {
+  console.log(`[rounds] Listening on ${host}:${port} (model=${settings.resolveModel()}, voice=${settings.resolveVoice()}, key=${settings.keySource()}, proxy=${env.proxy ? 'on' : 'off'}, auth=${auth.enabled ? 'on' : 'OFF'})`);
 });
 
 function shutdown() {

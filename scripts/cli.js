@@ -9,11 +9,14 @@
  * Credential resolution (first hit wins):
  *   1. --url / --key flags
  *   2. ROUNDS_URL / ROUNDS_API_KEY environment variables
- *   3. ~/zylos/components/rounds/cli.json        {"url": "...", "apiKey": "..."}
- *   4. ~/zylos/components/rounds/config.json     (same-host install: 127.0.0.1:<port> + serviceToken)
+ *   3. cli.json {"url": "...", "apiKey": "..."} in, in order:
+ *      $ROUNDS_HOME → ~/.rounds → ~/zylos/components/rounds
+ *   4. config.json (same-host install: 127.0.0.1:<port> + serviceToken),
+ *      searched in the same directory order
  *
- * A remote agent (e.g. the coco avatar) only needs cli.json in its own data
- * directory pointing at the public URL — see SKILL.md.
+ * A remote agent (Claude Code, Codex, the coco avatar, any framework — no
+ * zylos required) only needs ~/.rounds/cli.json pointing at the server's
+ * public URL — see client/SKILL.md.
  */
 
 import fs from 'node:fs';
@@ -109,15 +112,26 @@ export function parseArgs(argv) {
 export function resolveTarget(flags, env, home) {
   if (flags.url && flags.key) return { url: flags.url, key: flags.key };
   if (env.ROUNDS_URL && env.ROUNDS_API_KEY) return { url: env.ROUNDS_URL, key: env.ROUNDS_API_KEY };
-  const dataDir = path.join(home, 'zylos/components/rounds');
-  try {
-    const c = JSON.parse(fs.readFileSync(path.join(dataDir, 'cli.json'), 'utf8'));
-    if (c.url && c.apiKey) return { url: c.url, key: c.apiKey };
-  } catch { /* no cli.json — try the same-host config */ }
-  try {
-    const c = JSON.parse(fs.readFileSync(path.join(dataDir, 'config.json'), 'utf8'));
-    if (c.serviceToken) return { url: `http://127.0.0.1:${c.port || 3478}`, key: c.serviceToken };
-  } catch { /* fall through */ }
+  // cli.json {url, apiKey} — remote/client mode. Searched in order:
+  // $ROUNDS_HOME, ~/.rounds (portable client install), zylos component data dir.
+  const dirs = [
+    env.ROUNDS_HOME,
+    path.join(home, '.rounds'),
+    path.join(home, 'zylos/components/rounds'),
+  ].filter(Boolean);
+  for (const dir of dirs) {
+    try {
+      const c = JSON.parse(fs.readFileSync(path.join(dir, 'cli.json'), 'utf8'));
+      if (c.url && c.apiKey) return { url: c.url, key: c.apiKey };
+    } catch { /* keep searching */ }
+  }
+  // same-host install: talk to the local service with its own token
+  for (const dir of dirs) {
+    try {
+      const c = JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8'));
+      if (c.serviceToken) return { url: `http://127.0.0.1:${c.port || 3478}`, key: c.serviceToken };
+    } catch { /* keep searching */ }
+  }
   return null;
 }
 
@@ -356,7 +370,7 @@ async function main() {
     return;
   }
   const target = resolveTarget(flags, process.env, process.env.HOME || '');
-  if (!target) fail('no credentials: pass --url/--key, set ROUNDS_URL/ROUNDS_API_KEY, or provide cli.json/config.json in ~/zylos/components/rounds/');
+  if (!target) fail('no credentials: pass --url/--key, set ROUNDS_URL/ROUNDS_API_KEY, or provide cli.json in $ROUNDS_HOME, ~/.rounds/ or ~/zylos/components/rounds/');
   const out = await run(target, rest[0], rest[1], rest.slice(2), flags);
   console.log(JSON.stringify(out, null, 2));
 }

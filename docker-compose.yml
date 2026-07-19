@@ -1,0 +1,12 @@
+services:
+  rounds:
+    build: .
+    image: zylos-rounds
+    container_name: rounds
+    ports:
+      - "3478:3478"
+    volumes:
+      - ./data:/data
+    # environment:
+    #   HTTPS_PROXY: http://host.docker.internal:7890   # or set "proxy" in ./data/config.json
+    restart: unless-stopped

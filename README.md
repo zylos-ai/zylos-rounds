@@ -74,11 +74,27 @@ Estimated from real API-reported token usage, by model and by member:
 
 ## Install
 
+As a zylos component:
+
 ```bash
 zylos add rounds
 ```
 
 The generated admin password is printed once during install.
+
+### Standalone (any server, no zylos)
+
+```bash
+git clone https://github.com/zylos-ai/zylos-rounds.git && cd zylos-rounds
+docker compose up -d --build
+docker compose logs rounds   # first start prints the admin password + service token
+```
+
+Full guide (Docker, bare metal + systemd, reverse proxy/TLS):
+[docs/deploy-standalone.md](./docs/deploy-standalone.md). Agents on other
+machines manage the server with the portable single-file client —
+[client/SKILL.md](./client/SKILL.md) — which works from Claude Code, Codex,
+or a bare terminal; credentials live in `~/.rounds/cli.json`.
 
 ## Configuration
 

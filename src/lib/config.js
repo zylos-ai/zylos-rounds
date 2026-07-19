@@ -1,16 +1,23 @@
 /**
  * Configuration loader for zylos-rounds
  *
- * Loads config from ~/zylos/components/rounds/config.json
- * with hot-reload support via file watcher.
+ * Loads config from <data dir>/config.json with hot-reload support via file
+ * watcher. The data dir is $ROUNDS_HOME when set (standalone/Docker installs),
+ * otherwise the zylos component default ~/zylos/components/rounds.
  */
 
 import fs from 'fs';
 import path from 'path';
 
 const HOME = process.env.HOME;
-export const DATA_DIR = path.join(HOME, 'zylos/components/rounds');
+// Standalone deployments point ROUNDS_HOME at any writable data directory
+// (e.g. /data in Docker); the default remains the zylos component data dir.
+export const DATA_DIR = process.env.ROUNDS_HOME || path.join(HOME, 'zylos/components/rounds');
 export const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
+
+// First start on an empty data dir (standalone/Docker) — create it so config,
+// DB and logs have somewhere to live.
+fs.mkdirSync(DATA_DIR, { recursive: true });
 
 // Default configuration
 export const DEFAULT_CONFIG = {

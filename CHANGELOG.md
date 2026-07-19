@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] - 2026-07-20
+
+### Added
+- **Standalone deployment.** The server now runs on any machine without
+  zylos: `ROUNDS_HOME` selects the data directory (default unchanged:
+  `~/zylos/components/rounds`), `ROUNDS_BIND`/`config.host` selects the
+  bind address (default unchanged: `127.0.0.1`), and an empty data dir
+  self-provisions on first start — the admin password and service token
+  are generated and printed once. Ships a `Dockerfile`,
+  `docker-compose.yml` and a full deployment guide
+  (`docs/deploy-standalone.md`: Docker, bare metal + systemd, reverse
+  proxy/TLS).
+- **Portable client package (`client/SKILL.md`).** The zero-dependency
+  `scripts/cli.js` plus a client-oriented SKILL.md install into any agent
+  runtime (Claude Code, Codex, bare terminal) with two `curl` commands —
+  no zylos required. Credentials live in `~/.rounds/cli.json` (mode 600).
+
+### Changed
+- `cli.js` credential resolution now searches `$ROUNDS_HOME` and
+  `~/.rounds/` before the zylos component data dir (which remains as a
+  fallback, so existing setups are unaffected).
+
 ## [0.15.1] - 2026-07-20
 
 ### Changed

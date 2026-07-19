@@ -1,0 +1,9 @@
+node_modules
+web/node_modules
+.git
+docs
+assets
+test
+data
+*.md
+!SKILL.md

@@ -1,6 +1,6 @@
 ---
 name: rounds
-version: 0.15.1
+version: 0.16.0
 description: >-
   Rounds (formerly standup) — delegated 1:1 structured voice conversations for
   teams. An AI agent (realtime voice, Chinese or English per member — member
@@ -172,11 +172,16 @@ $CLI settings set --language en        # team default language (zh|en; digests f
 ```
 
 Credential resolution: `--url`/`--key` flags → `ROUNDS_URL`/`ROUNDS_API_KEY`
-env → `~/zylos/components/rounds/cli.json` (`{"url","apiKey"}`) → same-host
-`config.json` (127.0.0.1 + serviceToken). On this host it works with zero
-setup. For a remote agent (e.g. the coco avatar): copy `scripts/cli.js`, drop
-a `cli.json` in its own data dir pointing at
-`https://luna.jinglever.com/rounds` with the API key — no DB, no login.
+env → `cli.json` (`{"url","apiKey"}`) in `$ROUNDS_HOME` / `~/.rounds/` /
+`~/zylos/components/rounds/` → same-host `config.json` (127.0.0.1 +
+serviceToken), same directory order. On this host it works with zero setup.
+For a remote agent (any runtime, zylos not required): install the portable
+client — `client/SKILL.md` — with `~/.rounds/cli.json` pointing at the
+server URL and API key — no DB, no login.
+
+The server itself can also run standalone on any machine (Docker or bare
+metal, `ROUNDS_HOME` data dir + `ROUNDS_BIND` bind address):
+`docs/deploy-standalone.md`. The zylos component install stays unchanged.
 
 ## Agent brain (background / probing / knowledge)
 
