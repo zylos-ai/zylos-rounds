@@ -2,11 +2,13 @@
 /**
  * Generate short Chinese voice samples for every GEMINI_VOICES entry via the
  * Gemini Live API (native-audio models are Live-only, so the TTS endpoint
- * can't produce the same voices). Output: assets/voice-samples/<Voice>.wav
- * (24kHz mono pcm16), alongside the OpenAI samples. Run manually when the
- * voice list or sample line changes:
+ * can't produce the same voices). The same voice name sounds different per
+ * model, so output is per-model: assets/voice-samples/<model>/<Voice>.wav
+ * (24kHz mono pcm16). Run manually when the model list, voice list, or
+ * sample line changes:
  *
- *   node scripts/generate-gemini-voice-samples.mjs
+ *   node scripts/generate-gemini-voice-samples.mjs [model-id]
+ *   node scripts/generate-gemini-voice-samples.mjs gemini-3.1-flash-live-preview
  *
  * Requires GEMINI_API_KEY (and optionally HTTPS_PROXY) in ~/zylos/.env or env.
  */
@@ -20,9 +22,10 @@ import { fileURLToPath } from 'node:url';
 import { GEMINI_VOICES } from '../src/lib/gemini-live.js';
 
 const SAMPLE_LINE = '你好，我是语音日报助手。今天有什么进展，随时和我聊。';
-const MODEL = 'models/gemini-2.5-flash-native-audio-preview-12-2025';
+const MODEL_ID = (process.argv[2] || 'gemini-2.5-flash-native-audio-preview-12-2025').replace(/^models\//, '');
+const MODEL = `models/${MODEL_ID}`;
 const WS_URL = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
-const OUT_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'voice-samples');
+const OUT_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'voice-samples', MODEL_ID);
 
 function loadEnv() {
   const out = { ...process.env };
@@ -109,6 +112,7 @@ function generate(voice) {
 }
 
 mkdirSync(OUT_DIR, { recursive: true });
+console.log(`model: ${MODEL_ID}`);
 for (const voice of GEMINI_VOICES) {
   process.stdout.write(`${voice}... `);
   // idempotent across transient failures: delete a file to regenerate it

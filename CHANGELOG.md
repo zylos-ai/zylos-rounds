@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.6] - 2026-07-19
+
+### Changed
+- **Per-model voice previews.** The same Gemini voice name sounds completely
+  different across Live models, so pre-generated samples now live in
+  per-model directories (`assets/voice-samples/<model>/<Voice>.wav`) with the
+  flat file as fallback (OpenAI voices stay flat). The admin picker passes
+  the model currently selected in the card
+  (`GET /api/settings/voice-sample/<voice>?model=…`), so previews always
+  match what saving would actually sound like. Ships a full 8-voice Chinese
+  sample set generated with `gemini-3.1-flash-live-preview` alongside the
+  existing 12-2025 set; `scripts/generate-gemini-voice-samples.mjs` takes the
+  model id as an argument
+
 ## [0.10.5] - 2026-07-19
 
 ### Fixed

@@ -455,8 +455,13 @@ test('gemini voices: per-protocol options, resolveVoice fallback, sample serving
     s = (await call('GET', '/api/settings')).data;
     assert.equal(s.voice, 'marin');
 
-    // pre-generated gemini samples served like the OpenAI ones
-    assert.equal((await call('GET', '/api/settings/voice-sample/Kore')).status, 200);
+    // gemini samples are per-model (same voice sounds different per model)
+    assert.equal((await call('GET', '/api/settings/voice-sample/Kore?model=gemini-2.5-flash-native-audio-preview-12-2025')).status, 200);
+    assert.equal((await call('GET', '/api/settings/voice-sample/Kore?model=gemini-3.1-flash-live-preview')).status, 200);
+    // OpenAI samples stay flat; an unknown model dir falls back to the flat file
+    assert.equal((await call('GET', '/api/settings/voice-sample/marin?model=whatever-model')).status, 200);
+    // a path-escaping model never reaches the fs as a directory
+    assert.equal((await call('GET', '/api/settings/voice-sample/Kore?model=..%2F..%2Fetc')).status, 404);
     assert.equal((await call('GET', '/api/settings/voice-sample/Nope')).status, 404);
   } finally {
     close();

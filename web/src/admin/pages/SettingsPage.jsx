@@ -232,7 +232,10 @@ export default function SettingsPage() {
 
   const onPreview = useCallback(() => {
     if (previewing) return stopPreview();
-    const audio = new Audio(`api/settings/voice-sample/${voice}`);
+    // samples are per-model (same voice name sounds different across models):
+    // pass the model currently selected in the card so the preview matches
+    // what saving would actually sound like
+    const audio = new Audio(`api/settings/voice-sample/${voice}${model ? `?model=${encodeURIComponent(model)}` : ''}`);
     audioRef.current = audio;
     setPreviewing(true);
     audio.onended = () => { audioRef.current = null; setPreviewing(false); };
@@ -246,7 +249,7 @@ export default function SettingsPage() {
       setPreviewing(false);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewing, voice, stopPreview]);
+  }, [previewing, voice, model, stopPreview]);
 
   useEffect(() => () => stopPreview(), [stopPreview]);
 

@@ -214,7 +214,7 @@ export class Api {
     }
 
     m = p.match(/^\/api\/settings\/voice-sample\/([A-Za-z]+)$/);
-    if (m && req.method === 'GET') return this.voiceSample(res, m[1]), true;
+    if (m && req.method === 'GET') return this.voiceSample(res, m[1], url.searchParams.get('model')), true;
 
     sendJson(res, 404, { error: 'not_found' });
     return true;
@@ -222,18 +222,26 @@ export class Api {
 
   // Pre-generated wav samples (scripts/generate-voice-samples.mjs and
   // scripts/generate-gemini-voice-samples.mjs); the voice-list check doubles
-  // as path sanitization for the file read.
-  voiceSample(res, voice) {
+  // as path sanitization for the file read. The same voice name sounds
+  // different per model (notably across Gemini Live models), so samples live
+  // in per-model subdirectories with the flat file as fallback; the model
+  // name is whitelisted to a path-safe charset before touching the fs.
+  voiceSample(res, voice, model) {
     if (!VOICE_OPTIONS.includes(voice) && !GEMINI_VOICES.includes(voice)) {
       return sendJson(res, 404, { error: 'not_found' });
     }
-    const file = path.join(SAMPLES_DIR, `${voice}.wav`);
+    const modelDir = (model || this.settings.resolveModel()).replace(/^models\//, '');
+    const candidates = /^[A-Za-z0-9._-]+$/.test(modelDir) && !modelDir.includes('..')
+      ? [path.join(SAMPLES_DIR, modelDir, `${voice}.wav`), path.join(SAMPLES_DIR, `${voice}.wav`)]
+      : [path.join(SAMPLES_DIR, `${voice}.wav`)];
     let data;
-    try {
-      data = readFileSync(file);
-    } catch {
-      return sendJson(res, 404, { error: 'sample_missing' });
+    for (const file of candidates) {
+      try {
+        data = readFileSync(file);
+        break;
+      } catch { /* try next */ }
     }
+    if (!data) return sendJson(res, 404, { error: 'sample_missing' });
     res.writeHead(200, {
       'Content-Type': 'audio/wav',
       'Content-Length': data.length,
