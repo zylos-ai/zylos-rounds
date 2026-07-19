@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.1] - 2026-07-20
+
+### Changed
+- **View mode by default for background/profile and brain cards.** The
+  member background & profile dialog and the three Brain-page guidance
+  cards now open in a read view (Markdown-rendered, "not set" hint when
+  empty) with an explicit Edit action; textareas only appear while
+  editing. The member dialog still opens straight into edit when both
+  fields are empty.
+
 ## [0.15.0] - 2026-07-19
 
 ### Changed

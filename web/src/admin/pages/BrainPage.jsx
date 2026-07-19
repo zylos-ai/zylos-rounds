@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { api } from '../api';
 import { useLangDict } from '../i18n';
+import { Markdown } from '@/components/Markdown.jsx';
 
 const DICT = {
   zh: {
@@ -34,6 +35,7 @@ const DICT = {
     profileInstrTitle: '画像生成指引',
     profileInstrHint: '自定义动态画像的生成规则（结构、维度、口径），设置后完全替代系统默认模板，对所有成员生效。留空用默认：按维度归纳的综合画像。',
     profileInstrPlaceholder: '例如：画像分三节——工作主线 / 协作关系 / 需要留意的信号，每节不超过 3 条……',
+    ctxUnset: '未设置',
     saved: '已保存，下一次通话生效',
     saveFailed: '保存失败，请重试',
     save: '保存',
@@ -72,6 +74,7 @@ const DICT = {
     profileInstrTitle: 'Profile instruction',
     profileInstrHint: 'Custom rules for generating dynamic member profiles (structure, dimensions, tone). When set it fully replaces the built-in template, for all members. Leave empty for the default: a synthesized portrait organized by dimensions.',
     profileInstrPlaceholder: 'e.g. Three sections — current workstreams / collaboration / signals to watch, at most 3 lines each…',
+    ctxUnset: 'Not set',
     saved: 'Saved, takes effect on the next call',
     saveFailed: 'Save failed, please retry',
     save: 'Save',
@@ -137,7 +140,7 @@ export default function BrainPage() {
         hint={T.teamBgHint}
         placeholder={T.teamBgPlaceholder}
         initial={ctx.team_background}
-        onSave={(v) => api('api/context', { method: 'PUT', body: { team_background: v } })}
+        onSave={async (v) => setCtx(await api('api/context', { method: 'PUT', body: { team_background: v } }))}
       />
 
       <ContextCard
@@ -146,7 +149,7 @@ export default function BrainPage() {
         hint={T.probingHint}
         placeholder={T.probingPlaceholder}
         initial={ctx.probing_guidance}
-        onSave={(v) => api('api/context', { method: 'PUT', body: { probing_guidance: v } })}
+        onSave={async (v) => setCtx(await api('api/context', { method: 'PUT', body: { probing_guidance: v } }))}
       />
 
       <ContextCard
@@ -155,7 +158,7 @@ export default function BrainPage() {
         hint={T.profileInstrHint}
         placeholder={T.profileInstrPlaceholder}
         initial={ctx.profile_instruction}
-        onSave={(v) => api('api/context', { method: 'PUT', body: { profile_instruction: v } })}
+        onSave={async (v) => setCtx(await api('api/context', { method: 'PUT', body: { profile_instruction: v } }))}
       />
 
       <KnowledgeSection />
@@ -163,13 +166,15 @@ export default function BrainPage() {
   );
 }
 
+// View mode by default (owner ruling 2026-07-20) — rendered content with an
+// explicit Edit action; the textarea only appears while editing.
 function ContextCard({ icon: Icon, title, hint, placeholder, initial, onSave }) {
   const T = useLangDict(DICT);
+  const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(initial || '');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const timer = useRef(null);
-  const dirty = value !== (initial || '');
 
   useEffect(() => () => clearTimeout(timer.current), []);
 
@@ -179,6 +184,7 @@ function ContextCard({ icon: Icon, title, hint, placeholder, initial, onSave }) 
     try {
       await onSave(value);
       setMsg({ ok: true, key: 'saved' });
+      setEditing(false);
     } catch (err) {
       if (err.status !== 401) setMsg({ ok: false, key: 'saveFailed' });
     } finally {
@@ -195,25 +201,45 @@ function ContextCard({ icon: Icon, title, hint, placeholder, initial, onSave }) 
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent text-muted-foreground">
             <Icon className="h-5 w-5" strokeWidth={1.75} />
           </span>
-          <div>
+          <div className="min-w-0 flex-1">
             <h2 className="text-lg font-semibold leading-tight">{title}</h2>
             <p className="mt-0.5 text-sm text-muted-foreground">{hint}</p>
           </div>
+          {!editing && (
+            <Button variant="outline" size="sm" className="shrink-0" onClick={() => { setValue(initial || ''); setMsg(null); setEditing(true); }}>
+              <Pencil strokeWidth={1.75} />
+              {T.edit}
+            </Button>
+          )}
         </div>
-        <textarea
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder={placeholder}
-          rows={6}
-          className={cn(TEXTAREA_CLASS, 'mt-4')}
-        />
-        <div className="mt-3 flex items-center gap-3">
-          <Button className="h-10 px-6 text-[0.95rem]" disabled={busy || !dirty} onClick={save}>
-            {busy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
-            {T.save}
-          </Button>
-          {msg ? <span className={cn('text-sm', msg.ok ? 'text-success' : 'text-destructive')}>{T[msg.key]}</span> : null}
-        </div>
+        {editing ? (
+          <>
+            <textarea
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder={placeholder}
+              rows={6}
+              className={cn(TEXTAREA_CLASS, 'mt-4')}
+            />
+            <div className="mt-3 flex items-center gap-3">
+              <Button className="h-10 px-6 text-[0.95rem]" disabled={busy} onClick={save}>
+                {busy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
+                {T.save}
+              </Button>
+              <Button variant="outline" className="h-10 px-6 text-[0.95rem]" disabled={busy} onClick={() => { setValue(initial || ''); setEditing(false); }}>
+                {T.cancel}
+              </Button>
+              {msg ? <span className={cn('text-sm', msg.ok ? 'text-success' : 'text-destructive')}>{T[msg.key]}</span> : null}
+            </div>
+          </>
+        ) : (
+          <>
+            {(initial || '').trim()
+              ? <Markdown text={initial} className="mt-4 rounded-md bg-accent/50 px-4 py-3 text-[0.95rem] leading-relaxed" />
+              : <p className="mt-4 text-sm text-faint">{T.ctxUnset}</p>}
+            {msg ? <p className={cn('mt-2 text-sm', msg.ok ? 'text-success' : 'text-destructive')}>{T[msg.key]}</p> : null}
+          </>
+        )}
       </CardContent>
     </Card>
   );

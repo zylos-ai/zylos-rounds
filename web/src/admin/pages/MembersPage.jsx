@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Copy, Check, ExternalLink, Trash2, Loader2, FlaskConical, NotebookPen, Repeat, ChevronDown, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { Copy, Check, ExternalLink, Trash2, Loader2, FlaskConical, NotebookPen, Pencil, Repeat, ChevronDown, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { Markdown } from '@/components/Markdown.jsx';
 import { cn, copyText } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -71,6 +72,9 @@ const DICT = {
     contextAria: (n) => `${n} 的背景与画像`,
     contextTitle: (n) => `「${n}」的背景与画像`,
     contextDesc: '两部分都会在每次语音沟通时注入给助手：背景由你维护；动态画像在每次对话后自动更新（所有任务共同喂养），也可以在这里手动修正。',
+    notSet: '未设置',
+    close: '关闭',
+    editBtn: '编辑',
     contextLabel: '基础背景 / 关注点',
     contextPlaceholder: '例如：前端负责人，正在做发布系统；重点关注上线节奏和回归测试覆盖。',
     profileLabel: '动态画像',
@@ -122,6 +126,9 @@ const DICT = {
     contextAria: (n) => `Background and profile of ${n}`,
     contextTitle: (n) => `Background & profile of "${n}"`,
     contextDesc: 'Both parts are injected into the assistant on every voice conversation: you maintain the background; the dynamic profile updates automatically after each conversation (fed by all tasks) and can also be corrected here by hand.',
+    notSet: 'Not set',
+    close: 'Close',
+    editBtn: 'Edit',
     contextLabel: 'Background / focus areas',
     contextPlaceholder: 'e.g. Frontend lead, building the release system; focused on launch cadence and regression test coverage.',
     profileLabel: 'Dynamic profile',
@@ -455,6 +462,7 @@ const textareaCls =
 function MemberContextButton({ member, onSaved }) {
   const T = useLangDict(DICT);
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(member.context || '');
   const [profile, setProfile] = useState(member.profile || '');
   const [busy, setBusy] = useState(false);
@@ -462,7 +470,8 @@ function MemberContextButton({ member, onSaved }) {
   const has = Boolean((member.context || '').trim() || (member.profile || '').trim());
 
   const onOpenChange = (next) => {
-    if (next) { setValue(member.context || ''); setProfile(member.profile || ''); setErr(''); }
+    // view mode by default (owner ruling 2026-07-20); straight to edit when both fields are empty
+    if (next) { setValue(member.context || ''); setProfile(member.profile || ''); setErr(''); setEditing(!has); }
     setOpen(next);
   };
 
@@ -511,13 +520,19 @@ function MemberContextButton({ member, onSaved }) {
         </AlertDialogHeader>
         <div>
           <p className="mb-1.5 text-sm font-medium">{T.contextLabel}</p>
-          <textarea
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            placeholder={T.contextPlaceholder}
-            rows={4}
-            className={textareaCls}
-          />
+          {editing ? (
+            <textarea
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder={T.contextPlaceholder}
+              rows={4}
+              className={textareaCls}
+            />
+          ) : (member.context || '').trim() ? (
+            <Markdown text={member.context} className="max-h-[30vh] overflow-y-auto rounded-md bg-accent/50 px-3 py-2.5 text-[0.95rem] leading-relaxed" />
+          ) : (
+            <p className="text-sm text-faint">{T.notSet}</p>
+          )}
         </div>
         <div>
           <p className="mb-1.5 text-sm font-medium">
@@ -526,21 +541,39 @@ function MemberContextButton({ member, onSaved }) {
               {member.profile_updated_at ? T.profileUpdatedAt(member.profile_updated_at) : T.profileAuto}
             </span>
           </p>
-          <textarea
-            value={profile}
-            onChange={(e) => setProfile(e.target.value)}
-            placeholder={T.profilePlaceholder}
-            rows={6}
-            className={textareaCls}
-          />
+          {editing ? (
+            <textarea
+              value={profile}
+              onChange={(e) => setProfile(e.target.value)}
+              placeholder={T.profilePlaceholder}
+              rows={6}
+              className={textareaCls}
+            />
+          ) : (member.profile || '').trim() ? (
+            <Markdown text={member.profile} className="max-h-[40vh] overflow-y-auto rounded-md bg-accent/50 px-3 py-2.5 text-[0.95rem] leading-relaxed" />
+          ) : (
+            <p className="text-sm text-faint">{T.notSet}</p>
+          )}
         </div>
         {err ? <p className="-mt-1 text-sm text-destructive">{err}</p> : null}
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={busy}>{T.cancel}</AlertDialogCancel>
-          <Button className="h-[34px] px-4" disabled={busy} onClick={save}>
-            {busy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
-            {T.save}
-          </Button>
+          {editing ? (
+            <>
+              <Button variant="outline" className="h-[34px] px-4" disabled={busy} onClick={() => { setValue(member.context || ''); setProfile(member.profile || ''); setErr(''); setEditing(false); }}>{T.cancel}</Button>
+              <Button className="h-[34px] px-4" disabled={busy} onClick={save}>
+                {busy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
+                {T.save}
+              </Button>
+            </>
+          ) : (
+            <>
+              <AlertDialogCancel disabled={busy}>{T.close}</AlertDialogCancel>
+              <Button className="h-[34px] px-4" onClick={() => setEditing(true)}>
+                <Pencil strokeWidth={1.75} />
+                {T.editBtn}
+              </Button>
+            </>
+          )}
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
