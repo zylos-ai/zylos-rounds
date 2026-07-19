@@ -48,6 +48,12 @@ test('gemini adapter: session.update becomes setup with system instruction and t
   // 'marin' is not a Gemini voice — no speechConfig forced
   assert.equal(setup.generationConfig.speechConfig, undefined);
   assert.deepEqual(setup.generationConfig.responseModalities, ['AUDIO']);
+  // thinking must be off (thinking+tools+audio trips upstream 1007)
+  assert.equal(setup.generationConfig.thinkingConfig.thinkingBudget, 0);
+  // VAD must be tuned down — default end-sensitivity splits Chinese sentences
+  const vad = setup.realtimeInputConfig.automaticActivityDetection;
+  assert.equal(vad.endOfSpeechSensitivity, 'END_SENSITIVITY_LOW');
+  assert.ok(vad.silenceDurationMs >= 1000);
 });
 
 test('gemini adapter: setupComplete -> session.updated; first response.create -> greeting kick', () => {
@@ -82,34 +88,45 @@ test('gemini adapter: audio append is resampled 24k->16k phase-continuously', ()
   const outSamples = audioMsgs.reduce((n, m) => n + Buffer.from(m.realtimeInput.audio.data, 'base64').length / 2, 0);
   assert.ok(Math.abs(outSamples - total / 1.5) <= 2, `expected ~200 samples, got ${outSamples}`);
   assert.equal(audioMsgs[0].realtimeInput.audio.mimeType, 'audio/pcm;rate=16000');
-  // the resampled ramp must stay monotonic (no phase crack at the boundary)
+  // the resampled ramp must stay near-monotonic (small ripple from the
+  // anti-alias FIR is fine; a phase crack at the packet boundary is not)
   const all = audioMsgs.flatMap(m => {
     const b = Buffer.from(m.realtimeInput.audio.data, 'base64');
     return Array.from({ length: b.length / 2 }, (_, i) => b.readInt16LE(i * 2));
   });
-  for (let i = 1; i < all.length; i++) assert.ok(all[i] >= all[i - 1], `non-monotonic at ${i}`);
+  for (let i = 1; i < all.length; i++) assert.ok(all[i] >= all[i - 1] - 80, `crack at ${i}: ${all[i - 1]} -> ${all[i]}`);
+  assert.ok(all.at(-1) > all[0] + 5000, 'ramp did not rise');
 });
 
-test('gemini adapter: transcriptions map to slot flow, audio deltas group by turn', () => {
+test('gemini adapter: user subtitles stream progressively and merge into one slot per turn', () => {
   const { sock, up, out } = boot();
   up.send(SESSION_UPDATE);
   sock.fire('message', Buffer.from(JSON.stringify({ serverContent: { inputTranscription: { text: '昨天写了' } } })));
   sock.fire('message', Buffer.from(JSON.stringify({ serverContent: { inputTranscription: { text: '文档' } } })));
-  // model starts replying -> user slot finalizes first (order preserved)
   sock.fire('message', Buffer.from(JSON.stringify({ serverContent: { outputTranscription: { text: '好的' }, modelTurn: { parts: [{ inlineData: { data: 'AAAA' } }] } } })));
+  // a late transcription chunk arriving mid-reply must extend the SAME slot
+  sock.fire('message', Buffer.from(JSON.stringify({ serverContent: { inputTranscription: { text: '和测试' } } })));
   sock.fire('message', Buffer.from(JSON.stringify({ serverContent: { turnComplete: true } })));
   const types = out.map(e => e.type);
   assert.deepEqual(types, [
     'conversation.item.added',
-    'conversation.item.input_audio_transcription.completed',
+    'conversation.item.input_audio_transcription.completed', // 昨天写了 (progressive)
+    'conversation.item.input_audio_transcription.completed', // 昨天写了文档
     'response.output_audio_transcript.delta',
     'response.output_audio.delta',
+    'conversation.item.input_audio_transcription.completed', // 昨天写了文档和测试 — same slot
     'response.output_audio_transcript.done',
     'response.done',
   ]);
-  assert.equal(out[1].transcript, '昨天写了文档');
-  assert.equal(out[1].item_id, out[0].item.id);
-  assert.equal(out[4].transcript, '好的');
+  const completes = out.filter(e => e.type === 'conversation.item.input_audio_transcription.completed');
+  assert.deepEqual(completes.map(e => e.transcript), ['昨天写了', '昨天写了文档', '昨天写了文档和测试']);
+  assert.ok(completes.every(e => e.item_id === out[0].item.id), 'all updates target one slot');
+  assert.equal(out.find(e => e.type === 'response.output_audio_transcript.done').transcript, '好的');
+  // next turn opens a NEW slot
+  sock.fire('message', Buffer.from(JSON.stringify({ serverContent: { inputTranscription: { text: '第二句' } } })));
+  const added = out.filter(e => e.type === 'conversation.item.added');
+  assert.equal(added.length, 2);
+  assert.notEqual(added[1].item.id, added[0].item.id);
 });
 
 test('gemini adapter: toolCall round-trips through function_call_output as toolResponse', () => {

@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] - 2026-07-19
+
+### Fixed
+- **Gemini VAD splitting Chinese sentences.** Automatic activity detection is
+  now tuned (`END_SENSITIVITY_LOW`, 1200ms silence window, 300ms prefix
+  padding) — default settings treated mid-sentence pauses as end-of-turn and
+  the model answered each fragment
+- **Slow user subtitles on Gemini.** Input transcription now streams
+  progressively (each chunk updates the same slot) instead of appearing only
+  when the model starts replying; late chunks merge into the same line until
+  turnComplete, so one utterance is one bubble and one archive line
+- **ASR quality: anti-alias filter.** A 15-tap windowed-sinc low-pass now
+  runs before the 24k→16k decimation — bare linear interpolation folded
+  8–12kHz content into the speech band and audibly degraded Gemini's
+  transcription
+
 ## [0.10.0] - 2026-07-19
 
 ### Added

@@ -34,6 +34,22 @@ export const GEMINI_VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Leda
 
 const GREETING_KICK = '（同事已接通，请按你的流程直接开口，不要提到这条消息）';
 
+// 15-tap windowed-sinc low-pass (cutoff ~7.2kHz at 24k input) applied before
+// the 24k→16k decimation — bare linear interpolation aliases 8–12kHz content
+// down into the speech band and audibly degrades Gemini's ASR.
+const LP = (() => {
+  const N = 15, fc = 0.3, h = [];
+  let sum = 0;
+  for (let n = 0; n < N; n++) {
+    const k = n - (N - 1) / 2;
+    const s = k === 0 ? 2 * fc : Math.sin(2 * Math.PI * fc * k) / (Math.PI * k);
+    const w = 0.54 - 0.46 * Math.cos((2 * Math.PI * n) / (N - 1));
+    h.push(s * w);
+    sum += s * w;
+  }
+  return h.map(v => v / sum);
+})();
+
 export class GeminiUpstream {
   /** `_socket` injects a fake upstream for unit tests. */
   constructor({ wsUrl, key, model, proxy, _socket }) {
@@ -52,6 +68,7 @@ export class GeminiUpstream {
     // 24k -> 16k resample state (phase-continuous across packets)
     this.rsPos = 0;
     this.rsTail = null;
+    this.lpHist = null; // last LP.length-1 raw samples for filter continuity
     const m = model.startsWith('models/') ? model : `models/${model}`;
     this.model = m;
     this.ws = _socket || new WebSocket(`${wsUrl}?key=${encodeURIComponent(key)}`, {
@@ -110,6 +127,18 @@ export class GeminiUpstream {
             tools: [{ functionDeclarations: (s.tools || []).map(t => ({ name: t.name, description: t.description, parameters: t.parameters })) }],
             inputAudioTranscription: {},
             outputAudioTranscription: {},
+            // Default VAD is far too eager for Chinese speech — it cuts
+            // mid-sentence pauses into separate turns and the model answers
+            // each fragment (the OpenAI side runs semantic_vad at low
+            // eagerness for the same reason). Low end-sensitivity + a longer
+            // silence window keeps one utterance in one turn.
+            realtimeInputConfig: {
+              automaticActivityDetection: {
+                endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
+                silenceDurationMs: 1200,
+                prefixPaddingMs: 300,
+              },
+            },
           },
         });
         return;
@@ -203,18 +232,22 @@ export class GeminiUpstream {
       return;
     }
 
-    // member speech transcription (native) — reserve the bubble on first chunk,
-    // finalize when the model responds (order matches the OpenAI slot flow)
+    // member speech transcription (native) — reserve the bubble on the first
+    // chunk, then stream every accumulation as an updated `completed` event
+    // (client and relay both overwrite by item_id) so the subtitle grows live
+    // instead of appearing only when the model replies. The slot stays open
+    // until turnComplete so late-arriving chunks merge into the same line
+    // rather than splitting one utterance across bubbles.
     if (sc.inputTranscription?.text) {
       if (!this.userItemId) {
         this.userItemId = `u_${++this.userSeq}`;
         this.toClient({ type: 'conversation.item.added', item: { id: this.userItemId, type: 'message', role: 'user', content: [] } });
       }
       this.userBuf += sc.inputTranscription.text;
+      this.toClient({ type: 'conversation.item.input_audio_transcription.completed', item_id: this.userItemId, transcript: this.userBuf.trim() });
     }
 
     if (sc.outputTranscription?.text) {
-      this.finishUserTurn();
       this.aiBuf += sc.outputTranscription.text;
       this.toClient(this.mode === 'text'
         ? { type: 'response.output_text.delta', delta: sc.outputTranscription.text }
@@ -223,7 +256,6 @@ export class GeminiUpstream {
 
     for (const p of sc.modelTurn?.parts || []) {
       if (p.inlineData?.data) {
-        this.finishUserTurn();
         if (this.mode === 'text') continue; // text mode: subtitles only
         if (!this.aiItemId) this.aiItemId = `a_${++this.aiSeq}`;
         this.toClient({ type: 'response.output_audio.delta', delta: p.inlineData.data, item_id: this.aiItemId });
@@ -232,15 +264,15 @@ export class GeminiUpstream {
 
     if (sc.turnComplete || sc.generationComplete) {
       this.finishAiTurn();
-      if (sc.turnComplete) this.toClient({ type: 'response.done', response: { output: [] } });
+      if (sc.turnComplete) {
+        this.finishUserTurn();
+        this.toClient({ type: 'response.done', response: { output: [] } });
+      }
     }
   }
 
-  /** Close the open user slot: emit the final transcription for it. */
+  /** Close the open user slot (text was already streamed progressively). */
   finishUserTurn() {
-    if (!this.userItemId) return;
-    const text = this.userBuf.trim();
-    this.toClient({ type: 'conversation.item.input_audio_transcription.completed', item_id: this.userItemId, transcript: text });
     this.userItemId = null;
     this.userBuf = '';
   }
@@ -257,17 +289,33 @@ export class GeminiUpstream {
   }
 
   /**
-   * 24k int16 buffer -> 16k int16, linear interpolation with a cross-packet
-   * phase (same technique as the client's downsampler) so packet boundaries
-   * do not crack.
+   * 24k int16 buffer -> 16k int16: anti-alias low-pass, then linear
+   * interpolation with a cross-packet phase (same technique as the client's
+   * downsampler) so packet boundaries do not crack. Both the filter history
+   * and the interpolation phase persist across packets.
    */
   resample24to16(buf) {
     const n = buf.length >> 1;
     if (!n) return new Int16Array(0);
+    const H = LP.length - 1;
+    // raw stream with filter history prepended (first packet: repeat-pad to
+    // avoid a zero-transient at session start)
+    const raw = new Float32Array(H + n);
+    if (this.lpHist) raw.set(this.lpHist, 0);
+    else for (let i = 0; i < H; i++) raw[i] = buf.readInt16LE(0);
+    for (let i = 0; i < n; i++) raw[H + i] = buf.readInt16LE(i * 2);
+    this.lpHist = raw.slice(raw.length - H);
+    // filtered[i] aligns with raw packet sample i (constant group delay)
+    const filtered = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      let acc = 0;
+      for (let t = 0; t <= H; t++) acc += raw[i + t] * LP[t];
+      filtered[i] = acc;
+    }
     const tail = this.rsTail !== null ? 1 : 0;
     const src = new Float32Array(tail + n);
     if (tail) src[0] = this.rsTail;
-    for (let i = 0; i < n; i++) src[tail + i] = buf.readInt16LE(i * 2);
+    src.set(filtered, tail);
     const ratio = 1.5;
     const out = [];
     let pos = this.rsPos;
