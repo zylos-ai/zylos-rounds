@@ -27,8 +27,10 @@
   alongside
 - **Team digest** — per-day digest puts suggested meeting topics first, then
   per-member cards and who hasn't reported; multi-day history included
-- **Self-hosted relay** — browser ↔ server ↔ OpenAI Realtime (works behind a
-  proxy); device-adaptive audio capture that survives mobile browsers
+- **Self-hosted relay, multi-provider** — browser ↔ server ↔ your realtime
+  voice provider (OpenAI Realtime and Gemini Live supported; switch models
+  from the settings page, works behind a proxy); device-adaptive audio
+  capture that survives mobile browsers
 - **Admin auth** — scrypt-hashed password (generated at install), session
   cookies, login rate limiting
 
@@ -93,7 +95,13 @@ keys):
 }
 ```
 
-`OPENAI_API_KEY` (and optional `HTTPS_PROXY`) are read from `~/zylos/.env`.
+`model` / `voice` in config.json are only install-time defaults — providers,
+models, and voices are managed day-to-day from the settings page (OpenAI
+Realtime, Gemini Live, or any OpenAI-compatible endpoint).
+
+`OPENAI_API_KEY` (and optional `HTTPS_PROXY`) are read from `~/zylos/.env`
+and apply to the built-in OpenAI provider; keys for additional providers are
+entered on the settings page and stored locally.
 
 ## Usage
 
