@@ -7,7 +7,8 @@ import { request as httpsRequest } from 'node:https';
 import { request as httpRequest } from 'node:http';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 
-export function callChatModel({ base, model, key, prompt, proxy, timeoutMs = 60_000 }) {
+/** `onUsage` (optional) receives the response's usage object for cost tracking. */
+export function callChatModel({ base, model, key, prompt, proxy, timeoutMs = 60_000, onUsage }) {
   const root = (base || 'https://api.openai.com').replace(/\/+$/, '');
   const body = JSON.stringify({
     model,
@@ -33,7 +34,11 @@ export function callChatModel({ base, model, key, prompt, proxy, timeoutMs = 60_
           return reject(new Error(`model http_${res.statusCode}: ${data.slice(0, 200)}`));
         }
         try {
-          resolve(JSON.parse(data).choices?.[0]?.message?.content || '');
+          const parsed = JSON.parse(data);
+          if (onUsage && parsed.usage) {
+            try { onUsage(parsed.usage); } catch { /* accounting must not break the call */ }
+          }
+          resolve(parsed.choices?.[0]?.message?.content || '');
         } catch {
           reject(new Error('model returned non-JSON'));
         }

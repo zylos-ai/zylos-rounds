@@ -13,6 +13,7 @@
  */
 
 import { callChatModel } from './llm.js';
+import { recordTextUsage } from './pricing.js';
 
 export const DEFAULT_PROFILE_MODEL = 'gpt-5.1';
 const MAX_PROFILE_CHARS = 4000;
@@ -72,7 +73,7 @@ export class ProfileUpdater {
       if (!conn.key) return false;
 
       const prompt = this.buildPrompt(member, report, reportDate);
-      const text = await this.callModel(conn, prompt);
+      const text = await this.callModel(conn, prompt, member.id);
       const profile = String(text || '').trim().slice(0, MAX_PROFILE_CHARS);
       if (!profile) return false;
       this.store.setMemberProfile(member.id, profile);
@@ -116,7 +117,7 @@ export class ProfileUpdater {
 - 总长不超过 500 字。只输出画像条目本身，不要任何解释、标题或多余文字。`,
       ].filter(Boolean).join('\n\n');
 
-      const text = await this.callModel(conn, prompt);
+      const text = await this.callModel(conn, prompt, member.id);
       const profile = String(text || '').trim().slice(0, MAX_PROFILE_CHARS);
       if (!profile) return false;
       this.store.setMemberProfile(member.id, profile);
@@ -129,13 +130,17 @@ export class ProfileUpdater {
   }
 
   /** One chat-completions call on the profile slot's resolved connection. */
-  callModel(conn, prompt) {
+  callModel(conn, prompt, memberId = null) {
     return callChatModel({
       base: conn.base,
       model: conn.model,
       key: conn.key,
       prompt,
       proxy: this.env.proxy,
+      onUsage: usage => recordTextUsage(this.store, {
+        slot: 'profile', provider: conn.provider, model: conn.model,
+        memberId, tz: this.settings.resolveTimeZone(), usage,
+      }),
     });
   }
 }

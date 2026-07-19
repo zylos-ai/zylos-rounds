@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-07-19
+
+### Added
+- **Built-in usage & cost tracking.** Every voice session and every
+  profile/digest text call now records its real API-reported token usage
+  (text/audio/cached in and out, plus ASR sidecar seconds on the OpenAI
+  path) into a new `usage_log` table, with a cost computed from a built-in
+  price table verified against the official OpenAI/Google pricing pages.
+  Gemini per-turn `usageMetadata` accumulation was verified against a live
+  probe (per-turn semantics, not cumulative). New `GET /api/usage?month=`
+  rollup (by day / model / member) and a 用量与成本 settings card with month
+  navigation. Prices can be overridden without a code change via the
+  settings-DB `prices` JSON (merged per model over
+  `src/lib/pricing.js` defaults). Accounting is best-effort by design —
+  a tracking failure never breaks a call or session close
+
 ## [0.10.6] - 2026-07-19
 
 ### Changed

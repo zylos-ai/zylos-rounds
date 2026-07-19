@@ -64,7 +64,11 @@ export class GeminiUpstream {
     this.userBuf = '';        // accumulated input transcription
     this.aiItemId = null;     // current model turn (audio grouping for client playback)
     this.aiBuf = '';          // accumulated output transcription
-    this.lastUsage = null;
+    // Billing accumulator. Verified 2026-07-19 by direct probe: each
+    // usageMetadata message covers ONE turn (promptTokenCount = that turn's
+    // full re-billed context, responseTokenCount = that turn's output), so
+    // summing every message reproduces what Google actually bills.
+    this.usageTotals = { input_text: 0, input_audio: 0, output_text: 0, output_audio: 0 };
     // 24k -> 16k resample state (phase-continuous across packets)
     this.rsPos = 0;
     this.rsTail = null;
@@ -77,9 +81,9 @@ export class GeminiUpstream {
     this.ws.on('open', () => this.emit('open'));
     this.ws.on('error', e => this.emit('error', e));
     this.ws.on('close', (code, reason) => {
-      if (this.lastUsage) {
-        const u = this.lastUsage;
-        console.log(`[rounds] gemini usage total=${u.totalTokenCount ?? '?'} prompt=${u.promptTokenCount ?? '?'} response=${u.responseTokenCount ?? '?'}`);
+      const t = this.usageTotals;
+      if (t.input_text + t.input_audio + t.output_text + t.output_audio > 0) {
+        console.log(`[rounds] gemini usage in_text=${t.input_text} in_audio=${t.input_audio} out_text=${t.output_text} out_audio=${t.output_audio}`);
       }
       if (code && code !== 1000 && code !== 1005) console.error(`[rounds] gemini close ${code} ${String(reason || '').slice(0, 200)}`);
       this.emit('close', code, reason);
@@ -225,7 +229,7 @@ export class GeminiUpstream {
     }
 
     if (m.goAway) { console.log('[rounds] gemini goAway', JSON.stringify(m.goAway)); return; }
-    if (m.usageMetadata) this.lastUsage = m.usageMetadata;
+    if (m.usageMetadata) this.addUsage(m.usageMetadata);
 
     const sc = m.serverContent;
     if (!sc) return;
@@ -273,6 +277,21 @@ export class GeminiUpstream {
         this.toClient({ type: 'response.done', response: { output: [] } });
       }
     }
+  }
+
+  /** Sum one turn's usageMetadata into the session totals by modality. */
+  addUsage(u) {
+    for (const d of u.promptTokensDetails || []) {
+      if (d.modality === 'AUDIO') this.usageTotals.input_audio += d.tokenCount || 0;
+      else this.usageTotals.input_text += d.tokenCount || 0;
+    }
+    for (const d of u.responseTokensDetails || []) {
+      if (d.modality === 'AUDIO') this.usageTotals.output_audio += d.tokenCount || 0;
+      else this.usageTotals.output_text += d.tokenCount || 0;
+    }
+    // details can be absent on some messages — fall back to the plain counts
+    if (!u.promptTokensDetails?.length) this.usageTotals.input_text += u.promptTokenCount || 0;
+    if (!u.responseTokensDetails?.length) this.usageTotals.output_text += u.responseTokenCount || 0;
   }
 
   /** Close the open user slot (text was already streamed progressively). */

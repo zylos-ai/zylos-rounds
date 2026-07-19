@@ -216,6 +216,8 @@ export class Api {
     m = p.match(/^\/api\/settings\/voice-sample\/([A-Za-z]+)$/);
     if (m && req.method === 'GET') return this.voiceSample(res, m[1], url.searchParams.get('model')), true;
 
+    if (p === '/api/usage' && req.method === 'GET') return this.getUsage(res, url), true;
+
     sendJson(res, 404, { error: 'not_found' });
     return true;
   }
@@ -248,6 +250,17 @@ export class Api {
       'Cache-Control': 'private, max-age=86400',
     });
     res.end(data);
+  }
+
+  // ---- usage/cost (v0.11) ----
+
+  /** Month rollup for the admin 用量与成本 card. ?month=YYYY-MM, default current. */
+  getUsage(res, url) {
+    const tz = this.settings.resolveTimeZone();
+    const today = todayLocal(tz);
+    const month = url.searchParams.get('month') || today.slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(month)) return sendJson(res, 400, { error: 'invalid_month' });
+    sendJson(res, 200, this.store.usageSummary(month, today));
   }
 
   // ---- providers (v0.8) ----

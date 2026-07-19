@@ -468,6 +468,34 @@ test('gemini voices: per-protocol options, resolveVoice fallback, sample serving
   }
 });
 
+test('usage endpoint: month rollup + validation (v0.11.0)', async () => {
+  const { store, call, close } = await boot();
+  try {
+    const today = new Date().toLocaleDateString('sv', { timeZone: 'Asia/Shanghai' });
+    const month = today.slice(0, 7);
+    const id = Number(store.addMember('赵六', 'tokZ').lastInsertRowid);
+    store.insertUsage({ date: today, slot: 'voice', provider: 'gemini', model: 'gemini-3.1-flash-live-preview', member_id: id, seconds: 240, input_audio: 6000, output_audio: 3000, cost_usd: 0.054 });
+    store.insertUsage({ date: `${month}-01`, slot: 'digest', provider: 'openai', model: 'gpt-5.5', input_text: 1000, output_text: 200, cost_usd: 0.011 });
+
+    let r = await call('GET', '/api/usage');
+    assert.equal(r.status, 200);
+    assert.equal(r.data.month, month);
+    assert.equal(r.data.entries, 2);
+    assert.ok(Math.abs(r.data.total_usd - 0.065) < 1e-9);
+    assert.ok(Math.abs(r.data.today_usd - 0.054) < 1e-9);
+    assert.equal(r.data.by_member.length, 1); // digest has no member
+    assert.equal(r.data.by_member[0].name, '赵六');
+
+    r = await call('GET', '/api/usage?month=2020-01');
+    assert.equal(r.data.entries, 0);
+    assert.equal((await call('GET', '/api/usage?month=bogus')).status, 400);
+    // admin auth required
+    assert.equal((await call('GET', '/api/usage', null, {})).status, 401);
+  } finally {
+    close();
+  }
+});
+
 test('time zone setting: layering, validation, blank revert (v0.10.4)', async () => {
   const { call, close } = await boot();
   try {

@@ -17,6 +17,7 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import { todayLocal } from './http-util.js';
 import { ONESHOT_CYCLE, currentCycleKey } from './cycle.js';
 import { GeminiUpstream } from './gemini-live.js';
+import { resolvePrices, costUsd } from './pricing.js';
 
 const SUBMIT_TOOL = {
   type: 'function',
@@ -236,6 +237,11 @@ export class Relay {
     const startedAt = Date.now();
     const transcript = [];
     let saved = false;
+    // OpenAI path billing accumulator: response.done usage is per-response
+    // (input re-bills the growing context each turn — that is how OpenAI
+    // bills, so summing responses reproduces the invoice). The Gemini
+    // adapter accumulates its own totals; finish() prefers those.
+    const usage = { input_text: 0, input_audio: 0, cached_text: 0, cached_audio: 0, output_text: 0, output_audio: 0, asr_seconds: 0 };
     // Same-cycle continuation: an earlier session today (drop, refresh, or a
     // finished call the member reopens) left its transcript in the store — feed
     // it back so the agent picks up where it left off instead of restarting.
@@ -278,6 +284,29 @@ export class Relay {
         else store.appendTranscript(member.id, reportDate, lines.join('\n'), dur, model, saved);
       }
       console.log(`[rounds] session end ${member.name} (${reason}, ${dur}s, saved=${saved})`);
+      // usage/cost row — best-effort, never let accounting break session close
+      try {
+        const totals = upstream.usageTotals || usage; // Gemini adapter vs OpenAI accumulator
+        const any = totals.input_text + totals.input_audio + totals.output_text + totals.output_audio;
+        if (any > 0) {
+          const asrModel = conn.protocol === 'gemini' ? null : (cfg.transcriptionModel ?? 'gpt-realtime-whisper');
+          const row = {
+            date: reportDate, slot: 'voice',
+            provider: conn.provider?.slug || conn.protocol || 'openai',
+            model, member_id: member.id, seconds: dur,
+            input_text: totals.input_text, input_audio: totals.input_audio,
+            cached_text: totals.cached_text || 0, cached_audio: totals.cached_audio || 0,
+            output_text: totals.output_text, output_audio: totals.output_audio,
+            asr_seconds: conn.protocol === 'gemini' ? 0 : usage.asr_seconds,
+            asr_model: asrModel,
+          };
+          row.cost_usd = costUsd(row, resolvePrices(store));
+          store.insertUsage(row);
+          console.log(`[rounds] usage ${member.name} ${model} $${row.cost_usd.toFixed(4)}`);
+        }
+      } catch (e) {
+        console.error('[rounds] usage log failed', e.message);
+      }
       // fire-and-forget: merge the submitted conversation into the member's 动态画像
       if (saved && self.profiles) {
         if (generic) self.profiles.updateAfterTaskSession(member.id, task.id, cycleKey);
@@ -364,6 +393,12 @@ export class Relay {
           const slot = transcript.find(e => e.id === ev.item_id);
           if (slot) slot.text = text ? `${member.name}: ${text}` : null;
           else if (text) transcript.push({ id: ev.item_id, text: `${member.name}: ${text}` });
+          // ASR sidecar billing (OpenAI path only): the event's usage carries
+          // either billed seconds or token counts (~1000 audio tokens/min on
+          // the 4o-transcribe rate card — $6/1M ≈ $0.006/min)
+          const au = ev.usage;
+          if (au?.type === 'duration') usage.asr_seconds += Number(au.seconds) || 0;
+          else if (au?.input_token_details?.audio_tokens) usage.asr_seconds += au.input_token_details.audio_tokens * 0.06;
           break;
         }
         case 'response.output_audio_transcript.done':
@@ -374,6 +409,18 @@ export class Relay {
           if (ev.text?.trim()) transcript.push({ text: `Luna: ${ev.text.trim()}` });
           break;
         case 'response.done': {
+          const u = ev.response?.usage;
+          if (u) {
+            const it = u.input_token_details || {};
+            const ot = u.output_token_details || {};
+            const ct = it.cached_tokens_details || {};
+            usage.input_text += it.text_tokens || 0;
+            usage.input_audio += it.audio_tokens || 0;
+            usage.cached_text += ct.text_tokens || 0;
+            usage.cached_audio += ct.audio_tokens || 0;
+            usage.output_text += ot.text_tokens || 0;
+            usage.output_audio += ot.audio_tokens || 0;
+          }
           const calls = (ev.response?.output || []).filter(i => i.type === 'function_call');
           for (const fc of calls) this.handleToolCall(fc, { client, upstream, member, task, cycleKey, reportDate, model, markSaved: () => { saved = true; } });
           break;

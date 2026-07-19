@@ -1,6 +1,6 @@
 ---
 name: rounds
-version: 0.10.6
+version: 0.11.0
 description: >-
   Rounds (formerly standup) — delegated 1:1 structured voice conversations for
   teams. An AI agent (OpenAI Realtime, Chinese voice) talks to each member via
@@ -118,6 +118,13 @@ rejects tools+audio; `gemini-3.1-flash-live-preview` also works). The wire
 protocol is auto-detected from the base URL; transcription is native (the
 ASR sidecar setting is ignored). Set `GEMINI_DEBUG=1` on the service for
 wire-level diagnostics.
+
+Since v0.11 every voice session and profile/digest text call records its
+real token usage into `usage_log` with a cost computed from the built-in
+price table (verified against official pricing 2026-07-19). Rollups: settings
+page 用量与成本 card, or `GET /api/usage?month=YYYY-MM`. Price overrides
+(official price changes) go into the settings-DB key `prices` as JSON merged
+per model over the defaults in `src/lib/pricing.js` — no code change needed.
 
 To reset the admin password: write a plaintext value into `auth.password`,
 restart the service — it is migrated to a scrypt hash on startup and printed

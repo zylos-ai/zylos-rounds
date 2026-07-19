@@ -206,6 +206,34 @@ export const MIGRATIONS = [
       DELETE FROM settings WHERE key='openai_api_key';
     `,
   },
+  {
+    // v0.11 usage/cost tracking: one row per voice session or text call.
+    // Raw token breakdown is stored alongside the computed cost so costs can
+    // be recomputed if the price table changes retroactively.
+    version: 9,
+    sql: `
+      CREATE TABLE IF NOT EXISTS usage_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts INTEGER NOT NULL,
+        date TEXT NOT NULL,
+        slot TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        member_id INTEGER,
+        seconds INTEGER NOT NULL DEFAULT 0,
+        input_text INTEGER NOT NULL DEFAULT 0,
+        input_audio INTEGER NOT NULL DEFAULT 0,
+        cached_text INTEGER NOT NULL DEFAULT 0,
+        cached_audio INTEGER NOT NULL DEFAULT 0,
+        output_text INTEGER NOT NULL DEFAULT 0,
+        output_audio INTEGER NOT NULL DEFAULT 0,
+        asr_seconds REAL NOT NULL DEFAULT 0,
+        asr_model TEXT,
+        cost_usd REAL NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_usage_log_date ON usage_log(date);
+    `,
+  },
 ];
 
 export class Store {
@@ -708,6 +736,58 @@ export class Store {
   cleanupSessions(createdBefore, idleBefore) {
     this.db.prepare('DELETE FROM sessions WHERE created_at < ? OR last_activity_at < ?')
       .run(createdBefore, idleBefore);
+  }
+
+  // ---- usage/cost tracking (v0.11) ----
+
+  insertUsage(u) {
+    this.db.prepare(`
+      INSERT INTO usage_log(ts,date,slot,provider,model,member_id,seconds,
+        input_text,input_audio,cached_text,cached_audio,output_text,output_audio,
+        asr_seconds,asr_model,cost_usd)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(
+      u.ts ?? Date.now(), u.date, u.slot, u.provider, u.model, u.member_id ?? null,
+      Math.round(u.seconds || 0),
+      Math.round(u.input_text || 0), Math.round(u.input_audio || 0),
+      Math.round(u.cached_text || 0), Math.round(u.cached_audio || 0),
+      Math.round(u.output_text || 0), Math.round(u.output_audio || 0),
+      u.asr_seconds || 0, u.asr_model ?? null, u.cost_usd || 0,
+    );
+  }
+
+  /** Month rollup ('YYYY-MM'): totals plus by-day/model/member breakdowns. */
+  usageSummary(month, today) {
+    const like = `${month}-%`;
+    const total = this.db.prepare(
+      'SELECT COALESCE(SUM(cost_usd),0) usd, COUNT(*) rows FROM usage_log WHERE date LIKE ?',
+    ).get(like);
+    const todayRow = this.db.prepare(
+      'SELECT COALESCE(SUM(cost_usd),0) usd FROM usage_log WHERE date = ?',
+    ).get(today);
+    const byDay = this.db.prepare(
+      'SELECT date, SUM(cost_usd) usd FROM usage_log WHERE date LIKE ? GROUP BY date ORDER BY date',
+    ).all(like);
+    const byModel = this.db.prepare(`
+      SELECT model, slot, COUNT(*) calls, SUM(seconds) seconds, SUM(cost_usd) usd,
+        SUM(input_text+input_audio) tokens_in, SUM(output_text+output_audio) tokens_out
+      FROM usage_log WHERE date LIKE ? GROUP BY model, slot ORDER BY usd DESC
+    `).all(like);
+    const byMember = this.db.prepare(`
+      SELECT u.member_id, m.name, COUNT(*) calls, SUM(u.seconds) seconds, SUM(u.cost_usd) usd
+      FROM usage_log u LEFT JOIN members m ON m.id = u.member_id
+      WHERE u.date LIKE ? AND u.member_id IS NOT NULL
+      GROUP BY u.member_id ORDER BY usd DESC
+    `).all(like);
+    return {
+      month,
+      total_usd: total.usd,
+      entries: total.rows,
+      today_usd: todayRow.usd,
+      by_day: byDay,
+      by_model: byModel,
+      by_member: byMember,
+    };
   }
 
   close() {

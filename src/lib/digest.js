@@ -14,6 +14,7 @@
  */
 
 import { callChatModel } from './llm.js';
+import { recordTextUsage } from './pricing.js';
 import { ONESHOT_CYCLE, currentCycleKey, previousCycleKey } from './cycle.js';
 import { todayLocal } from './http-util.js';
 
@@ -112,6 +113,10 @@ export class DigestGenerator {
       prompt: this.buildPrompt(task, rows, key),
       proxy: this.env.proxy,
       timeoutMs: 120_000,
+      onUsage: usage => recordTextUsage(this.store, {
+        slot: 'digest', provider: conn.provider, model: conn.model,
+        tz: this.settings.resolveTimeZone(), usage,
+      }),
     });
     const digest = String(text || '').trim();
     if (!digest) return null;
