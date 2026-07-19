@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.3] - 2026-07-19
+
+### Added
+- **Pause / resume during a call.** A 暂停 button immediately silences Luna
+  (cancels the in-flight reply, flushes playback, clears any half-spoken
+  input) and stops the mic feed until 继续 is pressed; the orb dims and the
+  waveform hides while paused. Mic capture stays alive so resume is instant
+
+### Changed
+- **Talk page control row redesign.** In-call controls now sit in one
+  compact row under the orb — 暂停/继续 + 结束并提交 — in a single
+  secondary-button family. During reconnection the row shows a disabled
+  正在重连… button; after auto-retry gives up it shows 重新连接. The orb
+  stays the page's visual anchor
+
 ## [0.8.2] - 2026-07-19
 
 ### Added

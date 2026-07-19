@@ -12,6 +12,8 @@ import {
   Link2Off,
   FlaskConical,
   RotateCw,
+  Pause,
+  Play,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -38,6 +40,7 @@ export default function TalkApp() {
   const [statusErr, setStatusErr] = useState(false);
   const [messages, setMessages] = useState([]);
   const [summary, setSummary] = useState(null);
+  const [paused, setPaused] = useState(false);
   const engineRef = useRef(null);
   const aiIdRef = useRef(null);
   const doneRef = useRef(false);
@@ -115,17 +118,18 @@ export default function TalkApp() {
           if (doneRef.current) return;
           const wasReconnect = reconnectRef.current.attempts > 0;
           reconnectRef.current.attempts = 0;
+          setPaused(false);
           setPhase('listening');
           say(wasReconnect ? '已重新接通，Luna 会接着刚才的继续' : 'Luna 正在跟你打招呼…');
         },
         error: (msg) => { setSubmitting(false); say(msg, true); },
         speechStarted: () => {
-          if (doneRef.current) return;
+          if (doneRef.current || engineRef.current?.paused) return;
           setPhase('listening');
           say('在听你说…');
         },
         aiAudio: () => {
-          if (doneRef.current) return;
+          if (doneRef.current || engineRef.current?.paused) return;
           setPhase('speaking');
           say('Luna 在说话（直接开口可打断）');
         },
@@ -145,7 +149,7 @@ export default function TalkApp() {
           return t ? [...ms, { id: nid(), key: itemId, role: 'me', text: t }] : ms;
         }),
         responseDone: () => {
-          if (doneRef.current) return;
+          if (doneRef.current || engineRef.current?.paused) return;
           setPhase('listening');
           say('轮到你说了');
         },
@@ -181,6 +185,22 @@ export default function TalkApp() {
       say('无法获取麦克风权限，请在浏览器设置里允许后刷新', true);
     }
   }, [appendAiDelta, say]);
+
+  const togglePause = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine || doneRef.current) return;
+    if (engine.paused) {
+      engine.resume();
+      setPaused(false);
+      setPhase('listening');
+      say('在听你说…');
+    } else {
+      engine.pause();
+      setPaused(true);
+      setPhase('listening');
+      say('已暂停，Luna 暂时听不到你');
+    }
+  }, [say]);
 
   const retryNow = useCallback(() => {
     reconnectRef.current.attempts = 0;
@@ -330,26 +350,41 @@ export default function TalkApp() {
 
       {/* stage — fixed; only the chat log below scrolls */}
       <div className="flex shrink-0 flex-col items-center pb-1.5 pt-4">
-        {orb}
+        <div className={cn(paused && 'opacity-60')}>{orb}</div>
 
-        <div className={cn('mt-3 flex h-9 items-center justify-center', !inCall && 'invisible')}>
-          <Waveform analyser={engineRef.current?.analyser} active={inCall} />
+        <div className={cn('mt-3 flex h-9 items-center justify-center', (!inCall || paused) && 'invisible')}>
+          <Waveform analyser={engineRef.current?.analyser} active={inCall && !paused} />
         </div>
 
         {statusLine}
 
-        {inCall && (
-          <Button variant="secondary" className="mt-2.5" onClick={endCall} disabled={submitting}>
-            {submitting ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : <Check strokeWidth={1.75} />}
-            {submitting ? '正在生成小结…' : '结束并提交'}
-          </Button>
-        )}
-        {phase === 'disconnected' && (
-          <Button variant="secondary" className="mt-2.5" onClick={retryNow}>
-            <RotateCw strokeWidth={1.75} />
-            重新连接
-          </Button>
-        )}
+        {/* control row — one secondary button family under the orb */}
+        <div className="mt-2.5 flex items-center justify-center gap-2">
+          {inCall && (
+            <>
+              <Button variant="secondary" onClick={togglePause} disabled={submitting}>
+                {paused ? <Play strokeWidth={1.75} /> : <Pause strokeWidth={1.75} />}
+                {paused ? '继续' : '暂停'}
+              </Button>
+              <Button variant="secondary" onClick={endCall} disabled={submitting}>
+                {submitting ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : <Check strokeWidth={1.75} />}
+                {submitting ? '正在生成小结…' : '结束并提交'}
+              </Button>
+            </>
+          )}
+          {phase === 'reconnecting' && (
+            <Button variant="secondary" disabled>
+              <Loader2 className="animate-spin" strokeWidth={1.75} />
+              正在重连…
+            </Button>
+          )}
+          {phase === 'disconnected' && (
+            <Button variant="secondary" onClick={retryNow}>
+              <RotateCw strokeWidth={1.75} />
+              重新连接
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* chat log — the page's only scroll region; the stage above stays put */}
