@@ -385,3 +385,37 @@ test('providers: builtin seeded, CRUD, builtin guard, in-use delete guard, slot 
     close();
   }
 });
+
+test('talk session: date + prior record for the builtin daily (v0.9.2)', async () => {
+  const { store, call, close } = await boot();
+  try {
+    const m = await call('POST', '/api/members', { name: '王五' });
+    const daily = (await call('GET', '/api/tasks')).data.tasks.find(t => t.is_builtin);
+    const token = store.taskMembers(daily.id).find(r => r.member_id === m.data.id).token;
+    const today = new Date().toLocaleDateString('sv', { timeZone: 'Asia/Shanghai' });
+
+    // fresh member: date present, no prior
+    let sess = await call('GET', `/api/talk/session?token=${token}`, undefined, {});
+    assert.equal(sess.status, 200);
+    assert.equal(sess.data.date, today);
+    assert.equal(sess.data.prior, null);
+
+    // draft (unsubmitted earlier session): status only, no summary
+    store.appendTranscript(m.data.id, today, '我: 早\n', 30, 'test-model', false);
+    sess = await call('GET', `/api/talk/session?token=${token}`, undefined, {});
+    assert.equal(sess.data.prior.status, 'draft');
+    assert.equal(sess.data.prior.summary, null);
+
+    // submitted: full 4-field summary comes back parsed
+    store.upsertSummary(m.data.id, today, {
+      yesterday: ['修复了登录'], today: ['写文档'], blockers: [], topics_for_meeting: ['发布时间'],
+    }, '{}', 'test-model');
+    sess = await call('GET', `/api/talk/session?token=${token}`, undefined, {});
+    assert.equal(sess.data.prior.status, 'submitted');
+    assert.deepEqual(sess.data.prior.summary.yesterday, ['修复了登录']);
+    assert.deepEqual(sess.data.prior.summary.topics_for_meeting, ['发布时间']);
+    assert.deepEqual(sess.data.prior.summary.blockers, []);
+  } finally {
+    close();
+  }
+});

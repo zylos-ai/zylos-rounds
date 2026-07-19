@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Mic,
   Check,
+  CalendarDays,
   CircleCheck,
   Headphones,
   History,
@@ -28,6 +29,15 @@ const { base: BASE, token: TOKEN } = resolveTokenAndBase();
 let nextId = 1;
 const nid = () => nextId++;
 
+// "7月19日 · 星期六" from the server's report date (server TZ is authoritative)
+const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
+function dateLabel(d) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || '');
+  if (!m) return '';
+  const dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return `${Number(m[2])}月${Number(m[3])}日 · 星期${WEEKDAYS[dt.getDay()]}`;
+}
+
 // Auto-reconnect backoff after an unexpected drop; then a manual retry button.
 const RETRY_DELAYS = [1000, 3000, 6000];
 
@@ -38,6 +48,8 @@ export default function TalkApp() {
   const [name, setName] = useState('');
   const [isTest, setIsTest] = useState(false);
   const [task, setTask] = useState(null); // oneshot task {id,title} — null = daily standup
+  const [reportDate, setReportDate] = useState('');
+  const [prior, setPrior] = useState(null); // today's existing record: {status, summary}
   const [status, setStatus] = useState('');
   const [statusErr, setStatusErr] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -77,8 +89,12 @@ export default function TalkApp() {
         const generic = data.task && !data.task.is_builtin ? data.task : null;
         setTask(generic);
         document.title = `Rounds · ${generic ? generic.title : (data.name || '')}`;
+        setReportDate(data.date || '');
+        setPrior(data.prior || null);
         setPhase('idle');
-        say('点击麦克风开始');
+        if (data.prior?.status === 'submitted') say('点击麦克风继续补充');
+        else if (data.prior?.status === 'draft') say('点击麦克风继续，Luna 会接着刚才的聊');
+        else say('点击麦克风开始');
       } catch {
         if (!cancelled) {
           setPhase('invalid');
@@ -313,9 +329,17 @@ export default function TalkApp() {
     </div>
   );
 
+  const submittedToday = prior?.status === 'submitted';
+  const draftToday = prior?.status === 'draft';
+
   if (!started) {
     return (
-      <div className="flex min-h-dvh flex-col items-center justify-center px-5 pb-[calc(24px+env(safe-area-inset-bottom))]">
+      <div
+        className={cn(
+          'flex min-h-dvh flex-col items-center px-5 pb-[calc(24px+env(safe-area-inset-bottom))]',
+          submittedToday ? 'justify-start pt-10' : 'justify-center'
+        )}
+      >
         <div className="flex w-full max-w-[640px] flex-col items-center text-center">
           <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
             <Mic className="h-6 w-6" strokeWidth={2} />
@@ -323,12 +347,49 @@ export default function TalkApp() {
           <div className="mt-6 text-[0.82rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
             Rounds
           </div>
+          {reportDate ? (
+            <div className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-primary-line bg-primary-soft px-3.5 py-1 text-[0.92rem] font-semibold text-primary">
+              <CalendarDays className="h-4 w-4" strokeWidth={1.75} />
+              今天 {dateLabel(reportDate)}
+            </div>
+          ) : null}
           <h1 className="mt-3 text-4xl font-bold leading-tight tracking-tight max-sm:text-3xl">
-            {task ? `${name}，聊聊「${task.title}」` : `${name}，和 Luna 聊 3-5 分钟`}
+            {submittedToday
+              ? (task ? `${name}，「${task.title}」已提交` : `${name}，今天的日报已提交`)
+              : draftToday
+                ? `${name}，上次聊到一半`
+                : task ? `${name}，聊聊「${task.title}」` : `${name}，和 Luna 聊 3-5 分钟`}
           </h1>
           <p className="mt-4 text-[1.05rem] leading-relaxed text-muted-foreground max-sm:text-base">
-            {task ? 'Luna 代表负责人和你做一次一对一沟通，想到什么说什么' : '昨天做了什么 · 今天计划 · 卡点 · 想在日会讨论的问题'}
+            {submittedToday
+              ? '想到新内容可以继续补充，Luna 会把补充合并进小结'
+              : draftToday
+                ? 'Luna 会接着刚才聊到的地方继续'
+                : task ? 'Luna 代表负责人和你做一次一对一沟通，想到什么说什么' : '昨天做了什么 · 今天计划 · 卡点 · 想在日会讨论的问题'}
           </p>
+          {submittedToday && prior.summary ? (
+            <Card className="mt-7 w-full max-w-[460px] text-left">
+              <CardContent className="py-5">
+                <div className="flex items-center gap-2 text-[1.02rem] font-bold tracking-tight text-success">
+                  <CircleCheck className="h-[18px] w-[18px]" strokeWidth={1.75} />
+                  {task ? '已提交的小结' : '今天已提交的日报'}
+                </div>
+                {task ? (
+                  <>
+                    <SummarySection icon={Target} title="小结" items={prior.summary.summary} />
+                    <SummarySection icon={MessageCircle} title="要点" items={prior.summary.highlights} />
+                  </>
+                ) : (
+                  <>
+                    <SummarySection icon={History} title="昨天" items={prior.summary.yesterday} />
+                    <SummarySection icon={Target} title="今天" items={prior.summary.today} />
+                    <SummarySection icon={TriangleAlert} title="卡点" items={prior.summary.blockers} />
+                    <SummarySection icon={MessageCircle} title="日会待议" items={prior.summary.topics_for_meeting} />
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
           {isTest ? (
             <p className="mt-2 inline-flex items-center gap-1.5 text-[0.85rem] text-faint">
               <FlaskConical className="h-4 w-4" strokeWidth={1.75} />
@@ -363,6 +424,12 @@ export default function TalkApp() {
           {name ? (
             <div className="flex items-center gap-1.5 text-[0.78rem] text-muted-foreground">
               {name}
+              {reportDate ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-primary-line bg-primary-soft px-2 py-px text-[0.7rem] font-medium text-primary">
+                  <CalendarDays className="h-3 w-3" strokeWidth={1.75} />
+                  {dateLabel(reportDate)}
+                </span>
+              ) : null}
               {task ? (
                 <span className="inline-flex items-center rounded-full bg-accent px-2 py-px text-[0.7rem] font-medium">
                   {task.title}

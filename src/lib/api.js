@@ -83,12 +83,40 @@ export class Api {
       const token = url.searchParams.get('token') || '';
       const ts = this.store.getTaskSessionByToken(token);
       if (!ts) return sendJson(res, 404, { error: 'invalid_token' }), true;
+      const date = todayLocal(this.getConfig().timeZone);
+      // today's existing record (if any) so the talk page can open in
+      // "continue" mode showing the submitted summary instead of a cold start
+      let prior = null;
+      if (ts.task.is_builtin) {
+        const rec = this.store.getReport(ts.member.id, date);
+        if (rec) {
+          prior = {
+            status: rec.status,
+            summary: rec.status === 'submitted' ? {
+              yesterday: parseList(rec.yesterday), today: parseList(rec.today),
+              blockers: parseList(rec.blockers), topics_for_meeting: parseList(rec.topics),
+            } : null,
+          };
+        }
+      } else {
+        const cycleKey = ts.task.type === 'oneshot' ? ONESHOT_CYCLE : currentCycleKey(ts.task, date);
+        const rec = cycleKey ? this.store.getCycleRecord(ts.task.id, ts.member.id, cycleKey) : null;
+        if (rec) {
+          prior = {
+            status: rec.status,
+            summary: rec.status === 'submitted'
+              ? { summary: parseList(rec.summary), highlights: parseList(rec.highlights) }
+              : null,
+          };
+        }
+      }
       return sendJson(res, 200, {
         name: ts.member.name, is_test: Boolean(ts.member.is_test),
         task: {
           id: ts.task.id, title: ts.task.title, type: ts.task.type,
           is_builtin: Boolean(ts.task.is_builtin),
         },
+        date, prior,
       }), true;
     }
 

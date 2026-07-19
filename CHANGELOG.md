@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] - 2026-07-19
+
+### Added
+- **Prominent report-date display on the talk page.** A colored date chip
+  ("今天 7月19日 · 星期六", server-timezone authoritative) on the landing
+  hero and the in-call header, so members always know which day they are
+  reporting for
+- **Continue-mode landing.** `/api/talk/session` now returns today's
+  `date` and any existing `prior` record for this (task, member). When
+  today's report is already submitted, the landing page shows the
+  submitted summary card and switches to "继续补充" semantics — the
+  conversation only starts when the member chooses to add more; an
+  unsubmitted draft opens as "接着上次继续"
+
 ## [0.9.1] - 2026-07-19
 
 ### Fixed
