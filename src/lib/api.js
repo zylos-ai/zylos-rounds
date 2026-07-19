@@ -716,8 +716,8 @@ export class Api {
         })),
         test_member: test && testToken ? { name: test.name, link: this.memberLink(req, testToken) } : null,
         report,
-        digest: '',
-        digest_updated_at: null,
+        digest: this.store.getCycleDigest(id, date)?.content || '',
+        digest_updated_at: this.store.getCycleDigest(id, date)?.updated_at || null,
       });
     }
 
@@ -859,7 +859,7 @@ export class Api {
 
   async triggerDigest(req, res, id) {
     const task = this.store.getTask(id);
-    if (!task || task.is_builtin) return sendJson(res, 404, { error: 'not_found' });
+    if (!task) return sendJson(res, 404, { error: 'not_found' });
     let body = {};
     try {
       body = await readJsonBody(req);

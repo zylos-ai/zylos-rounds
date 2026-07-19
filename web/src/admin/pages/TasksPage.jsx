@@ -585,6 +585,35 @@ function CreateTaskCard({ onDone }) {
 
 /* ---------------- detail ---------------- */
 
+function DigestCard({ task, digesting, digestError, onTrigger }) {
+  const T = useLangDict(DICT);
+  return (
+    <Card>
+      <CardContent className="py-5">
+        <div className="mb-3 flex flex-wrap items-center gap-3">
+          <h2 className="text-lg font-semibold">{task.type === 'recurring' ? T.cycleDigest : T.taskDigest}</h2>
+          <span className="text-sm text-muted-foreground">
+            {task.digest_updated_at
+              ? T.digestUpdatedAt(task.digest_updated_at.slice(0, 16))
+              : task.is_builtin ? T.digestManual
+                : task.type === 'recurring' ? T.digestAutoRecurring : T.digestManual}
+            {task.digest_auto_at ? T.digestAutoSet(task.digest_auto_at.slice(0, 16), task.digest_close_linked) : ''}
+            {task.digest_instruction ? T.digestCustomInstr : ''}
+          </span>
+          <Button size="sm" className="ml-auto" onClick={onTrigger} disabled={digesting}>
+            {digesting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {task.digest ? T.regenDigest : T.genDigest}
+          </Button>
+        </div>
+        {digestError && <p className="mb-3 text-sm text-destructive">{digestError}</p>}
+        {task.digest
+          ? <div className="whitespace-pre-wrap rounded-md bg-accent/50 px-4 py-3 text-[0.95rem] leading-relaxed">{task.digest}</div>
+          : <p className="text-sm text-muted-foreground">{T.digestNotYet}{task.digest_instruction ? T.digestNotYetCustom : task.type === 'recurring' ? T.digestNotYetRecurring : T.digestNotYetOneshot}</p>}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function TaskDetailPage({ id, cycle }) {
   const T = useLangDict(DICT);
   const [task, setTask] = useState(null);
@@ -716,32 +745,12 @@ export function TaskDetailPage({ id, cycle }) {
       {task.is_builtin ? (
         <>
           {task.report && <DayReportView data={task.report} />}
+          <DigestCard task={task} digesting={digesting} digestError={digestError} onTrigger={triggerDigest} />
           <MemberLinksCard task={task} copied={copied} copy={copy} resetLink={resetLink} />
         </>
       ) : (
         <>
-          <Card>
-            <CardContent className="py-5">
-              <div className="mb-3 flex flex-wrap items-center gap-3">
-                <h2 className="text-lg font-semibold">{task.type === 'recurring' ? T.cycleDigest : T.taskDigest}</h2>
-                <span className="text-sm text-muted-foreground">
-                  {task.digest_updated_at
-                    ? T.digestUpdatedAt(task.digest_updated_at.slice(0, 16))
-                    : task.type === 'recurring' ? T.digestAutoRecurring : T.digestManual}
-                  {task.digest_auto_at ? T.digestAutoSet(task.digest_auto_at.slice(0, 16), task.digest_close_linked) : ''}
-                  {task.digest_instruction ? T.digestCustomInstr : ''}
-                </span>
-                <Button size="sm" className="ml-auto" onClick={triggerDigest} disabled={digesting}>
-                  {digesting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                  {task.digest ? T.regenDigest : T.genDigest}
-                </Button>
-              </div>
-              {digestError && <p className="mb-3 text-sm text-destructive">{digestError}</p>}
-              {task.digest
-                ? <div className="whitespace-pre-wrap rounded-md bg-accent/50 px-4 py-3 text-[0.95rem] leading-relaxed">{task.digest}</div>
-                : <p className="text-sm text-muted-foreground">{T.digestNotYet}{task.digest_instruction ? T.digestNotYetCustom : task.type === 'recurring' ? T.digestNotYetRecurring : T.digestNotYetOneshot}</p>}
-            </CardContent>
-          </Card>
+          <DigestCard task={task} digesting={digesting} digestError={digestError} onTrigger={triggerDigest} />
 
           <Card>
             <CardContent className="py-5">

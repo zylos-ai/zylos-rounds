@@ -45,6 +45,10 @@ const DIGEST_STRINGS = {
     highlights: '重点信号：',
     excerpt: '对话摘录：',
     empty: '（无内容）',
+    secYesterday: '昨天',
+    secToday: '今天',
+    secBlockers: '卡点',
+    secTopics: '待议',
     intro: '你替团队负责人整理一轮一对一沟通的汇总报告。负责人委托语音助手就同一主题分别与多位成员沟通，下面是每个人的沟通结果。',
     task: '【任务】',
     cycle: key => `【周期】${key} 起始的这一期`,
@@ -73,6 +77,10 @@ Information the lead should note individually: risks, strong asks, emotions, poi
     highlights: 'Key signals:',
     excerpt: 'Transcript excerpt:',
     empty: '(no content)',
+    secYesterday: 'Yesterday',
+    secToday: 'Today',
+    secBlockers: 'Blockers',
+    secTopics: 'Meeting topics',
     intro: "You compile a summary report for the team lead. The lead delegated a voice assistant to talk with several members one-on-one about the same topic; below are each member's results.",
     task: '[Task] ',
     cycle: key => `[Cycle] the round starting ${key}`,
@@ -98,6 +106,32 @@ export class DigestGenerator {
     this.env = env;
     this.settings = settings;
     this.timer = null;
+  }
+
+  /**
+   * The built-in daily task stores data in `reports` (structured
+   * yesterday/today/blockers/topics), not cycle_records — adapt one day's
+   * reports (plus the not-yet-reported roster) to the buildPrompt row shape.
+   */
+  dailyRows(date) {
+    const L = DIGEST_STRINGS[this.settings.resolveLanguage()] || DIGEST_STRINGS.zh;
+    const reports = this.store.dayReports(date);
+    const done = new Set(reports.map(r => r.member_id));
+    return [
+      ...reports.map(r => ({
+        name: r.name,
+        status: 'submitted',
+        summary: JSON.stringify([
+          ...parseList(r.yesterday).map(s => `[${L.secYesterday}] ${s}`),
+          ...parseList(r.today).map(s => `[${L.secToday}] ${s}`),
+          ...parseList(r.blockers).map(s => `[${L.secBlockers}] ${s}`),
+        ]),
+        highlights: JSON.stringify(parseList(r.topics).map(s => `[${L.secTopics}] ${s}`)),
+        transcript: r.transcript || '',
+      })),
+      ...this.store.listActiveMembers().filter(m => !done.has(m.id))
+        .map(m => ({ name: m.name, status: 'pending', summary: '[]', highlights: '[]', transcript: '' })),
+    ];
   }
 
   buildPrompt(task, rows, cycleKey) {
@@ -141,12 +175,12 @@ export class DigestGenerator {
    */
   async generate(taskId, cycleKey = null) {
     const task = this.store.getTask(taskId);
-    if (!task || task.is_builtin) return null;
+    if (!task) return null;
     const key = cycleKey ?? (task.type === 'oneshot'
       ? ONESHOT_CYCLE
       : currentCycleKey(task, todayLocal(this.settings.resolveTimeZone())));
     if (!key) return null;
-    const rows = this.store.cycleRecords(taskId, key);
+    const rows = task.is_builtin ? this.dailyRows(key) : this.store.cycleRecords(taskId, key);
     if (!rows.some(r => r.status === 'submitted')) return null;
     const conn = this.settings.textConnection('digest');
     if (!conn.key) return null;
