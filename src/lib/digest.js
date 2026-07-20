@@ -33,12 +33,18 @@ const DIGEST_STRINGS = {
 ## 重点信号
 值得负责人单独注意的信息：强烈诉求、风险、情绪、超出问题框架但重要的内容，标注来源成员。`,
     recurring: `请输出给负责人看的本周期汇总报告（Markdown）。视角要求：以事为中心组织内容，不要按成员逐人罗列——同一事项涉及多人时合并到一起讲，人名只在句中做归属标注（如"（张三）"）。不要输出一级大标题（#），直接从下面的小节开始：
-## 进展
-按事项归并本周期的进展和结论，每个事项一条或一小段，合并所有相关成员的信息并标注归属。
+## 已完成
+成员明确说已完成/已交付/已上线/已发版的事项。按事项归并，标注归属。如果没有任何明确完成的事项，写"无明确完成事项"。
+## 进行中
+成员提到但尚未完成的事项，标注进度（如果成员提了进度或预计完成时间，一并写上）。按事项归并，标注归属。注意：成员提到"在做某事"不等于"完成了某事"，未明确说完成的一律放这里。
+## 计划
+本周期计划做的事项，按事项归并，标注归属。
 ## 卡点与风险
 受阻的事项和潜在风险，按事项列出，说明影响，标注相关成员。
+## 依赖比对
+交叉比对所有成员的信息，检查并列出：成员 A 的工作依赖成员 B 做某事但 B 没有提到这件事（依赖断裂）；某项工作有时间压力但上游未就绪（风险升级）；多人在做类似的事但没有提到协作（可能重复）。如果没有发现问题，写"未发现依赖断裂"。
 ## 待议
-需要负责人决策、回应或介入的事项，按重要程度排列。`,
+需要负责人决策、回应或介入的事项，加上依赖比对中发现的需要拉齐的事项，按重要程度排列。`,
     sharedRules: '要求：只依据上面提供的内容，不要编造；未完成对话的成员在结尾单独列出名单；语言简洁，直接给结论。',
     notSubmitted: '（未完成对话）',
     points: '要点：',
@@ -65,12 +71,18 @@ Points of disagreement — list each side's position and who holds it.
 ## Key signals
 Information the lead should note individually: strong asks, risks, emotions, important content beyond the question frame — attribute each to its member.`,
     recurring: `Write this cycle's summary report for the team lead (Markdown). Perspective: organize by workstream/topic, never member by member — when several members touch the same item, merge their input into one place and use names only as inline attribution (e.g. "(Alex)"). Do not emit a top-level heading (#); start directly with these sections:
-## Progress
-Progress and conclusions grouped by workstream — one entry or short block per item, merging all related members' input with attribution.
+## Completed
+Items members explicitly said are done/shipped/deployed/released. Group by workstream with attribution. If nothing was explicitly completed, write "No items explicitly completed."
+## In progress
+Items members mentioned but have not completed — include progress estimates or ETAs if the member provided them. Group by workstream with attribution. Note: "working on X" does not mean "finished X"; anything not explicitly completed goes here.
+## Planned
+Items planned for this cycle, grouped by workstream with attribution.
 ## Blockers & risks
 Stalled items and potential risks, listed by item with impact and the members involved.
+## Dependency check
+Cross-reference all members' input and flag: member A depends on member B for something but B did not mention it (dependency gap); an item has a deadline but its upstream is not ready (escalated risk); multiple members are working on similar things without mentioning coordination (possible duplication). If no issues found, write "No dependency gaps detected."
 ## For discussion
-Items needing the lead's decision, response or involvement, ordered by importance.`,
+Items needing the lead's decision, response or involvement, plus any items from the dependency check that need alignment — ordered by importance.`,
     sharedRules: 'Requirements: base everything strictly on the content above, never invent; list members who did not complete their conversation separately at the end; be concise and lead with conclusions.',
     notSubmitted: ' (conversation not completed)',
     points: 'Key points:',
