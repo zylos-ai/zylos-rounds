@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.5] - 2026-07-20
+
+### Changed
+- **Daily report page reorganized for large rosters.** The cycle digest
+  (本期汇总) now sits directly under the meeting-topics highlight, above the
+  per-member cards, so the aggregate view is reachable without scrolling past
+  everyone. Per-member cards collapse to a single line by default (name +
+  blocker badge + duration) and expand on click, with an expand-all /
+  collapse-all toggle. Empty blocker sections are hidden and surface only as a
+  count badge when present. Page order is now: topics → digest → not-reported →
+  member detail → member links.
+
 ## [0.19.4] - 2026-07-20
 
 ### Changed

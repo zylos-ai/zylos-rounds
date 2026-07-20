@@ -801,8 +801,12 @@ export function TaskDetailPage({ id, cycle }) {
 
       {task.is_builtin ? (
         <>
-          {task.report && <DayReportView data={task.report} />}
-          <DigestCard task={task} digesting={digesting} digestError={digestError} onTrigger={triggerDigest} onSaved={load} />
+          {task.report && (
+            <DayReportView
+              data={task.report}
+              digestSlot={<DigestCard task={task} digesting={digesting} digestError={digestError} onTrigger={triggerDigest} onSaved={load} />}
+            />
+          )}
           <MemberLinksCard task={task} copied={copied} copy={copy} resetLink={resetLink} />
         </>
       ) : (
