@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.6] - 2026-07-20
+
+### Changed
+- Task detail: the 追问指引 (probing guidance) card now collapses by default
+  and renders markdown when expanded, matching the brief / question-frame
+  cards. Its edit button stays available in the collapsed header.
+- **Default probing guidance and recurring digest template improved** (merged
+  from PR #1, by the coco avatar): the default probing guidance now asks the
+  agent to confirm each item's completion status (done vs in-progress); the
+  default recurring digest template splits Progress into Completed / In
+  progress / Planned, adds a Dependency-check section (cross-references members
+  for dependency gaps, deadline risks, and duplication), and folds those
+  findings into For-discussion. These are the out-of-box defaults; teams with a
+  custom digest instruction or brain probing guidance keep their own.
+
 ## [0.19.5] - 2026-07-20
 
 ### Changed

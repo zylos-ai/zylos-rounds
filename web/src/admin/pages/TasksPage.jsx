@@ -1009,7 +1009,8 @@ function CollapsibleTextCard({ title, text }) {
 
 function ProbeInstructionCard({ task, onSaved }) {
   const T = useLangDict(DICT);
-  const [open, setOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [value, setValue] = useState(task.probe_instruction || '');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -1017,7 +1018,7 @@ function ProbeInstructionCard({ task, onSaved }) {
 
   const onOpenChange = (next) => {
     if (next) { setValue(task.probe_instruction || ''); setErr(''); }
-    setOpen(next);
+    setDialogOpen(next);
   };
 
   const save = async () => {
@@ -1026,7 +1027,7 @@ function ProbeInstructionCard({ task, onSaved }) {
     setErr('');
     try {
       await api(`api/tasks/${task.id}`, { method: 'PUT', body: { probe_instruction: value } });
-      setOpen(false);
+      setDialogOpen(false);
       onSaved();
     } catch (e) {
       if (e.status !== 401) setErr(T.saveFailed);
@@ -1038,15 +1039,23 @@ function ProbeInstructionCard({ task, onSaved }) {
   return (
     <Card>
       <CardContent className="py-5">
-        <div className="mb-2 flex items-center gap-2">
-          <h2 className="text-sm font-semibold text-muted-foreground">{T.probeCardTitle}</h2>
-          <AlertDialog open={open} onOpenChange={onOpenChange}>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setExpanded(v => !v)}
+            className="flex flex-1 items-center gap-2 text-left"
+            aria-expanded={expanded}
+          >
+            <ChevronRight className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', expanded && 'rotate-90')} strokeWidth={2} />
+            <h2 className="text-sm font-semibold text-muted-foreground">{T.probeCardTitle}</h2>
+          </button>
+          <AlertDialog open={dialogOpen} onOpenChange={onOpenChange}>
             <Button
               variant="ghost"
               size="icon"
               title={has ? T.probeEdit : T.probeSet}
               aria-label={T.probeEdit}
-              className={cn('ml-auto -my-1 shrink-0', has && 'text-primary')}
+              className={cn('-my-1 shrink-0', has && 'text-primary')}
               onClick={() => onOpenChange(true)}
             >
               <NotebookPen strokeWidth={1.75} />
@@ -1076,9 +1085,9 @@ function ProbeInstructionCard({ task, onSaved }) {
             </AlertDialogContent>
           </AlertDialog>
         </div>
-        {has
-          ? <p className="whitespace-pre-wrap text-[0.95rem] leading-relaxed">{task.probe_instruction}</p>
-          : <p className="text-sm text-faint">{T.probeUnset}</p>}
+        {expanded && (has
+          ? <Markdown text={task.probe_instruction} className="mt-3 text-[0.95rem] leading-relaxed" />
+          : <p className="mt-3 text-sm text-faint">{T.probeUnset}</p>)}
       </CardContent>
     </Card>
   );
