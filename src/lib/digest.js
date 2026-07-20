@@ -31,21 +31,27 @@ const DIGEST_STRINGS = {
 ## 分歧
 观点不一致的点，逐条列出各方立场和归属。
 ## 重点信号
-值得负责人单独注意的信息：强烈诉求、风险、情绪、超出问题框架但重要的内容，标注来源成员。`,
-    recurring: `请输出给负责人看的本周期汇总报告（Markdown）。视角要求：以事为中心组织内容，不要按成员逐人罗列——同一事项涉及多人时合并到一起讲，人名只在句中做归属标注（如"（张三）"）。不要输出一级大标题（#），直接从下面的小节开始：
+值得负责人单独注意的信息：强烈诉求、风险、情绪、超出问题框架但重要的内容，标注来源成员。
+未完成对话的成员，在结尾单独用一行列出名单。`,
+    recurring: `请输出给负责人看的本周期汇总报告（Markdown）。这份报告要能直接在日会上展示：把"总结"和"当场要对齐/拍板的事"放在最上面（开会念上半部分就够），把"谁做了什么"的明细放在最后供按需查阅。视角要求：以事为中心组织内容，不要按成员逐人罗列——同一事项涉及多人时合并到一起讲，人名只在句中做归属标注（如"（张三）"）。不要输出一级大标题（#），直接从下面的小节开始，严格按此顺序：
+## 总览
+3 行以内概括全局：提交率（X/Y 人）、今日核心推进方向（2-3 个关键词）、主要风险（1-2 个）。如果有成员未提交或内容为空，在这里用一行列出他们的名字。
+## 待议
+需要负责人决策、回应或介入的事项——这是日会的议程。逐条列出，每条标注需要谁做什么，分两类：① 成员主动提出的议题；② 下面「依赖比对」中发现的、需要拉齐的事项。如果没有，写"无"。
+## 卡点与风险
+受阻的事项和潜在风险，按事项列出，说明影响，标注相关成员。只列真正阻塞或有风险的。
+## 依赖比对
+交叉比对所有成员的信息，检查并列出：成员 A 的工作依赖成员 B 做某事但 B 没有提到这件事（依赖断裂）；某项工作有时间压力但上游未就绪（风险升级）；多人在做类似的事但没有提到协作（可能重复）。如果没有发现问题，写"未发现依赖断裂"。
+
+---
+*以下为明细，供按需查阅。*
 ## 已完成
 成员明确说已完成/已交付/已上线/已发版的事项。按事项归并，标注归属。如果没有任何明确完成的事项，写"无明确完成事项"。
 ## 进行中
 成员提到但尚未完成的事项，标注进度（如果成员提了进度或预计完成时间，一并写上）。按事项归并，标注归属。注意：成员提到"在做某事"不等于"完成了某事"，未明确说完成的一律放这里。
 ## 计划
-本周期计划做的事项，按事项归并，标注归属。
-## 卡点与风险
-受阻的事项和潜在风险，按事项列出，说明影响，标注相关成员。
-## 依赖比对
-交叉比对所有成员的信息，检查并列出：成员 A 的工作依赖成员 B 做某事但 B 没有提到这件事（依赖断裂）；某项工作有时间压力但上游未就绪（风险升级）；多人在做类似的事但没有提到协作（可能重复）。如果没有发现问题，写"未发现依赖断裂"。
-## 待议
-需要负责人决策、回应或介入的事项，加上依赖比对中发现的需要拉齐的事项，按重要程度排列。`,
-    sharedRules: '要求：只依据上面提供的内容，不要编造；未完成对话的成员在结尾单独列出名单；语言简洁，直接给结论。',
+本周期计划做的事项，按事项归并，标注归属。`,
+    sharedRules: '要求：只依据上面提供的内容，不要编造；语言简洁，直接给结论。',
     notSubmitted: '（未完成对话）',
     points: '要点：',
     highlights: '重点信号：',
@@ -69,21 +75,27 @@ Points where members agree or point the same way — merge them and note who sup
 ## Disagreements
 Points of disagreement — list each side's position and who holds it.
 ## Key signals
-Information the lead should note individually: strong asks, risks, emotions, important content beyond the question frame — attribute each to its member.`,
-    recurring: `Write this cycle's summary report for the team lead (Markdown). Perspective: organize by workstream/topic, never member by member — when several members touch the same item, merge their input into one place and use names only as inline attribution (e.g. "(Alex)"). Do not emit a top-level heading (#); start directly with these sections:
+Information the lead should note individually: strong asks, risks, emotions, important content beyond the question frame — attribute each to its member.
+List members who did not complete their conversation on a single line at the end.`,
+    recurring: `Write this cycle's summary report for the team lead (Markdown). This report is meant to be shown at the daily meeting: put the "summary" and the "things to align on / decide right now" at the top (reading out the top half should be enough), and push the "who did what" detail to the bottom for lookup on demand. Perspective: organize by workstream/topic, never member by member — when several members touch the same item, merge their input into one place and use names only as inline attribution (e.g. "(Alex)"). Do not emit a top-level heading (#); start directly with these sections, in exactly this order:
+## Overview
+Sum up the whole cycle in 3 lines or fewer: submission rate (X/Y members), today's core workstreams (2-3 keywords), main risks (1-2). If any member did not submit or their content is empty, list their names here on one line.
+## For discussion
+Items needing the lead's decision, response or involvement — this is the meeting agenda. List each with who needs to do what, in two groups: (1) topics members raised themselves; (2) items surfaced by the "Dependency check" below that need alignment. If none, write "None."
+## Blockers & risks
+Stalled items and potential risks, listed by item with impact and the members involved. Only list what is genuinely blocked or at risk.
+## Dependency check
+Cross-reference all members' input and flag: member A depends on member B for something but B did not mention it (dependency gap); an item has a deadline but its upstream is not ready (escalated risk); multiple members are working on similar things without mentioning coordination (possible duplication). If no issues found, write "No dependency gaps detected."
+
+---
+*Detail below — for lookup as needed.*
 ## Completed
 Items members explicitly said are done/shipped/deployed/released. Group by workstream with attribution. If nothing was explicitly completed, write "No items explicitly completed."
 ## In progress
 Items members mentioned but have not completed — include progress estimates or ETAs if the member provided them. Group by workstream with attribution. Note: "working on X" does not mean "finished X"; anything not explicitly completed goes here.
 ## Planned
-Items planned for this cycle, grouped by workstream with attribution.
-## Blockers & risks
-Stalled items and potential risks, listed by item with impact and the members involved.
-## Dependency check
-Cross-reference all members' input and flag: member A depends on member B for something but B did not mention it (dependency gap); an item has a deadline but its upstream is not ready (escalated risk); multiple members are working on similar things without mentioning coordination (possible duplication). If no issues found, write "No dependency gaps detected."
-## For discussion
-Items needing the lead's decision, response or involvement, plus any items from the dependency check that need alignment — ordered by importance.`,
-    sharedRules: 'Requirements: base everything strictly on the content above, never invent; list members who did not complete their conversation separately at the end; be concise and lead with conclusions.',
+Items planned for this cycle, grouped by workstream with attribution.`,
+    sharedRules: 'Requirements: base everything strictly on the content above, never invent; be concise and lead with conclusions.',
     notSubmitted: ' (conversation not completed)',
     points: 'Key points:',
     highlights: 'Key signals:',

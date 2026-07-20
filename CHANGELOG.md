@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.1] - 2026-07-20
+
+### Changed
+- **Default recurring digest reordered to be meeting-facing.** The template now
+  leads with the summary and the items to align on / decide, and pushes the
+  work detail to the bottom for lookup. New section order: 总览 (Overview:
+  submission rate, core workstreams, main risks, plus any non-submitters) →
+  待议 (For discussion — the meeting agenda) → 卡点与风险 (Blockers & risks) →
+  依赖比对 (Dependency check) → *detail divider* → 已完成 (Completed) → 进行中
+  (In progress) → 计划 (Planned). Reading the top half is enough to run the
+  daily meeting; the detail is there when someone needs to look it up. The
+  not-submitted roster moves into 总览 (recurring) / stays at the end (oneshot),
+  so the shared rules no longer pin it to the tail. (Owner ruling, 2026-07-20.)
+
+### Fixed
+- `CLIENT_VERSION` in the portable client CLI now tracks the package version
+  (was left at 0.19.6 in the 0.20.0 bump).
+
 ## [0.20.0] - 2026-07-20
 
 ### Changed
