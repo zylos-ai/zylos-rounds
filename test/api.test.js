@@ -572,37 +572,6 @@ test('named API tokens: create/list/auth/rotate/revoke (v0.17/v0.18)', async () 
   }
 });
 
-test('decisions: POST records a decision, GET lists it, unauthorized is rejected', async () => {
-  const { store, call, close } = await boot();
-  try {
-    const created = await call('POST', '/api/decisions', {
-      topic: '汇总模板', content: '采用方案B', decided_by: 'Howard',
-    });
-    assert.equal(created.status, 201);
-    assert.ok(created.data.id > 0);
-
-    const list = await call('GET', '/api/decisions');
-    assert.equal(list.status, 200);
-    assert.equal(list.data.decisions.length, 1);
-    // decisions dissolved into plain team follow-ups: topic lives inline, no title
-    assert.equal(list.data.decisions[0].scope, 'team');
-    assert.match(list.data.decisions[0].content, /【汇总模板】/);
-    assert.match(list.data.decisions[0].content, /方案B/);
-
-    // recallable for the internal built-in task via scope-aware recall
-    assert.equal(store.recall(store.builtinTaskId(), 'internal', '方案B').length, 1);
-
-    // empty content rejected
-    assert.equal((await call('POST', '/api/decisions', { content: '  ' })).status, 400);
-
-    // bearer required
-    const noauth = await call('POST', '/api/decisions', { content: 'x' }, {});
-    assert.equal(noauth.status, 401);
-  } finally {
-    close();
-  }
-});
-
 test('follow-ups: POST/GET/DELETE with scope + task validation', async () => {
   const { store, call, close } = await boot();
   try {

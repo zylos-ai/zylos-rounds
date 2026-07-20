@@ -24,7 +24,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
-export const CLIENT_VERSION = '0.22.0';
+export const CLIENT_VERSION = '0.22.1';
 
 const HELP = `rounds CLI v${CLIENT_VERSION} — manage the Rounds app via its admin API
 
@@ -54,10 +54,6 @@ Follow-ups (补充/跟进) — append info to a task; carried into its next cycl
   followup list --task <id>                             follow-ups on a task (newest first)
   followup add --task <id> [--scope team] [--by NAME] [text]   default scope=private; content from arg or stdin
   followup remove <id>
-
-Decisions (决议回写) — alias for a team-scoped follow-up on the built-in daily task
-  decision list                                         recent decisions (newest first)
-  decision add [--topic T] [--by NAME] [text]           content from text arg or stdin
 
 Communication tasks (沟通任务)
   task list                           all tasks with current-cycle progress
@@ -256,13 +252,6 @@ async function run(target, cmd, sub, args, flags) {
       });
     }
     case 'followup remove': return del(`/api/followups/${id(args[0])}`).then(() => ({ ok: true, removed: id(args[0]) }));
-
-    case 'decision list': return get('/api/decisions');
-    case 'decision add': {
-      const content = textInput(args[0]);
-      if (!content) fail('usage: decision add [--topic T] [--by NAME] <text|stdin>');
-      return post('/api/decisions', { topic: flags.topic || '', content, decided_by: flags.by || '' });
-    }
 
     case 'task list': return get('/api/tasks');
     case 'task show': {

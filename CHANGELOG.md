@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.22.1] - 2026-07-21
+
+### Removed
+- The v0.21 back-compat aliases `/api/decisions` (GET/POST) and the `decision` CLI commands. A decision is a team-scoped follow-up — use `/api/followups` and the `followup` CLI. The one-time v12 migration that dissolves any `decision`-tagged knowledge into team follow-ups is unaffected.
+
 ## [0.22.0] - 2026-07-21
 
 ### Added

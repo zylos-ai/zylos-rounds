@@ -176,36 +176,6 @@ test('test member is excluded from rosters, digests, and history', () => {
   s.close();
 });
 
-test('decisions dissolve into team follow-ups on the built-in task', () => {
-  const s = tmpStore();
-  const daily = s.ensureDailyTask('每日日报'); // built-in, audience=internal
-  // a plain knowledge row is unrelated to decisions/follow-ups
-  s.addKnowledge('背景资料', 'some team background', 'reference');
-
-  const info = s.addDecision({ topic: 'Rounds 汇总模板', content: '采用方案B，待议合并为唯一议程', decidedBy: 'Howard' });
-  assert.ok(Number(info.lastInsertRowid) > 0);
-
-  // recorded as a team-scoped follow-up on the built-in task — plain text, no title/tag
-  const recent = s.recentDecisions();
-  assert.equal(recent.length, 1);
-  assert.equal(recent[0].scope, 'team');
-  assert.equal(recent[0].task_id, daily.id);
-  assert.match(recent[0].content, /【Rounds 汇总模板】/);
-  assert.match(recent[0].content, /方案B/);
-  assert.match(recent[0].content, /Howard 拍板/);
-
-  // recallable for an internal task via scope-aware recall (knowledge row does not match the query)
-  const hits = s.recall(daily.id, 'internal', '方案B');
-  assert.equal(hits.length, 1);
-  assert.equal(hits[0].source, 'follow_up');
-
-  // empty content is rejected
-  assert.throws(() => s.addDecision({ content: '   ' }));
-  // recency window: a 0-day window admits at most the just-created row
-  assert.equal(s.recentDecisions(0).length <= 1, true);
-  s.close();
-});
-
 test('follow-up scope: private stays in-task, team crosses, external is walled off', () => {
   const s = tmpStore();
   const daily = s.ensureDailyTask('每日日报'); // internal

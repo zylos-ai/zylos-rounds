@@ -552,27 +552,6 @@ export class Store {
     return scored.slice(0, limit);
   }
 
-  // Back-compat aliases — the v0.21 decision-writeback API dissolved into
-  // follow-ups. A recorded decision is a team-scoped follow-up on the built-in
-  // daily task (where 待议 lives). Kept so existing /api/decisions + CLI keep
-  // working; new callers should use addFollowup / recentFollowups directly.
-  addDecision({ topic, content, decidedBy } = {}) {
-    const body = String(content || '').trim();
-    if (!body) throw new Error('decision content required');
-    const taskId = this.builtinTaskId();
-    if (!taskId) throw new Error('no built-in daily task to attach the decision to');
-    const t = String(topic || '').trim();
-    const stamp = `（${new Date().toLocaleString('sv').replace('T', ' ').slice(0, 16)}${decidedBy ? ' · ' + String(decidedBy).trim() + ' 拍板' : ''}）`;
-    const text = `${t ? `【${t}】` : ''}${body}\n${stamp}`;
-    return this.addFollowup({ taskId, content: text, scope: 'team', author: decidedBy });
-  }
-
-  recentDecisions(days = 3, limit = 20) {
-    const taskId = this.builtinTaskId();
-    if (!taskId) return [];
-    return this.recentFollowups(taskId, 'internal', days, limit);
-  }
-
   /**
    * Keyword search over title/content/tags. Each whitespace-separated term must
    * match somewhere (AND semantics); ranking is by how many terms hit the title.

@@ -157,9 +157,6 @@ export class Api {
     if (m && req.method === 'PUT') return await this.updateKnowledge(req, res, Number(m[1])), true;
     if (m && req.method === 'DELETE') return this.deleteKnowledge(res, Number(m[1])), true;
 
-    if (p === '/api/decisions' && req.method === 'GET') return this.listDecisions(res), true;
-    if (p === '/api/decisions' && req.method === 'POST') return await this.addDecision(req, res), true;
-
     if (p === '/api/followups' && req.method === 'GET') return this.listFollowups(req, res, url), true;
     if (p === '/api/followups' && req.method === 'POST') return await this.addFollowup(req, res), true;
     m = p.match(/^\/api\/followups\/(\d+)$/);
@@ -671,36 +668,6 @@ export class Api {
     const info = this.store.deleteKnowledge(id);
     if (!info.changes) return sendJson(res, 404, { error: 'not_found' });
     sendJson(res, 204, {});
-  }
-
-  // ---- decisions (决议回写) — record a meeting decision that closes out a 待议
-  // item. Stored as tagged knowledge; injected into the next cycle's probing and
-  // the next digest so settled items stop re-surfacing.
-  listDecisions(res) {
-    // Back-compat alias: decisions dissolved into team-scoped follow-ups on the
-    // built-in task. Follow-ups are plain text — no title — so the topic (if
-    // any) lives inline as a 【…】 prefix in the content.
-    sendJson(res, 200, {
-      decisions: this.store.recentDecisions(3650, 200).map(d => ({
-        id: d.id, content: d.content, created_at: d.created_at, scope: d.scope,
-      })),
-    });
-  }
-
-  async addDecision(req, res) {
-    let body;
-    try {
-      body = await readJsonBody(req);
-    } catch {
-      return sendJson(res, 400, { error: 'bad_request' });
-    }
-    const content = String(body.content || '').trim();
-    if (!content || content.length > 20000) return sendJson(res, 400, { error: 'invalid_content' });
-    const topic = body.topic === undefined || body.topic === null ? '' : String(body.topic).trim();
-    const decidedBy = body.decided_by === undefined || body.decided_by === null ? '' : String(body.decided_by).trim();
-    if (topic.length > 200) return sendJson(res, 400, { error: 'invalid_topic' });
-    const info = this.store.addDecision({ topic, content, decidedBy });
-    sendJson(res, 201, { id: Number(info.lastInsertRowid), topic, content, decided_by: decidedBy });
   }
 
   // ---- follow-ups (补充/跟进) — the generalized carry-forward container ----
