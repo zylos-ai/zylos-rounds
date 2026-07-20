@@ -160,6 +160,11 @@ export class Api {
     if (p === '/api/decisions' && req.method === 'GET') return this.listDecisions(res), true;
     if (p === '/api/decisions' && req.method === 'POST') return await this.addDecision(req, res), true;
 
+    if (p === '/api/followups' && req.method === 'GET') return this.listFollowups(req, res, url), true;
+    if (p === '/api/followups' && req.method === 'POST') return await this.addFollowup(req, res), true;
+    m = p.match(/^\/api\/followups\/(\d+)$/);
+    if (m && req.method === 'DELETE') return this.deleteFollowup(res, Number(m[1])), true;
+
     m = p.match(/^\/api\/members\/(\d+)\/context$/);
     if (m && req.method === 'PUT') return await this.putMemberContext(req, res, Number(m[1])), true;
 
@@ -696,6 +701,40 @@ export class Api {
     if (topic.length > 200) return sendJson(res, 400, { error: 'invalid_topic' });
     const info = this.store.addDecision({ topic, content, decidedBy });
     sendJson(res, 201, { id: Number(info.lastInsertRowid), topic, content, decided_by: decidedBy });
+  }
+
+  // ---- follow-ups (补充/跟进) — the generalized carry-forward container ----
+  listFollowups(req, res, url) {
+    const taskId = Number(url.searchParams.get('task_id'));
+    if (!taskId || !this.store.getTask(taskId)) return sendJson(res, 400, { error: 'invalid_task' });
+    sendJson(res, 200, {
+      followups: this.store.listFollowups(taskId).map(f => ({
+        id: f.id, content: f.content, scope: f.scope, author: f.author, created_at: f.created_at,
+      })),
+    });
+  }
+
+  async addFollowup(req, res) {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      return sendJson(res, 400, { error: 'bad_request' });
+    }
+    const taskId = Number(body.task_id);
+    if (!taskId || !this.store.getTask(taskId)) return sendJson(res, 400, { error: 'invalid_task' });
+    const content = String(body.content || '').trim();
+    if (!content || content.length > 20000) return sendJson(res, 400, { error: 'invalid_content' });
+    const scope = body.scope === 'team' ? 'team' : 'private';
+    const author = body.author === undefined || body.author === null ? '' : String(body.author).trim();
+    const info = this.store.addFollowup({ taskId, content, scope, author });
+    sendJson(res, 201, { id: Number(info.lastInsertRowid), task_id: taskId, content, scope, author });
+  }
+
+  deleteFollowup(res, id) {
+    if (!this.store.getFollowup(id)) return sendJson(res, 404, { error: 'not_found' });
+    this.store.deleteFollowup(id);
+    sendJson(res, 200, { id });
   }
 
   // Shared parse/validate for knowledge create+update. Returns null (and sends

@@ -602,3 +602,32 @@ test('decisions: POST records a decision, GET lists it, unauthorized is rejected
     close();
   }
 });
+
+test('follow-ups: POST/GET/DELETE with scope + task validation', async () => {
+  const { store, call, close } = await boot();
+  try {
+    const taskId = store.builtinTaskId();
+    const p = await call('POST', '/api/followups', { task_id: taskId, content: '私有补充', scope: 'private', author: 'Luna' });
+    assert.equal(p.status, 201);
+    assert.equal(p.data.scope, 'private');
+    const t = await call('POST', '/api/followups', { task_id: taskId, content: '团队共享补充', scope: 'team' });
+    assert.equal(t.data.scope, 'team');
+
+    const list = await call('GET', `/api/followups?task_id=${taskId}`);
+    assert.equal(list.status, 200);
+    assert.equal(list.data.followups.length, 2);
+
+    // invalid task / empty content / missing bearer are all rejected
+    assert.equal((await call('POST', '/api/followups', { task_id: 99999, content: 'x' })).status, 400);
+    assert.equal((await call('GET', '/api/followups?task_id=99999')).status, 400);
+    assert.equal((await call('POST', '/api/followups', { task_id: taskId, content: '  ' })).status, 400);
+    assert.equal((await call('POST', '/api/followups', { task_id: taskId, content: 'x' }, {})).status, 401);
+
+    // delete
+    assert.equal((await call('DELETE', `/api/followups/${p.data.id}`)).status, 200);
+    assert.equal((await call('GET', `/api/followups?task_id=${taskId}`)).data.followups.length, 1);
+    assert.equal((await call('DELETE', '/api/followups/99999')).status, 404);
+  } finally {
+    close();
+  }
+});

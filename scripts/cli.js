@@ -50,7 +50,12 @@ Knowledge base
   knowledge update <id> [--title T] [--tags G] [text]
   knowledge remove <id>
 
-Decisions (决议回写) — record a meeting decision that closes a 待议 item
+Follow-ups (补充/跟进) — append info to a task; carried into its next cycle
+  followup list --task <id>                             follow-ups on a task (newest first)
+  followup add --task <id> [--scope team] [--by NAME] [text]   default scope=private; content from arg or stdin
+  followup remove <id>
+
+Decisions (决议回写) — alias for a team-scoped follow-up on the built-in daily task
   decision list                                         recent decisions (newest first)
   decision add [--topic T] [--by NAME] [text]           content from text arg or stdin
 
@@ -234,6 +239,23 @@ async function run(target, cmd, sub, args, flags) {
       });
     }
     case 'knowledge remove': return del(`/api/knowledge/${id(args[0])}`).then(() => ({ ok: true, removed: id(args[0]) }));
+
+    case 'followup list': {
+      if (!flags.task) fail('usage: followup list --task <id>');
+      return get(`/api/followups?task_id=${id(flags.task)}`);
+    }
+    case 'followup add': {
+      if (!flags.task) fail('usage: followup add --task <id> [--scope team] [--by NAME] <text|stdin>');
+      const content = textInput(args[0]);
+      if (!content) fail('follow-up content required (text arg or stdin)');
+      return post('/api/followups', {
+        task_id: id(flags.task),
+        content,
+        scope: flags.scope === 'team' ? 'team' : 'private',
+        author: flags.by || '',
+      });
+    }
+    case 'followup remove': return del(`/api/followups/${id(args[0])}`).then(() => ({ ok: true, removed: id(args[0]) }));
 
     case 'decision list': return get('/api/decisions');
     case 'decision add': {

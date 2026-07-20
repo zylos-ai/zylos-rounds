@@ -48,7 +48,7 @@ const INSTRUCTION_STRINGS = {
     aboutMember: (name, ctx) => `【关于 ${name}】（这位同事的角色和需要重点关注的点）\n${ctx}`,
     memberProfile: (name, profile) => `【${name} 的动态画像】（根据其过往日报自动整理，帮助你理解上下文，不要照读出来）\n${profile}`,
     probingGuidance: probing => `【追问指引】（据此决定要不要追问、追问到什么程度；这是内部指引，不要读出来）\n${probing}`,
-    recentDecisions: text => `【近期已拍板的决议】（这些事项在最近的日会上已经有结论，不要再当作待议来追问；如对方提到相关内容，据此理解背景、不要重复讨论已定的部分）\n${text}`,
+    recentFollowups: text => `【近期补充与跟进】（以下是最近就相关工作补充或更新的信息，可能包含已经拍板的结论。据此理解最新背景：已经明确或拍板的部分不要再当作待议反复追问，如对方提到相关内容，顺着最新信息聊）\n${text}`,
     taskProbe: text => `【本任务的追问指引】（针对这次沟通任务的追问重点，优先于通用指引）\n${text}`,
     // Code-level default probe for the built-in daily standup. It ships in
     // every install and is always injected for the daily task; a custom
@@ -89,7 +89,7 @@ const INSTRUCTION_STRINGS = {
     aboutMember: (name, ctx) => `[About ${name}] (this colleague's role and what to pay attention to)\n${ctx}`,
     memberProfile: (name, profile) => `[${name}'s dynamic profile] (auto-compiled from their past reports to give you context — don't read it out)\n${profile}`,
     probingGuidance: probing => `[Probing guidance] (use this to decide whether and how deep to follow up; internal guidance — don't read it out)\n${probing}`,
-    recentDecisions: text => `[Recently settled decisions] (these were decided at a recent daily meeting — do not treat them as open topics to probe; if the member mentions related work, use this as background and don't re-litigate the settled part)\n${text}`,
+    recentFollowups: text => `[Recent follow-ups] (recently appended or updated information about the work — may include settled decisions. Use it as the latest background: do not re-probe what is already settled or decided; if the member raises related work, go with the latest information)\n${text}`,
     taskProbe: text => `[This task's probing guidance] (follow-up priorities for this specific conversation; takes precedence over the general guidance)\n${text}`,
     // Code-level default probe for the built-in daily standup (see zh note).
     dailyProbeDefault: `Use this to decide whether and what to follow up on. Don't force a follow-up where nothing applies — keep it natural and brief.
@@ -197,13 +197,16 @@ export class AgentContext {
     const profile = (member.profile || '').trim();
     if (profile) parts.push(L.memberProfile(name, profile));
 
-    // Recently settled decisions — the writeback loop from the daily meeting.
-    // Injected only for the built-in daily standup (that's where 待议 lives), so
-    // the agent knows what's already decided and doesn't re-probe settled items.
-    if (!generic) {
-      const decisions = this.store.recentDecisions?.() || [];
-      if (decisions.length) {
-        parts.push(L.recentDecisions(decisions.map(d => `- ${(d.content || '').trim()}`).join('\n')));
+    // Recent follow-ups — the carry-forward loop. The next cycle carries in
+    // recently appended follow-ups (补充/跟进/更新, settled decisions included) so
+    // the agent knows the latest info and doesn't re-probe settled items. Applies
+    // to every task; visibility is scope-filtered by the task's audience (an
+    // external task sees only its own; team-shared reaches only internal tasks).
+    const followupTaskId = task?.id ?? this.store.builtinTaskId?.();
+    if (followupTaskId) {
+      const followups = this.store.recentFollowups?.(followupTaskId, task?.audience || 'internal') || [];
+      if (followups.length) {
+        parts.push(L.recentFollowups(followups.map(f => `- ${(f.content || '').trim()}`).join('\n')));
       }
     }
 
@@ -257,9 +260,16 @@ export class AgentContext {
     };
   }
 
-  /** search_team_knowledge → top matches, content trimmed for the audio path. */
-  searchKnowledge(query, limit = 3) {
-    const hits = this.store.searchKnowledge(query, limit);
+  /**
+   * search_team_knowledge → top matches, content trimmed for the audio path.
+   * Scope-aware: only the knowledge and follow-ups visible to `task` are
+   * searched (an external task never reaches the team knowledge base or other
+   * tasks' data). Falls back to the built-in daily task when `task` is null.
+   */
+  searchKnowledge(query, task = null, limit = 3) {
+    const taskId = task?.id ?? this.store.builtinTaskId?.();
+    const audience = task?.audience || 'internal';
+    const hits = this.store.recall(taskId, audience, query, limit);
     return {
       query,
       count: hits.length,

@@ -266,7 +266,7 @@ export class Relay {
         break;
       }
       case 'search_team_knowledge': {
-        const data = this.context.searchKnowledge(String(args.query || ''));
+        const data = this.context.searchKnowledge(String(args.query || ''), task);
         console.log(`[rounds] tool search_team_knowledge "${data.query}" -> ${data.count} hits`);
         respond(data);
         break;
