@@ -69,15 +69,44 @@ test('recallMemberHistory returns member-scoped submitted reports, excluding a d
   s.close();
 });
 
-test('seedDefaults seeds probing guidance once, does not clobber edits', () => {
+test('global probing guidance defaults to empty; seedDefaults does not clobber edits', () => {
   const s = tmpStore();
   const ctx = new AgentContext(s);
   ctx.seedDefaults();
-  assert.equal(s.getContext('probing_guidance'), DEFAULT_PROBING_GUIDANCE);
+  // Global probing is a cross-task overlay — empty by default (daily-specific
+  // probing lives in the built-in daily task's code default instead).
+  assert.equal(DEFAULT_PROBING_GUIDANCE, '');
+  assert.equal(s.getContext('probing_guidance'), '');
   assert.equal(s.getContext('team_background'), '');
   s.setContext('probing_guidance', 'custom');
   ctx.seedDefaults(); // idempotent, must not overwrite
   assert.equal(s.getContext('probing_guidance'), 'custom');
+  s.close();
+});
+
+test('built-in daily task injects the code-level default probe; custom probe appends on top', () => {
+  const s = tmpStore();
+  const ctx = new AgentContext(s);
+  // No task passed → daily flow. The daily default probe is always present.
+  const dailyDefault = ctx.buildInstructions({ name: 'Nick', context: '' });
+  assert.match(dailyDefault, /【本任务的追问指引】/);
+  assert.match(dailyDefault, /确认它的完成状态/);
+
+  // A built-in daily task with a custom probe: default + custom, in that order.
+  const builtin = s.ensureDailyTask('每日日报');
+  assert.ok(builtin && builtin.is_builtin);
+  s.updateTask(builtin.id, { probeInstruction: '- 跨组阻塞第一时间上报' });
+  const withCustom = ctx.buildInstructions({ name: 'Nick', context: '' }, s.getTask(builtin.id));
+  const probeIdx = withCustom.indexOf('确认它的完成状态');
+  const customIdx = withCustom.indexOf('跨组阻塞第一时间上报');
+  assert.ok(probeIdx > -1 && customIdx > -1);
+  assert.ok(probeIdx < customIdx, 'code default appears before the custom overlay');
+
+  // A non-daily (generic) task gets NO daily default — only its own field.
+  const generic = s.createTask({ type: 'oneshot', title: 'Q2 复盘' });
+  const genericOut = ctx.buildInstructions({ name: 'Nick', context: '' }, generic);
+  assert.doesNotMatch(genericOut, /确认它的完成状态/);
+  assert.doesNotMatch(genericOut, /【本任务的追问指引】/);
   s.close();
 });
 

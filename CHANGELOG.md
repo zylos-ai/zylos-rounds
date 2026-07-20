@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.0] - 2026-07-20
+
+### Changed
+- **Probing defaults re-layered so daily-specific probing no longer leaks into
+  other tasks.** The global `probing_guidance` container applies to *every*
+  task, so it now defaults to **empty** — teams append their own cross-task
+  guidance only if they want it. The daily-standup-specific probing (confirm
+  completion status, verify "almost done", chase blockers/owner, question plan
+  changes, offer to escalate to the meeting) moves into a **code-level default
+  probe carried by the built-in daily task itself** (bilingual zh/en). A team's
+  custom `probe_instruction` on the daily task now **appends** on top of this
+  code default (append, not override), so each team maintains only its own
+  delta and future improvements to the default reach every install
+  automatically. Non-daily communication tasks get no daily probing at all.
+  (Owner ruling, 2026-07-20.)
+
 ## [0.19.6] - 2026-07-20
 
 ### Changed

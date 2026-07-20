@@ -17,16 +17,13 @@
 
 export const CONTEXT_KEYS = ['team_background', 'probing_guidance'];
 
-// Seeded once on first start so the mechanism is useful out of the box and
-// self-documents how to write good guidance. team_background is left empty on
-// purpose — real team context is filled in by Luna / the avatar.
-export const DEFAULT_PROBING_GUIDANCE = `按这里的指引决定要不要追问、追问什么。没有命中的点就不要硬追，保持自然简短。
-
-- 当对方提到一项工作时，确认它的完成状态：追问"这个做完了吗？还是还在进行中？"如果在进行中，追问大概进度或预计什么时候能搞完。如果对方用模糊措辞（如"在推进""差不多"），明确确认是已交付还是仍在做。目的是让每个事项都带上明确状态（已完成 / 进行中 / 刚启动）。
-- 当对方说某件事"差不多做完/基本完成"时，追问一句是否已经验证过、怎么验证的。
-- 当对方提到卡点时，追问一句在等谁/等什么、卡了多久；如果这个卡点涉及多人协调或需要拍板，问一句要不要放到日会上讨论，同意就记进待议题。
-- 当对方今天的计划和昨天说的明显不一样时，可以轻轻问一句原因（必要时用 recall_member_history 看看上次说了什么）。
-- 对方已经说得很具体，就不要为了追问而追问。`;
+// The global probing_guidance is a cross-task overlay that applies to EVERY
+// task. It defaults to EMPTY on purpose: daily-standup-specific probing does
+// not belong in a global container that also feeds unrelated communication
+// tasks. Owner ruling (2026-07-20): global default empty (teams append their
+// own if they want it), while the built-in daily standup carries its own
+// code-level default probe (see dailyProbeDefault in INSTRUCTION_STRINGS).
+export const DEFAULT_PROBING_GUIDANCE = '';
 
 /**
  * Per-language instruction templates. The zh strings are the original
@@ -52,6 +49,17 @@ const INSTRUCTION_STRINGS = {
     memberProfile: (name, profile) => `【${name} 的动态画像】（根据其过往日报自动整理，帮助你理解上下文，不要照读出来）\n${profile}`,
     probingGuidance: probing => `【追问指引】（据此决定要不要追问、追问到什么程度；这是内部指引，不要读出来）\n${probing}`,
     taskProbe: text => `【本任务的追问指引】（针对这次沟通任务的追问重点，优先于通用指引）\n${text}`,
+    // Code-level default probe for the built-in daily standup. It ships in
+    // every install and is always injected for the daily task; a custom
+    // probe_instruction (if any) appends on top of it, so teams add only their
+    // own delta and product improvements to this default reach everyone.
+    dailyProbeDefault: `按这里的指引决定要不要追问、追问什么。没有命中的点就不要硬追，保持自然简短。
+
+- 当对方提到一项工作时，确认它的完成状态：追问"这个做完了吗？还是还在进行中？"如果在进行中，追问大概进度或预计什么时候能搞完。如果对方用模糊措辞（如"在推进""差不多"），明确确认是已交付还是仍在做。目的是让每个事项都带上明确状态（已完成 / 进行中 / 刚启动）。
+- 当对方说某件事"差不多做完/基本完成"时，追问一句是否已经验证过、怎么验证的。
+- 当对方提到卡点时，追问一句在等谁/等什么、卡了多久；如果这个卡点涉及多人协调或需要拍板，问一句要不要放到日会上讨论，同意就记进待议题。
+- 当对方今天的计划和昨天说的明显不一样时，可以轻轻问一句原因（必要时用 recall_member_history 看看上次说了什么）。
+- 对方已经说得很具体，就不要为了追问而追问。`,
     transcriptTrimmed: `……（更早的内容略）`,
     priorTranscript: (generic, submitted, t) => `【已聊过的内容】（这是${generic ? '本周期' : '今天'}早些时候你们已经聊过的对话记录，可能因断线或刷新中断。这次是继续，不是重新开始：开场用一句话自然衔接（比如"我们接着刚才的继续"），已经聊清楚的问题绝对不要重复问，直接从中断的地方接着聊${submitted ? '。小结之前已经提交过：如果对方这次补充了新内容，等对方明确表示结束时再把新旧内容合并重新提交一次小结；如果只是闲聊没有新信息，不用重复提交。注意：已提交过不等于可以早点收尾，这次对话该聊多久聊多久' : ''}）\n${t}`,
     toolsLine: `你有两个工具可以在需要时调用：` +
@@ -81,6 +89,14 @@ const INSTRUCTION_STRINGS = {
     memberProfile: (name, profile) => `[${name}'s dynamic profile] (auto-compiled from their past reports to give you context — don't read it out)\n${profile}`,
     probingGuidance: probing => `[Probing guidance] (use this to decide whether and how deep to follow up; internal guidance — don't read it out)\n${probing}`,
     taskProbe: text => `[This task's probing guidance] (follow-up priorities for this specific conversation; takes precedence over the general guidance)\n${text}`,
+    // Code-level default probe for the built-in daily standup (see zh note).
+    dailyProbeDefault: `Use this to decide whether and what to follow up on. Don't force a follow-up where nothing applies — keep it natural and brief.
+
+- When they mention a piece of work, confirm its completion status: ask "is this done, or still in progress?" If in progress, ask roughly how far along it is or when it will be finished. If they're vague ("making progress", "almost there"), pin down whether it's actually delivered or still ongoing. The goal is that every item carries a clear status (done / in progress / just started).
+- When they say something is "almost done / basically complete", ask whether it has been verified and how.
+- When they mention a blocker, ask who/what they are waiting on and how long they have been stuck; if the blocker involves coordinating several people or needs a decision, ask whether it should go to the daily meeting, and record it as a meeting topic if they agree.
+- When today's plan clearly differs from what they said yesterday, gently ask why (use recall_member_history to check what they said last time if needed).
+- If they have already been specific, don't follow up just for the sake of it.`,
     transcriptTrimmed: `… (earlier content omitted)`,
     priorTranscript: (generic, submitted, t) => `[What was already discussed] (this is the transcript of the conversation you two already had earlier ${generic ? 'this cycle' : 'today'}, possibly cut off by a dropped connection or page refresh. This session is a continuation, not a restart: open with one natural bridging sentence (like "let's pick up where we left off"), absolutely do not repeat questions that were already covered, and continue straight from where it broke off${submitted ? '. The summary was already submitted: if they add new content this time, wait until they clearly say they are done, then re-submit one summary merging old and new; if it was just small talk with nothing new, don\'t re-submit. Note: having already submitted does not mean wrapping up early — let this conversation run as long as it needs' : ''})\n${t}`,
     toolsLine: `You have two tools you can call when needed: ` +
@@ -179,12 +195,20 @@ export class AgentContext {
     const profile = (member.profile || '').trim();
     if (profile) parts.push(L.memberProfile(name, profile));
 
+    // Global probing guidance — a cross-task overlay, empty by default.
     const probing = this.probing();
     if (probing) parts.push(L.probingGuidance(probing));
 
-    // Task-level probing overlay — scenario-specific follow-up strategy layered
-    // on top of the global guidance (same layering as brief/questions).
-    const taskProbe = (task?.probe_instruction || '').trim();
+    // Task-level probing. The built-in daily standup ships a code-level default
+    // probe in every install; a custom probe_instruction (if any) APPENDS on
+    // top of it (append, not override) so product improvements to the default
+    // reach every team automatically. Non-daily tasks have no code default —
+    // their probe is purely the custom field.
+    const probeParts = [];
+    if (!generic) probeParts.push(L.dailyProbeDefault);
+    const customProbe = (task?.probe_instruction || '').trim();
+    if (customProbe) probeParts.push(customProbe);
+    const taskProbe = probeParts.join('\n\n');
     if (taskProbe) parts.push(L.taskProbe(taskProbe));
 
     // Same-cycle continuation: an earlier session (dropped connection, page
