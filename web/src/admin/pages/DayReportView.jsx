@@ -8,10 +8,11 @@ const DICT = {
   zh: {
     topicsTitle: '建议日会重点讨论',
     noTopics: '这一天没有待议题',
+    topicsSub: '多方拉通、方案取舍、需要拍板——一对一解决不了的事',
     minutes: (n) => `${n} 分钟`,
     yesterday: '昨天',
     today: '今天',
-    blockers: '卡点',
+    blockers: '卡点 · 前置依赖',
     missingTitle: '未汇报',
     allDone: '全员已完成',
     listSeparator: '、',
@@ -21,10 +22,11 @@ const DICT = {
   en: {
     topicsTitle: 'Suggested topics for today’s meeting',
     noTopics: 'No topics raised for this day',
+    topicsSub: 'Multi-party alignment, trade-offs, decisions — things a one-on-one can\u2019t resolve',
     minutes: (n) => `${n} min`,
     yesterday: 'Yesterday',
     today: 'Today',
-    blockers: 'Blockers',
+    blockers: 'Blockers · waiting on',
     missingTitle: 'Not reported',
     allDone: 'Everyone has reported',
     listSeparator: ', ',
@@ -56,6 +58,7 @@ export default function DayReportView({ data }) {
               {topics.length}
             </span>
           </CardTitle>
+          <p className="mt-1 text-sm text-muted-foreground">{T.topicsSub}</p>
         </CardHeader>
         <CardContent className="pt-2">
           <ul className="list-disc pl-5 text-[0.95rem] leading-relaxed">
