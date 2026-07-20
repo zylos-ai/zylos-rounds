@@ -27,9 +27,12 @@ export function callChatModel({ base, model, key, prompt, proxy, timeoutMs = 60_
       agent: isHttps && proxy ? new HttpsProxyAgent(proxy) : undefined,
       timeout: timeoutMs,
     }, res => {
-      let data = '';
-      res.on('data', c => { data += c; });
+      // Accumulate raw bytes and decode once: per-chunk string concatenation
+      // mangles multi-byte UTF-8 characters split across chunk boundaries.
+      const chunks = [];
+      res.on('data', c => { chunks.push(c); });
       res.on('end', () => {
+        const data = Buffer.concat(chunks).toString('utf8');
         if (res.statusCode < 200 || res.statusCode >= 300) {
           return reject(new Error(`model http_${res.statusCode}: ${data.slice(0, 200)}`));
         }

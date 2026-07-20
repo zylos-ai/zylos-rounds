@@ -297,9 +297,10 @@ export class Settings {
         agent: base.startsWith('https:') && this.env.proxy ? new HttpsProxyAgent(this.env.proxy) : undefined,
         timeout: 15_000,
       }, res => {
-        let data = '';
-        res.on('data', c => { data += c; });
+        const chunks = [];
+        res.on('data', c => { chunks.push(c); });
         res.on('end', () => {
+          const data = Buffer.concat(chunks).toString('utf8');
           if (res.statusCode < 200 || res.statusCode >= 300) {
             return resolve({ ok: false, error: res.statusCode === 401 ? 'invalid_key' : `http_${res.statusCode}` });
           }

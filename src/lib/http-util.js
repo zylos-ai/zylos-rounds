@@ -22,16 +22,23 @@ const MAX_BODY_BYTES = 16384;
 
 export function readJsonBody(req) {
   return new Promise((resolve, reject) => {
-    let body = '';
+    // Accumulate raw bytes and decode once — per-chunk toString() corrupts
+    // multi-byte UTF-8 characters that straddle chunk boundaries.
+    const chunks = [];
+    let size = 0;
     req.on('data', chunk => {
-      body += chunk.toString();
-      if (body.length > MAX_BODY_BYTES) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buf.length;
+      if (size > MAX_BODY_BYTES) {
         reject(new Error('request_too_large'));
         req.destroy();
+        return;
       }
+      chunks.push(buf);
     });
     req.on('end', () => {
-      if (!body) return resolve({});
+      if (!size) return resolve({});
+      const body = Buffer.concat(chunks).toString('utf8');
       try { resolve(JSON.parse(body)); } catch { reject(new Error('invalid_json')); }
     });
     req.on('error', reject);
