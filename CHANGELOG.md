@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.3] - 2026-07-20
+
+### Added
+- **Digest and profile model calls now auto-retry transient failures** (up to 3
+  attempts, short linear backoff). Proxy/network hiccups — TLS socket
+  disconnects, resets, timeouts, 429/5xx — recovered on their own instead of
+  surfacing as "汇总生成失败，请重试". 4xx errors (bad request / auth) still fail
+  fast without retry. Opt-in per call site via a new `attempts` option on
+  `callChatModel` (default 1 = unchanged); enabled for digest and profile, left
+  at a single attempt for the settings provider connectivity test.
+
 ## [0.20.2] - 2026-07-20
 
 ### Changed

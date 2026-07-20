@@ -216,6 +216,7 @@ export class DigestGenerator {
       prompt: this.buildPrompt(task, rows, key),
       proxy: this.env.proxy,
       timeoutMs: 120_000,
+      attempts: 3, // auto-retry transient proxy/network hiccups (idempotent overwrite)
       onUsage: usage => recordTextUsage(this.store, {
         slot: 'digest', provider: conn.provider, model: conn.model,
         tz: this.settings.resolveTimeZone(), usage,

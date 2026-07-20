@@ -222,6 +222,7 @@ export class ProfileUpdater {
       key: conn.key,
       prompt,
       proxy: this.env.proxy,
+      attempts: 3, // auto-retry transient proxy/network hiccups (idempotent overwrite)
       onUsage: usage => recordTextUsage(this.store, {
         slot: 'profile', provider: conn.provider, model: conn.model,
         memberId, tz: this.settings.resolveTimeZone(), usage,
