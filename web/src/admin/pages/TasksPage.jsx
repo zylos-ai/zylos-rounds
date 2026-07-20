@@ -794,18 +794,8 @@ export function TaskDetailPage({ id, cycle }) {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        {task.brief && (
-          <Card><CardContent className="py-5">
-            <h2 className="mb-2 text-sm font-semibold text-muted-foreground">{T.briefCard}</h2>
-            <p className="whitespace-pre-wrap text-[0.95rem] leading-relaxed">{task.brief}</p>
-          </CardContent></Card>
-        )}
-        {task.questions && (
-          <Card><CardContent className="py-5">
-            <h2 className="mb-2 text-sm font-semibold text-muted-foreground">{T.questionsCard}</h2>
-            <p className="whitespace-pre-wrap text-[0.95rem] leading-relaxed">{task.questions}</p>
-          </CardContent></Card>
-        )}
+        {task.brief && <CollapsibleTextCard title={T.briefCard} text={task.brief} />}
+        {task.questions && <CollapsibleTextCard title={T.questionsCard} text={task.questions} />}
         <ProbeInstructionCard task={task} onSaved={load} />
       </div>
 
@@ -988,6 +978,31 @@ function MemberLinksCard({ task, copied, copy, resetLink }) {
 // Task-level 追问指引 — scenario-specific follow-up strategy layered on top of
 // the global brain guidance. Editable here so the built-in daily task (which
 // has no create form) can set it too.
+// Collapsed-by-default card for long free-text fields (brief / question frame).
+// These are reference context, not the daily focus, so they stay folded until
+// opened; content is rendered as markdown.
+function CollapsibleTextCard({ title, text }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Card>
+      <CardContent className="py-5">
+        <button
+          type="button"
+          onClick={() => setOpen(v => !v)}
+          className="flex w-full items-center gap-2 text-left"
+          aria-expanded={open}
+        >
+          <ChevronRight className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')} strokeWidth={2} />
+          <h2 className="text-sm font-semibold text-muted-foreground">{title}</h2>
+        </button>
+        {open && (
+          <Markdown text={text} className="mt-3 text-[0.95rem] leading-relaxed" />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function ProbeInstructionCard({ task, onSaved }) {
   const T = useLangDict(DICT);
   const [open, setOpen] = useState(false);
