@@ -73,7 +73,10 @@ jobs:
           if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || git ls-remote --exit-code --tags origin "$TAG" >/dev/null 2>&1; then
             echo "tag $TAG already exists on mirror — refusing to overwrite"; exit 1
           fi
-          find . -mindepth 1 -maxdepth 1 -not -name .git -exec rm -rf {} +
+          # keep .github: the mirror repo carries its own release workflow
+          # (turns each pushed tag into a GitHub Release; the deploy key
+          # used here can push refs but cannot create Release objects)
+          find . -mindepth 1 -maxdepth 1 -not -name .git -not -name .github -exec rm -rf {} +
           cp /tmp/out/* .
           git add -A
           git -c user.name='zylos-rounds mirror' -c user.email='actions@github.com' \
