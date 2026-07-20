@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.22.0] - 2026-07-21
+
+### Added
+- Follow-ups: a free-text note appended to any task after a cycle, carried into the next cycle's probing/digest for the AI and recallable on demand. Admin UI panel on each task's detail page (list + compose + 「设为团队共享」 toggle); `/api/followups` endpoints + `followup` CLI commands. The v0.21 decision write-back dissolves into this — a decision is just a team-scoped follow-up.
+- Per-task `audience` (internal / external) and per-follow-up `scope` (private / team) with query-enforced visibility: a task sees its own follow-ups; team-shared reach only internal tasks; an external task is walled off from the knowledge base and other tasks' data. The `search_team_knowledge` recall tool is now scope-aware.
+
+### Changed
+- `/api/decisions` + the `decision` CLI are retained as back-compat aliases (a team-scoped follow-up on the built-in daily task).
+
+### Migration
+- v12: `follow_up` table + `tasks.audience`; existing `decision`-tagged knowledge is migrated into team follow-ups on the built-in daily task.
+
 ## [0.21.0] - 2026-07-20
 
 ### Added
