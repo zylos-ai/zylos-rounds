@@ -56,7 +56,7 @@ export class TalkEngine {
     this.workletNode = null;
     this.analyser = null;
     this.done = false;
-    this.paused = false;
+    this.muted = false;
     this.textMode = false;
     // playback scheduling state
     this.nextPlayTime = 0;
@@ -95,7 +95,7 @@ export class TalkEngine {
           o += a.length;
         }
         buf = [];
-        if (this.ws && this.ws.readyState === 1 && !this.paused && !this.textMode) {
+        if (this.ws && this.ws.readyState === 1 && !this.muted && !this.textMode) {
           const pcm = this.downsampleTo24k(flat, SRC_RATE);
           const i16 = new Int16Array(pcm.length);
           for (let i = 0; i < pcm.length; i++) i16[i] = Math.max(-32768, Math.min(32767, pcm[i] * 32767));
@@ -245,20 +245,19 @@ export class TalkEngine {
    * transcript, so the conversation continues instead of restarting.
    */
   /**
-   * Pause: Luna stops talking immediately and hears nothing until resume.
-   * Mic capture keeps running (dropped before send) so resume is instant.
+   * Mute: Luna hears nothing until unmute, but keeps talking — only the mic
+   * side is gated (frames dropped before send, capture keeps running so
+   * unmute is instant). The buffer clear drops any half-captured utterance
+   * so a muted-mid-sentence fragment can't be transcribed later.
    */
-  pause() {
-    if (this.paused || this.done) return;
-    this.paused = true;
-    this.send({ type: 'response.cancel' });
-    this.send({ type: 'input_audio_buffer.clear' }); // drop any half-spoken turn
-    this.flushPlayback();
-    this.curItemId = null;
+  mute() {
+    if (this.muted || this.done) return;
+    this.muted = true;
+    this.send({ type: 'input_audio_buffer.clear' });
   }
 
-  resume() {
-    this.paused = false;
+  unmute() {
+    this.muted = false;
   }
 
   /**
@@ -298,7 +297,8 @@ export class TalkEngine {
 
   reconnect() {
     if (this.done) return;
-    this.paused = false;
+    // this.muted survives reconnect on purpose: the user muted for privacy;
+    // a network blip must never silently hot-mic them again.
     try {
       if (this.ws) {
         this.ws.onclose = null; // silence the stale socket — closed() belongs to the new one
@@ -322,7 +322,6 @@ export class TalkEngine {
   }
 
   playDelta(ev) {
-    if (this.paused) return; // late deltas after response.cancel stay silent
     const bin = atob(ev.delta);
     const dv = new DataView(new ArrayBuffer(bin.length));
     for (let i = 0; i < bin.length; i++) dv.setUint8(i, bin.charCodeAt(i));

@@ -13,8 +13,7 @@ import {
   Link2Off,
   FlaskConical,
   RotateCw,
-  Pause,
-  Play,
+  MicOff,
   Keyboard,
   Send,
 } from 'lucide-react';
@@ -61,7 +60,7 @@ export default function TalkApp() {
   const [statusErr, setStatusErr] = useState(false);
   const [messages, setMessages] = useState([]);
   const [summary, setSummary] = useState(null);
-  const [paused, setPaused] = useState(false);
+  const [muted, setMuted] = useState(false);
   const [textMode, setTextMode] = useState(false);
   const [draft, setDraft] = useState('');
   const inputRef = useRef(null);
@@ -150,18 +149,18 @@ export default function TalkApp() {
           if (doneRef.current) return;
           const wasReconnect = reconnectRef.current.attempts > 0;
           reconnectRef.current.attempts = 0;
-          setPaused(false);
+          setMuted(engineRef.current?.muted ?? false);
           setPhase('listening');
           say(wasReconnect ? tRef.current.reconnected : tRef.current.greeting);
         },
         error: (msg) => { setSubmitting(false); say(msg, true); },
         speechStarted: () => {
-          if (doneRef.current || engineRef.current?.paused) return;
+          if (doneRef.current || engineRef.current?.muted) return;
           setPhase('listening');
           say(tRef.current.listening);
         },
         aiAudio: () => {
-          if (doneRef.current || engineRef.current?.paused) return;
+          if (doneRef.current) return;
           setPhase('speaking');
           say(tRef.current.speaking);
         },
@@ -181,9 +180,10 @@ export default function TalkApp() {
           return t ? [...ms, { id: nid(), key: itemId, role: 'me', text: t }] : ms;
         }),
         responseDone: () => {
-          if (doneRef.current || engineRef.current?.paused) return;
+          if (doneRef.current) return;
           setPhase('listening');
-          say(tRef.current.yourTurn);
+          // while muted, remind instead of inviting a turn Luna can't hear
+          say(engineRef.current?.muted ? tRef.current.muted : tRef.current.yourTurn);
         },
         saved: (s) => {
           doneRef.current = true;
@@ -218,19 +218,17 @@ export default function TalkApp() {
     }
   }, [appendAiDelta, say]);
 
-  const togglePause = useCallback(() => {
+  const toggleMute = useCallback(() => {
     const engine = engineRef.current;
     if (!engine || doneRef.current) return;
-    if (engine.paused) {
-      engine.resume();
-      setPaused(false);
-      setPhase('listening');
+    if (engine.muted) {
+      engine.unmute();
+      setMuted(false);
       say(tRef.current.listening);
     } else {
-      engine.pause();
-      setPaused(true);
-      setPhase('listening');
-      say(tRef.current.paused);
+      engine.mute();
+      setMuted(true);
+      say(tRef.current.muted);
     }
   }, [say]);
 
@@ -247,7 +245,6 @@ export default function TalkApp() {
     }
     setTextMode(toText);
     if (toText) {
-      setPaused(false);
       setPhase('listening');
       say(tRef.current.textModeOn);
       setTimeout(() => inputRef.current?.focus(), 50);
@@ -465,10 +462,10 @@ export default function TalkApp() {
 
       {/* stage — fixed; only the chat log below scrolls */}
       <div className="flex shrink-0 flex-col items-center pb-1.5 pt-4">
-        <div className={cn((paused || textMode) && 'opacity-60')}>{orb}</div>
+        <div className={cn(textMode && 'opacity-60')}>{orb}</div>
 
-        <div className={cn('mt-3 flex h-9 items-center justify-center', (!inCall || paused || textMode) && 'invisible')}>
-          <Waveform analyser={engineRef.current?.analyser} active={inCall && !paused && !textMode} />
+        <div className={cn('mt-3 flex h-9 items-center justify-center', (!inCall || muted || textMode) && 'invisible')}>
+          <Waveform analyser={engineRef.current?.analyser} active={inCall && !muted && !textMode} />
         </div>
 
         {statusLine}
@@ -482,9 +479,9 @@ export default function TalkApp() {
                 {textMode ? T.btnVoice : T.btnText}
               </Button>
               {!textMode && (
-                <Button variant="secondary" onClick={togglePause} disabled={submitting}>
-                  {paused ? <Play strokeWidth={1.75} /> : <Pause strokeWidth={1.75} />}
-                  {paused ? T.btnResume : T.btnPause}
+                <Button variant={muted ? 'destructive' : 'secondary'} onClick={toggleMute} disabled={submitting}>
+                  {muted ? <MicOff strokeWidth={1.75} /> : <Mic strokeWidth={1.75} />}
+                  {muted ? T.btnUnmute : T.btnMute}
                 </Button>
               )}
               <Button variant="secondary" onClick={endCall} disabled={submitting}>

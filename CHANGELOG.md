@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.0] - 2026-07-20
+
+### Changed
+- **Talk page: pause button replaced with a mic mute button** (owner request).
+  Muting gates only the member's microphone — captured frames are dropped
+  before send and any half-captured utterance is cleared upstream — while the
+  agent keeps talking and captions keep flowing. Previously "pause" froze the
+  whole conversation (cancelled the agent's response and flushed playback).
+  Muted state is unmistakable (red button, mic-off icon, status line) and
+  deliberately survives reconnects and text-mode round-trips: a network blip
+  must never silently hot-mic the user. Waveform hides while muted since the
+  mic feed is dropped.
+
 ## [0.18.1] - 2026-07-20
 
 ### Added
