@@ -584,11 +584,13 @@ test('decisions: POST records a decision, GET lists it, unauthorized is rejected
     const list = await call('GET', '/api/decisions');
     assert.equal(list.status, 200);
     assert.equal(list.data.decisions.length, 1);
-    assert.match(list.data.decisions[0].title, /【决议】汇总模板/);
+    // decisions dissolved into plain team follow-ups: topic lives inline, no title
+    assert.equal(list.data.decisions[0].scope, 'team');
+    assert.match(list.data.decisions[0].content, /【汇总模板】/);
     assert.match(list.data.decisions[0].content, /方案B/);
 
-    // it also became recallable knowledge
-    assert.equal(store.searchKnowledge('方案B').length, 1);
+    // recallable for the internal built-in task via scope-aware recall
+    assert.equal(store.recall(store.builtinTaskId(), 'internal', '方案B').length, 1);
 
     // empty content rejected
     assert.equal((await call('POST', '/api/decisions', { content: '  ' })).status, 400);

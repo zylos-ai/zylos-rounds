@@ -260,6 +260,39 @@ export const MIGRATIONS = [
       );
     `,
   },
+  {
+    // v0.22 follow-ups + scope. A follow-up is a free-text note appended after a
+    // cycle of a task ("补充/跟进/更新信息") that the NEXT cycle carries in and
+    // the agent can also recall on demand. It is deliberately unstructured — no
+    // status, no lifecycle: a decision is just a follow-up whose text states a
+    // decision (the v0.21 decision-writeback special case dissolves into this).
+    //
+    // Visibility is enforced structurally, never by prompt. Each task carries an
+    // `audience` (internal / external); each follow-up a `scope` (private /
+    // team). Read rule (see Store.recall* helpers): a task always sees its own
+    // follow-ups; team-shared follow-ups and the knowledge base are visible only
+    // to INTERNAL tasks; another task's private follow-ups are never visible; an
+    // external task sees only its own follow-ups. This wall keeps internal
+    // context from leaking into an external-facing conversation.
+    version: 12,
+    sql: `
+      ALTER TABLE tasks ADD COLUMN audience TEXT NOT NULL DEFAULT 'internal';
+      CREATE TABLE IF NOT EXISTS follow_up (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL REFERENCES tasks(id),
+        content TEXT NOT NULL,
+        scope TEXT NOT NULL DEFAULT 'private' CHECK(scope IN ('private','team')),
+        author TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_follow_up_task ON follow_up(task_id, created_at);
+      INSERT INTO follow_up(task_id, content, scope, author, created_at)
+        SELECT (SELECT id FROM tasks WHERE is_builtin=1 LIMIT 1), content, 'team', NULL, created_at
+        FROM knowledge WHERE tags='decision'
+          AND (SELECT id FROM tasks WHERE is_builtin=1 LIMIT 1) IS NOT NULL;
+      DELETE FROM knowledge WHERE tags='decision';
+    `,
+  },
 ];
 
 export class Store {
@@ -416,29 +449,128 @@ export class Store {
     return this.db.prepare('DELETE FROM knowledge WHERE id=?').run(id);
   }
 
-  // ---- decisions (团队决议) --------------------------------------------------
-  // A decision closes out a 待议 item after the meeting. Stored as a knowledge
-  // row tagged 'decision' so it is (a) recallable for free via
-  // search_team_knowledge, and (b) queryable by recency for push-injection into
-  // the next cycle's probing and for closing the item out of the next digest.
+  // ---- follow-ups (补充/跟进) + scope-aware visibility ----------------------
+  // A follow-up is free text appended after a cycle of a task; the next cycle
+  // carries recent ones in and the agent can also recall them on demand. No
+  // status, no lifecycle — a decision is just a follow-up whose text states one.
+  //
+  // Visibility is enforced in the QUERY, never by prompt. `scope` is per
+  // follow-up ('private' | 'team'); `audience` is per task ('internal' |
+  // 'external'). A task always sees its own follow-ups; team-shared follow-ups
+  // are visible only to internal tasks; another task's private follow-ups are
+  // never visible; an external task sees only its own follow-ups.
+  builtinTaskId() {
+    return this.db.prepare('SELECT id FROM tasks WHERE is_builtin=1 LIMIT 1').get()?.id ?? null;
+  }
+
+  /** Set a task's audience class ('internal' | 'external'). Governs whether the
+   *  task can read team-shared follow-ups and the knowledge base. */
+  setTaskAudience(id, audience) {
+    const a = audience === 'external' ? 'external' : 'internal';
+    return this.db.prepare("UPDATE tasks SET audience=?, updated_at=datetime('now','localtime') WHERE id=?").run(a, id);
+  }
+
+  addFollowup({ taskId, content, scope = 'private', author } = {}) {
+    const body = String(content || '').trim();
+    if (!body) throw new Error('follow-up content required');
+    if (!taskId) throw new Error('follow-up taskId required');
+    const sc = scope === 'team' ? 'team' : 'private';
+    const who = author ? String(author).trim() : null;
+    return this.db.prepare('INSERT INTO follow_up(task_id,content,scope,author) VALUES(?,?,?,?)')
+      .run(taskId, body, sc, who);
+  }
+
+  listFollowups(taskId) {
+    return this.db.prepare('SELECT * FROM follow_up WHERE task_id=? ORDER BY created_at DESC, id DESC').all(taskId);
+  }
+
+  getFollowup(id) {
+    return this.db.prepare('SELECT * FROM follow_up WHERE id=?').get(id);
+  }
+
+  deleteFollowup(id) {
+    return this.db.prepare('DELETE FROM follow_up WHERE id=?').run(id);
+  }
+
+  /**
+   * Recent follow-ups to deterministically inject into `taskId`'s next cycle
+   * (probing + digest closeout). Own follow-ups always; team-shared from any
+   * task only when the task is internal; never another task's private ones.
+   */
+  recentFollowups(taskId, audience = 'internal', days = 3, limit = 30) {
+    const since = `-${Math.max(0, Number(days) || 0)} days`;
+    const lim = Math.max(1, Number(limit) || 1);
+    if (audience === 'external') {
+      return this.db.prepare(
+        `SELECT * FROM follow_up
+           WHERE task_id=? AND datetime(created_at) >= datetime('now','localtime', ?)
+         ORDER BY created_at DESC, id DESC LIMIT ?`
+      ).all(taskId, since, lim);
+    }
+    return this.db.prepare(
+      `SELECT * FROM follow_up
+         WHERE datetime(created_at) >= datetime('now','localtime', ?)
+           AND (task_id=? OR scope='team')
+       ORDER BY created_at DESC, id DESC LIMIT ?`
+    ).all(since, taskId, lim);
+  }
+
+  /**
+   * Scope-aware heuristic recall for the agent's search tool. Searches the
+   * follow-ups visible to `taskId` plus — only for internal tasks — the team
+   * knowledge base. External tasks never reach knowledge or other tasks' data.
+   * Deterministic string match (AND over terms), title/knowledge hits ranked
+   * higher. Returns knowledge-shaped rows {id, title, content, tags, source}.
+   */
+  recall(taskId, audience = 'internal', query, limit = 5) {
+    const terms = String(query || '').trim().toLowerCase().split(/\s+/).filter(Boolean).slice(0, 8);
+    if (!terms.length) return [];
+    const fu = audience === 'external'
+      ? this.db.prepare('SELECT id, content, created_at FROM follow_up WHERE task_id=?').all(taskId)
+      : this.db.prepare("SELECT id, content, created_at FROM follow_up WHERE task_id=? OR scope='team'").all(taskId);
+    const rows = fu.map(r => ({
+      id: r.id,
+      title: `【补充】${String(r.content).split('\n')[0].slice(0, 40)}`,
+      content: r.content,
+      tags: 'follow-up',
+      source: 'follow_up',
+    }));
+    if (audience !== 'external') {
+      for (const k of this.db.prepare('SELECT id, title, content, tags FROM knowledge').all()) {
+        rows.push({ ...k, source: 'knowledge' });
+      }
+    }
+    const scored = [];
+    for (const r of rows) {
+      const hay = `${r.title}\n${r.content}\n${r.tags || ''}`.toLowerCase();
+      const title = String(r.title).toLowerCase();
+      if (!terms.every(t => hay.includes(t))) continue;
+      const score = terms.reduce((s, t) => s + (title.includes(t) ? 2 : 1), 0);
+      scored.push({ ...r, _score: score });
+    }
+    scored.sort((a, b) => b._score - a._score);
+    return scored.slice(0, limit);
+  }
+
+  // Back-compat aliases — the v0.21 decision-writeback API dissolved into
+  // follow-ups. A recorded decision is a team-scoped follow-up on the built-in
+  // daily task (where 待议 lives). Kept so existing /api/decisions + CLI keep
+  // working; new callers should use addFollowup / recentFollowups directly.
   addDecision({ topic, content, decidedBy } = {}) {
     const body = String(content || '').trim();
     if (!body) throw new Error('decision content required');
+    const taskId = this.builtinTaskId();
+    if (!taskId) throw new Error('no built-in daily task to attach the decision to');
     const t = String(topic || '').trim();
-    const title = t ? `【决议】${t}` : `【决议】${body.split('\n')[0].slice(0, 40)}`;
     const stamp = `（${new Date().toLocaleString('sv').replace('T', ' ').slice(0, 16)}${decidedBy ? ' · ' + String(decidedBy).trim() + ' 拍板' : ''}）`;
-    return this.db.prepare('INSERT INTO knowledge(title,content,tags) VALUES(?,?,?)')
-      .run(title, `${body}\n${stamp}`, 'decision');
+    const text = `${t ? `【${t}】` : ''}${body}\n${stamp}`;
+    return this.addFollowup({ taskId, content: text, scope: 'team', author: decidedBy });
   }
 
-  /** Decisions recorded within the last `days` — recent enough to still matter
-   *  for the next round's probing and digest closeout. */
   recentDecisions(days = 3, limit = 20) {
-    return this.db.prepare(
-      `SELECT * FROM knowledge WHERE tags='decision'
-         AND datetime(created_at) >= datetime('now','localtime', ?)
-       ORDER BY created_at DESC, id DESC LIMIT ?`
-    ).all(`-${Math.max(0, Number(days) || 0)} days`, Math.max(1, Number(limit) || 1));
+    const taskId = this.builtinTaskId();
+    if (!taskId) return [];
+    return this.recentFollowups(taskId, 'internal', days, limit);
   }
 
   /**

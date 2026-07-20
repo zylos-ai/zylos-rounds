@@ -672,9 +672,12 @@ export class Api {
   // item. Stored as tagged knowledge; injected into the next cycle's probing and
   // the next digest so settled items stop re-surfacing.
   listDecisions(res) {
+    // Back-compat alias: decisions dissolved into team-scoped follow-ups on the
+    // built-in task. Follow-ups are plain text — no title — so the topic (if
+    // any) lives inline as a 【…】 prefix in the content.
     sendJson(res, 200, {
       decisions: this.store.recentDecisions(3650, 200).map(d => ({
-        id: d.id, title: d.title, content: d.content, created_at: d.created_at,
+        id: d.id, content: d.content, created_at: d.created_at, scope: d.scope,
       })),
     });
   }

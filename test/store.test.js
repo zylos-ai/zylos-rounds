@@ -176,29 +176,65 @@ test('test member is excluded from rosters, digests, and history', () => {
   s.close();
 });
 
-test('decisions: addDecision stores tagged knowledge, recentDecisions filters by recency', () => {
+test('decisions dissolve into team follow-ups on the built-in task', () => {
   const s = tmpStore();
-  // a plain knowledge row must NOT be treated as a decision
+  const daily = s.ensureDailyTask('每日日报'); // built-in, audience=internal
+  // a plain knowledge row is unrelated to decisions/follow-ups
   s.addKnowledge('背景资料', 'some team background', 'reference');
+
   const info = s.addDecision({ topic: 'Rounds 汇总模板', content: '采用方案B，待议合并为唯一议程', decidedBy: 'Howard' });
   assert.ok(Number(info.lastInsertRowid) > 0);
 
+  // recorded as a team-scoped follow-up on the built-in task — plain text, no title/tag
   const recent = s.recentDecisions();
   assert.equal(recent.length, 1);
-  assert.match(recent[0].title, /【决议】Rounds 汇总模板/);
+  assert.equal(recent[0].scope, 'team');
+  assert.equal(recent[0].task_id, daily.id);
+  assert.match(recent[0].content, /【Rounds 汇总模板】/);
   assert.match(recent[0].content, /方案B/);
   assert.match(recent[0].content, /Howard 拍板/);
-  assert.equal(recent[0].tags, 'decision');
 
-  // decisions are recallable via the shared knowledge search
-  const hits = s.searchKnowledge('方案B');
+  // recallable for an internal task via scope-aware recall (knowledge row does not match the query)
+  const hits = s.recall(daily.id, 'internal', '方案B');
   assert.equal(hits.length, 1);
-  assert.equal(hits[0].tags, 'decision');
+  assert.equal(hits[0].source, 'follow_up');
 
   // empty content is rejected
   assert.throws(() => s.addDecision({ content: '   ' }));
-
-  // recency window excludes old decisions (0-day window => nothing)
+  // recency window: a 0-day window admits at most the just-created row
   assert.equal(s.recentDecisions(0).length <= 1, true);
+  s.close();
+});
+
+test('follow-up scope: private stays in-task, team crosses, external is walled off', () => {
+  const s = tmpStore();
+  const daily = s.ensureDailyTask('每日日报'); // internal
+  const other = s.createTask({ type: 'recurring', title: '客户周报' }); // internal by default
+  const ext = s.createTask({ type: 'oneshot', title: '对外访谈' });
+  s.setTaskAudience(ext.id, 'external');
+
+  s.addFollowup({ taskId: daily.id, content: 'daily private note', scope: 'private' });
+  s.addFollowup({ taskId: daily.id, content: 'daily TEAM decision', scope: 'team' });
+  s.addFollowup({ taskId: other.id, content: 'other private note', scope: 'private' });
+  s.addFollowup({ taskId: ext.id, content: 'ext own note', scope: 'private' });
+
+  // internal task sees its own (any scope) + team-shared from other tasks, never others' private
+  const dailyView = s.recentFollowups(daily.id, 'internal').map(r => r.content);
+  assert.ok(dailyView.includes('daily private note'));
+  assert.ok(dailyView.includes('daily TEAM decision'));
+  assert.ok(!dailyView.includes('other private note'));
+
+  const otherView = s.recentFollowups(other.id, 'internal').map(r => r.content);
+  assert.ok(otherView.includes('other private note'));
+  assert.ok(otherView.includes('daily TEAM decision')); // team-shared crosses in
+  assert.ok(!otherView.includes('daily private note'));  // private does not
+
+  // external task sees ONLY its own follow-ups — no team-shared, no other-task data
+  const extView = s.recentFollowups(ext.id, 'external').map(r => r.content);
+  assert.deepEqual(extView, ['ext own note']);
+  // and its recall is walled off from the knowledge base + team follow-ups
+  s.addKnowledge('internal secret', 'internal only material', 'reference');
+  assert.equal(s.recall(ext.id, 'external', 'internal').length, 0);
+  assert.equal(s.recall(ext.id, 'external', 'ext').length, 1);
   s.close();
 });
