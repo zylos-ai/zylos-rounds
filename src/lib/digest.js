@@ -67,6 +67,8 @@ const DIGEST_STRINGS = {
     brief: '【任务背景】',
     questions: '【问题框架】',
     results: '【各成员的沟通结果】',
+    priorDecisions: '【上一轮已拍板的决议】',
+    priorDecisionsRule: '注意：以下事项在最近的日会上已经有结论，不要再把它们列入「待议」议程；如果本轮内容仍与之相关，只在对应的明细小节（如「进行中」「已完成」）里用一句话交代结论或后续进展即可。',
   },
   en: {
     oneshot: `Write the summary report for the team lead (Markdown), structured as:
@@ -111,6 +113,8 @@ Items planned for this cycle, grouped by workstream with attribution.`,
     brief: '[Task background]',
     questions: '[Question frame]',
     results: "[Each member's results]",
+    priorDecisions: '[Decisions already settled last round]',
+    priorDecisionsRule: 'Note: the items below were already decided at a recent daily meeting — do NOT list them under "For discussion" again; if this round still relates to them, just note the outcome or follow-up progress in one line under the relevant detail section (e.g. "In progress" / "Completed").',
   },
 };
 
@@ -180,6 +184,18 @@ export class DigestGenerator {
     const cycleLine = task.type === 'recurring' && cycleKey && cycleKey !== ONESHOT_CYCLE
       ? L.cycle(cycleKey) : null;
 
+    // Decision writeback closeout — for the built-in daily standup, feed in the
+    // recently-settled decisions so the model drops them from 待议 instead of
+    // re-surfacing them from stale reports.
+    let decisionsBlock = null;
+    if (task.is_builtin) {
+      const decisions = this.store.recentDecisions?.() || [];
+      if (decisions.length) {
+        decisionsBlock = `${L.priorDecisions}\n${L.priorDecisionsRule}\n`
+          + decisions.map(d => `- ${(d.content || '').trim()}`).join('\n');
+      }
+    }
+
     return [
       L.intro,
       `${L.task}${task.title}`,
@@ -187,6 +203,7 @@ export class DigestGenerator {
       (task.brief || '').trim() ? `${L.brief}\n${task.brief.trim()}` : null,
       (task.questions || '').trim() ? `${L.questions}\n${task.questions.trim()}` : null,
       `${L.results}\n${sections.join('\n\n')}`,
+      decisionsBlock,
       `${instruction}\n${L.sharedRules}`,
     ].filter(Boolean).join('\n\n');
   }

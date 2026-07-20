@@ -571,3 +571,32 @@ test('named API tokens: create/list/auth/rotate/revoke (v0.17/v0.18)', async () 
     close();
   }
 });
+
+test('decisions: POST records a decision, GET lists it, unauthorized is rejected', async () => {
+  const { store, call, close } = await boot();
+  try {
+    const created = await call('POST', '/api/decisions', {
+      topic: '汇总模板', content: '采用方案B', decided_by: 'Howard',
+    });
+    assert.equal(created.status, 201);
+    assert.ok(created.data.id > 0);
+
+    const list = await call('GET', '/api/decisions');
+    assert.equal(list.status, 200);
+    assert.equal(list.data.decisions.length, 1);
+    assert.match(list.data.decisions[0].title, /【决议】汇总模板/);
+    assert.match(list.data.decisions[0].content, /方案B/);
+
+    // it also became recallable knowledge
+    assert.equal(store.searchKnowledge('方案B').length, 1);
+
+    // empty content rejected
+    assert.equal((await call('POST', '/api/decisions', { content: '  ' })).status, 400);
+
+    // bearer required
+    const noauth = await call('POST', '/api/decisions', { content: 'x' }, {});
+    assert.equal(noauth.status, 401);
+  } finally {
+    close();
+  }
+});

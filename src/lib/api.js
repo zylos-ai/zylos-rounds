@@ -157,6 +157,9 @@ export class Api {
     if (m && req.method === 'PUT') return await this.updateKnowledge(req, res, Number(m[1])), true;
     if (m && req.method === 'DELETE') return this.deleteKnowledge(res, Number(m[1])), true;
 
+    if (p === '/api/decisions' && req.method === 'GET') return this.listDecisions(res), true;
+    if (p === '/api/decisions' && req.method === 'POST') return await this.addDecision(req, res), true;
+
     m = p.match(/^\/api\/members\/(\d+)\/context$/);
     if (m && req.method === 'PUT') return await this.putMemberContext(req, res, Number(m[1])), true;
 
@@ -663,6 +666,33 @@ export class Api {
     const info = this.store.deleteKnowledge(id);
     if (!info.changes) return sendJson(res, 404, { error: 'not_found' });
     sendJson(res, 204, {});
+  }
+
+  // ---- decisions (决议回写) — record a meeting decision that closes out a 待议
+  // item. Stored as tagged knowledge; injected into the next cycle's probing and
+  // the next digest so settled items stop re-surfacing.
+  listDecisions(res) {
+    sendJson(res, 200, {
+      decisions: this.store.recentDecisions(3650, 200).map(d => ({
+        id: d.id, title: d.title, content: d.content, created_at: d.created_at,
+      })),
+    });
+  }
+
+  async addDecision(req, res) {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      return sendJson(res, 400, { error: 'bad_request' });
+    }
+    const content = String(body.content || '').trim();
+    if (!content || content.length > 20000) return sendJson(res, 400, { error: 'invalid_content' });
+    const topic = body.topic === undefined || body.topic === null ? '' : String(body.topic).trim();
+    const decidedBy = body.decided_by === undefined || body.decided_by === null ? '' : String(body.decided_by).trim();
+    if (topic.length > 200) return sendJson(res, 400, { error: 'invalid_topic' });
+    const info = this.store.addDecision({ topic, content, decidedBy });
+    sendJson(res, 201, { id: Number(info.lastInsertRowid), topic, content, decided_by: decidedBy });
   }
 
   // Shared parse/validate for knowledge create+update. Returns null (and sends

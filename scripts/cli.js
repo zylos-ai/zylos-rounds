@@ -24,7 +24,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
-export const CLIENT_VERSION = '0.20.3';
+export const CLIENT_VERSION = '0.21.0';
 
 const HELP = `rounds CLI v${CLIENT_VERSION} — manage the Rounds app via its admin API
 
@@ -49,6 +49,10 @@ Knowledge base
   knowledge add --title T [--tags G] [text]              (content from text arg or stdin)
   knowledge update <id> [--title T] [--tags G] [text]
   knowledge remove <id>
+
+Decisions (决议回写) — record a meeting decision that closes a 待议 item
+  decision list                                         recent decisions (newest first)
+  decision add [--topic T] [--by NAME] [text]           content from text arg or stdin
 
 Communication tasks (沟通任务)
   task list                           all tasks with current-cycle progress
@@ -230,6 +234,13 @@ async function run(target, cmd, sub, args, flags) {
       });
     }
     case 'knowledge remove': return del(`/api/knowledge/${id(args[0])}`).then(() => ({ ok: true, removed: id(args[0]) }));
+
+    case 'decision list': return get('/api/decisions');
+    case 'decision add': {
+      const content = textInput(args[0]);
+      if (!content) fail('usage: decision add [--topic T] [--by NAME] <text|stdin>');
+      return post('/api/decisions', { topic: flags.topic || '', content, decided_by: flags.by || '' });
+    }
 
     case 'task list': return get('/api/tasks');
     case 'task show': {

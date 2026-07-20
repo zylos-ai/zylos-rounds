@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.21.0] - 2026-07-20
+
+### Added
+- **Decision writeback (决议回写)** — closes the loop between a 待议 item being
+  raised and a decision being made about it. After the meeting, an agent records
+  the decision via `decision add [--topic T] [--by NAME] <text>` (CLI) or
+  `POST /api/decisions`; it is stored as a knowledge row tagged `decision`, so
+  it is recallable for free via `search_team_knowledge`. Recently-settled
+  decisions are then (a) injected into the **next cycle's probing context** for
+  the built-in daily standup, so the agent knows what is already decided and
+  doesn't re-probe settled items, and (b) fed into the **next daily digest** with
+  an instruction to drop them from the 待议 agenda and note any follow-up under
+  the detail sections instead. Without this, the next day's conversation and
+  digest were built only from the prior day's raw reports and lost the meeting's
+  outcome. New store helpers `addDecision` / `recentDecisions`; injection is
+  scoped to the built-in daily task (that's where 待议 lives), non-daily tasks
+  are unaffected.
+
 ## [0.20.3] - 2026-07-20
 
 ### Added

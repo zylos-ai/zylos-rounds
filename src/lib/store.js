@@ -416,6 +416,31 @@ export class Store {
     return this.db.prepare('DELETE FROM knowledge WHERE id=?').run(id);
   }
 
+  // ---- decisions (团队决议) --------------------------------------------------
+  // A decision closes out a 待议 item after the meeting. Stored as a knowledge
+  // row tagged 'decision' so it is (a) recallable for free via
+  // search_team_knowledge, and (b) queryable by recency for push-injection into
+  // the next cycle's probing and for closing the item out of the next digest.
+  addDecision({ topic, content, decidedBy } = {}) {
+    const body = String(content || '').trim();
+    if (!body) throw new Error('decision content required');
+    const t = String(topic || '').trim();
+    const title = t ? `【决议】${t}` : `【决议】${body.split('\n')[0].slice(0, 40)}`;
+    const stamp = `（${new Date().toLocaleString('sv').replace('T', ' ').slice(0, 16)}${decidedBy ? ' · ' + String(decidedBy).trim() + ' 拍板' : ''}）`;
+    return this.db.prepare('INSERT INTO knowledge(title,content,tags) VALUES(?,?,?)')
+      .run(title, `${body}\n${stamp}`, 'decision');
+  }
+
+  /** Decisions recorded within the last `days` — recent enough to still matter
+   *  for the next round's probing and digest closeout. */
+  recentDecisions(days = 3, limit = 20) {
+    return this.db.prepare(
+      `SELECT * FROM knowledge WHERE tags='decision'
+         AND datetime(created_at) >= datetime('now','localtime', ?)
+       ORDER BY created_at DESC, id DESC LIMIT ?`
+    ).all(`-${Math.max(0, Number(days) || 0)} days`, Math.max(1, Number(limit) || 1));
+  }
+
   /**
    * Keyword search over title/content/tags. Each whitespace-separated term must
    * match somewhere (AND semantics); ranking is by how many terms hit the title.

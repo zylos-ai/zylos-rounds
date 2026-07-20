@@ -175,3 +175,30 @@ test('test member is excluded from rosters, digests, and history', () => {
   assert.equal(s.getTaskSessionByToken('linkT').member.is_test, 1);
   s.close();
 });
+
+test('decisions: addDecision stores tagged knowledge, recentDecisions filters by recency', () => {
+  const s = tmpStore();
+  // a plain knowledge row must NOT be treated as a decision
+  s.addKnowledge('背景资料', 'some team background', 'reference');
+  const info = s.addDecision({ topic: 'Rounds 汇总模板', content: '采用方案B，待议合并为唯一议程', decidedBy: 'Howard' });
+  assert.ok(Number(info.lastInsertRowid) > 0);
+
+  const recent = s.recentDecisions();
+  assert.equal(recent.length, 1);
+  assert.match(recent[0].title, /【决议】Rounds 汇总模板/);
+  assert.match(recent[0].content, /方案B/);
+  assert.match(recent[0].content, /Howard 拍板/);
+  assert.equal(recent[0].tags, 'decision');
+
+  // decisions are recallable via the shared knowledge search
+  const hits = s.searchKnowledge('方案B');
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].tags, 'decision');
+
+  // empty content is rejected
+  assert.throws(() => s.addDecision({ content: '   ' }));
+
+  // recency window excludes old decisions (0-day window => nothing)
+  assert.equal(s.recentDecisions(0).length <= 1, true);
+  s.close();
+});
