@@ -33,18 +33,18 @@ const DIGEST_STRINGS = {
 ## 重点信号
 值得负责人单独注意的信息：强烈诉求、风险、情绪、超出问题框架但重要的内容，标注来源成员。
 未完成对话的成员，在结尾单独用一行列出名单。`,
-    recurring: `请输出给负责人看的本周期汇总报告（Markdown）。这份报告要能直接在日会上展示：把"总结"和"当场要对齐/拍板的事"放在最上面（开会念上半部分就够），把"谁做了什么"的明细放在最后供按需查阅。视角要求：以事为中心组织内容，不要按成员逐人罗列——同一事项涉及多人时合并到一起讲，人名只在句中做归属标注（如"（张三）"）。不要输出一级大标题（#），直接从下面的小节开始，严格按此顺序：
+    recurring: `请输出给负责人看的本周期汇总报告（Markdown）。这份报告要能直接在日会上展示：最上面放"总览"和"待议"——开会时念这两段就够；其余为补充和明细，供按需查阅。视角要求：以事为中心组织内容，不要按成员逐人罗列——同一事项涉及多人时合并到一起讲，人名只在句中做归属标注（如"（张三）"）。不要输出一级大标题（#），直接从下面的小节开始，严格按此顺序：
 ## 总览
 3 行以内概括全局：提交率（X/Y 人）、今日核心推进方向（2-3 个关键词）、主要风险（1-2 个）。如果有成员未提交或内容为空，在这里用一行列出他们的名字。
 ## 待议
-需要负责人决策、回应或介入的事项——这是日会的议程。逐条列出，每条标注需要谁做什么，分两类：① 成员主动提出的议题；② 下面「依赖比对」中发现的、需要拉齐的事项。如果没有，写"无"。
-## 卡点与风险
-受阻的事项和潜在风险，按事项列出，说明影响，标注相关成员。只列真正阻塞或有风险的。
-## 依赖比对
-交叉比对所有成员的信息，检查并列出：成员 A 的工作依赖成员 B 做某事但 B 没有提到这件事（依赖断裂）；某项工作有时间压力但上游未就绪（风险升级）；多人在做类似的事但没有提到协作（可能重复）。如果没有发现问题，写"未发现依赖断裂"。
+这是日会唯一的议程，也是这份报告的核心。把所有"需要在日会上讨论、对齐或由负责人拍板"的事项合并成一份去重的清单，逐条列出，每条写清楚要拍板/对齐什么 + 涉及谁。来源有三类，合并去重、同一件事只列一条、不要按来源分小标题：① 成员主动提出的议题；② 卡点中需要多方拉通或需要负责人拍板的（点对点就能解决的卡点不必进这里）；③ 下面「依赖比对」发现的、需要拉齐的断裂依赖或风险。如果没有需要上会的事项，写"无"。
 
 ---
-*以下为明细，供按需查阅。*
+*以下为补充与明细，供按需查阅（开会不必逐条念）。*
+## 卡点与风险
+本周期所有受阻事项和潜在风险的完整清单，按事项列出：问题·影响·归属。只列真正阻塞或有风险的。已经进入「待议」的事项，这里只用一句话点到即可，不再重复展开。
+## 依赖比对
+交叉比对所有成员的信息的原始发现，检查并列出：成员 A 的工作依赖成员 B 做某事但 B 没有提到这件事（依赖断裂）；某项工作有时间压力但上游未就绪（风险升级）；多人在做类似的事但没有提到协作（可能重复）。已进入「待议」的，这里一句话点到即可。如果没有发现问题，写"未发现依赖断裂"。
 ## 已完成
 成员明确说已完成/已交付/已上线/已发版的事项。按事项归并，标注归属。如果没有任何明确完成的事项，写"无明确完成事项"。
 ## 进行中
@@ -77,18 +77,18 @@ Points of disagreement — list each side's position and who holds it.
 ## Key signals
 Information the lead should note individually: strong asks, risks, emotions, important content beyond the question frame — attribute each to its member.
 List members who did not complete their conversation on a single line at the end.`,
-    recurring: `Write this cycle's summary report for the team lead (Markdown). This report is meant to be shown at the daily meeting: put the "summary" and the "things to align on / decide right now" at the top (reading out the top half should be enough), and push the "who did what" detail to the bottom for lookup on demand. Perspective: organize by workstream/topic, never member by member — when several members touch the same item, merge their input into one place and use names only as inline attribution (e.g. "(Alex)"). Do not emit a top-level heading (#); start directly with these sections, in exactly this order:
+    recurring: `Write this cycle's summary report for the team lead (Markdown). This report is meant to be shown at the daily meeting: put "Overview" and "For discussion" at the very top — reading out those two is enough for the meeting; everything else is supporting material and detail for lookup on demand. Perspective: organize by workstream/topic, never member by member — when several members touch the same item, merge their input into one place and use names only as inline attribution (e.g. "(Alex)"). Do not emit a top-level heading (#); start directly with these sections, in exactly this order:
 ## Overview
 Sum up the whole cycle in 3 lines or fewer: submission rate (X/Y members), today's core workstreams (2-3 keywords), main risks (1-2). If any member did not submit or their content is empty, list their names here on one line.
 ## For discussion
-Items needing the lead's decision, response or involvement — this is the meeting agenda. List each with who needs to do what, in two groups: (1) topics members raised themselves; (2) items surfaced by the "Dependency check" below that need alignment. If none, write "None."
-## Blockers & risks
-Stalled items and potential risks, listed by item with impact and the members involved. Only list what is genuinely blocked or at risk.
-## Dependency check
-Cross-reference all members' input and flag: member A depends on member B for something but B did not mention it (dependency gap); an item has a deadline but its upstream is not ready (escalated risk); multiple members are working on similar things without mentioning coordination (possible duplication). If no issues found, write "No dependency gaps detected."
+This is the meeting's only agenda and the core of the report. Merge everything that "needs to be discussed, aligned on, or decided by the lead at the meeting" into a single de-duplicated list; for each, state clearly what to decide/align on + who is involved. It draws from three sources — merge and de-duplicate them, list each item only once, and do NOT split by source into sub-headings: (1) topics members raised themselves; (2) blockers that need multi-party alignment or a decision from the lead (point-to-point-solvable blockers do not belong here); (3) dependency gaps or risks surfaced by the "Dependency check" below that need alignment. If there is nothing for the meeting, write "None."
 
 ---
-*Detail below — for lookup as needed.*
+*Supporting material and detail below — for lookup as needed (no need to read out at the meeting).*
+## Blockers & risks
+The complete list of stalled items and potential risks this cycle, by item: problem · impact · owner. Only list what is genuinely blocked or at risk. For anything already in "For discussion", just note it in one line here — do not re-expand it.
+## Dependency check
+The raw cross-reference findings across all members' input: member A depends on member B for something but B did not mention it (dependency gap); an item has a deadline but its upstream is not ready (escalated risk); multiple members are working on similar things without mentioning coordination (possible duplication). For anything already in "For discussion", note it in one line here. If no issues found, write "No dependency gaps detected."
 ## Completed
 Items members explicitly said are done/shipped/deployed/released. Group by workstream with attribution. If nothing was explicitly completed, write "No items explicitly completed."
 ## In progress

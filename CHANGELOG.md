@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.2] - 2026-07-20
+
+### Changed
+- **Default recurring digest: 待议 (For discussion) is now the single
+  consolidated agenda.** Following v0.20.1's meeting-facing reorder, the top of
+  the digest was still repeating the same hot items across 待议 / 卡点与风险 /
+  依赖比对. Now the top half is just 总览 + 待议: 待议 merges everything that
+  needs discussion/alignment/decision (member-raised topics + blockers needing
+  multi-party alignment + dependency gaps needing alignment) into one
+  de-duplicated list. 卡点与风险 and 依赖比对 move below the detail divider as
+  supporting reference and only one-line anything already elevated into 待议,
+  so no item is stated three times. Order: 总览 → 待议 → *divider* → 卡点与风险
+  → 依赖比对 → 已完成 → 进行中 → 计划. (Owner ruling, 2026-07-20.)
+
 ## [0.20.1] - 2026-07-20
 
 ### Changed
