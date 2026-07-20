@@ -479,7 +479,12 @@ export default function TalkApp() {
                 {textMode ? T.btnVoice : T.btnText}
               </Button>
               {!textMode && (
-                <Button variant={muted ? 'destructive' : 'secondary'} onClick={toggleMute} disabled={submitting}>
+                <Button
+                  variant="secondary"
+                  className={cn(muted && 'border-primary-line bg-primary-soft text-primary hover:bg-primary-soft')}
+                  onClick={toggleMute}
+                  disabled={submitting}
+                >
                   {muted ? <MicOff strokeWidth={1.75} /> : <Mic strokeWidth={1.75} />}
                   {muted ? T.btnUnmute : T.btnMute}
                 </Button>

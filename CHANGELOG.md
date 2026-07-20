@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.1] - 2026-07-20
+
+### Changed
+- Muted-state button restyled from destructive red to the page's soft indigo
+  accent (accent-soft fill, accent text, accent-line border) — reads as a
+  toggled state coordinated with the talk UI instead of an alarm (owner
+  feedback). Verified in light and dark themes.
+
 ## [0.19.0] - 2026-07-20
 
 ### Changed
