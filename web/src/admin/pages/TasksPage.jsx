@@ -101,6 +101,8 @@ const DICT = {
     questionsCard: '问题框架',
     cycleDigest: '本期汇总',
     taskDigest: '任务汇总',
+    digestCollapse: '收起汇总',
+    digestExpand: '展开汇总',
     digestUpdatedAt: (ts) => `更新于 ${ts} · 重新生成会覆盖`,
     digestAutoRecurring: '周期结束自动生成，也可随时手工触发',
     digestManual: '默认手工触发，可随时生成',
@@ -224,6 +226,8 @@ const DICT = {
     briefCard: 'Brief',
     questionsCard: 'Question frame',
     cycleDigest: 'Cycle digest',
+    digestCollapse: 'Collapse digest',
+    digestExpand: 'Expand digest',
     taskDigest: 'Task digest',
     digestUpdatedAt: (ts) => `Updated ${ts} · regenerating overwrites it`,
     digestAutoRecurring: 'Generated automatically at cycle end; you can also trigger it manually anytime',
@@ -596,6 +600,7 @@ function CreateTaskCard({ onDone }) {
 function DigestCard({ task, digesting, digestError, onTrigger, onSaved }) {
   const T = useLangDict(DICT);
   const [open, setOpen] = useState(false);
+  const [bodyOpen, setBodyOpen] = useState(true);
   const [value, setValue] = useState(task.digest_instruction || '');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -624,7 +629,16 @@ function DigestCard({ task, digesting, digestError, onTrigger, onSaved }) {
     <Card>
       <CardContent className="py-5">
         <div className="mb-3 flex flex-wrap items-center gap-3">
-          <h2 className="text-lg font-semibold">{task.type === 'recurring' ? T.cycleDigest : T.taskDigest}</h2>
+          <button
+            type="button"
+            onClick={() => setBodyOpen(v => !v)}
+            className="flex items-center gap-2 text-left"
+            aria-expanded={bodyOpen}
+            title={bodyOpen ? T.digestCollapse : T.digestExpand}
+          >
+            <ChevronRight className={cn('h-5 w-5 shrink-0 text-muted-foreground transition-transform', bodyOpen && 'rotate-90')} strokeWidth={2} />
+            <h2 className="text-lg font-semibold">{task.type === 'recurring' ? T.cycleDigest : T.taskDigest}</h2>
+          </button>
           <span className="text-sm text-muted-foreground">
             {task.digest_updated_at
               ? T.digestUpdatedAt(task.digest_updated_at.slice(0, 16))
@@ -674,9 +688,9 @@ function DigestCard({ task, digesting, digestError, onTrigger, onSaved }) {
           </div>
         </div>
         {digestError && <p className="mb-3 text-sm text-destructive">{digestError}</p>}
-        {task.digest
+        {bodyOpen && (task.digest
           ? <Markdown text={task.digest} className="rounded-md bg-accent/50 px-4 py-3 text-[0.95rem] leading-relaxed" />
-          : <p className="text-sm text-muted-foreground">{T.digestNotYet}{task.digest_instruction ? T.digestNotYetCustom : task.type === 'recurring' ? T.digestNotYetRecurring : T.digestNotYetOneshot}</p>}
+          : <p className="text-sm text-muted-foreground">{T.digestNotYet}{task.digest_instruction ? T.digestNotYetCustom : task.type === 'recurring' ? T.digestNotYetRecurring : T.digestNotYetOneshot}</p>)}
       </CardContent>
     </Card>
   );
