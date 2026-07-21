@@ -70,10 +70,25 @@ export default function TalkApp() {
   const reconnectRef = useRef({ attempts: 0, timer: null });
   const logRef = useRef(null);
   const summaryRef = useRef(null);
+  // typed messages awaiting the server echo (id ↔ text), + slow-reply timer
+  const pendingSendRef = useRef([]);
+  const waitTimerRef = useRef(null);
 
   const say = useCallback((text, err = false) => {
     setStatus(text);
     setStatusErr(err);
+  }, []);
+
+  const startWaitTimer = useCallback(() => {
+    clearTimeout(waitTimerRef.current);
+    waitTimerRef.current = setTimeout(() => {
+      if (!doneRef.current) say(tRef.current.stillWaiting);
+    }, 12000);
+  }, [say]);
+
+  const clearWaitTimer = useCallback(() => {
+    clearTimeout(waitTimerRef.current);
+    waitTimerRef.current = null;
   }, []);
 
   // Load member session (token -> name); 404 -> invalid link state.
@@ -117,6 +132,7 @@ export default function TalkApp() {
 
   useEffect(() => () => {
     clearTimeout(reconnectRef.current.timer);
+    clearTimeout(waitTimerRef.current);
     engineRef.current?.destroy();
   }, []);
 
@@ -126,6 +142,7 @@ export default function TalkApp() {
   }, [messages]);
 
   const appendAiDelta = useCallback((t) => {
+    clearWaitTimer();
     setMessages((ms) => {
       if (aiIdRef.current != null) {
         return ms.map((m) => (m.id === aiIdRef.current ? { ...m, text: m.text + t } : m));
@@ -134,7 +151,7 @@ export default function TalkApp() {
       aiIdRef.current = id;
       return [...ms, { id, role: 'ai', text: t }];
     });
-  }, []);
+  }, [clearWaitTimer]);
 
   const startCall = useCallback(async () => {
     if (engineRef.current || doneRef.current) return;
@@ -153,14 +170,16 @@ export default function TalkApp() {
           setPhase('listening');
           say(wasReconnect ? tRef.current.reconnected : tRef.current.greeting);
         },
-        error: (msg) => { setSubmitting(false); say(msg, true); },
+        error: (msg) => { setSubmitting(false); clearWaitTimer(); say(msg, true); },
         speechStarted: () => {
           if (doneRef.current || engineRef.current?.muted) return;
+          clearWaitTimer();
           setPhase('listening');
           say(tRef.current.listening);
         },
         aiAudio: () => {
           if (doneRef.current) return;
+          clearWaitTimer();
           setPhase('speaking');
           say(tRef.current.speaking);
         },
@@ -168,19 +187,37 @@ export default function TalkApp() {
         aiDone: () => {
           aiIdRef.current = null;
         },
-        userPending: (itemId) => setMessages((ms) => (
-          ms.some((m) => m.key === itemId) ? ms : [...ms, { id: nid(), key: itemId, role: 'me', text: '', pending: true }]
-        )),
-        userText: (t, itemId) => setMessages((ms) => {
-          if (itemId && ms.some((m) => m.key === itemId)) {
-            return t
-              ? ms.map((m) => (m.key === itemId ? { ...m, text: t, pending: false } : m))
-              : ms.filter((m) => m.key !== itemId);
+        userPending: (itemId) => {
+          setMessages((ms) => (
+            ms.some((m) => m.key === itemId) ? ms : [...ms, { id: nid(), key: itemId, role: 'me', text: '', pending: true }]
+          ));
+          // the server created the user item — the voice turn was received
+          if (!doneRef.current && !engineRef.current?.textMode) {
+            say(tRef.current.receivedWaiting);
+            startWaitTimer();
           }
-          return t ? [...ms, { id: nid(), key: itemId, role: 'me', text: t }] : ms;
-        }),
+        },
+        userText: (t, itemId) => {
+          // typed-message echo: confirm the locally rendered bubble instead
+          // of appending a duplicate
+          const p = t && pendingSendRef.current.find((x) => x.text === t);
+          if (p) {
+            pendingSendRef.current = pendingSendRef.current.filter((x) => x !== p);
+            setMessages((ms) => ms.map((m) => (m.id === p.id ? { ...m, key: itemId, pending: false } : m)));
+            return;
+          }
+          setMessages((ms) => {
+            if (itemId && ms.some((m) => m.key === itemId)) {
+              return t
+                ? ms.map((m) => (m.key === itemId ? { ...m, text: t, pending: false } : m))
+                : ms.filter((m) => m.key !== itemId);
+            }
+            return t ? [...ms, { id: nid(), key: itemId, role: 'me', text: t }] : ms;
+          });
+        },
         responseDone: () => {
           if (doneRef.current) return;
+          clearWaitTimer();
           setPhase('listening');
           // while muted, remind instead of inviting a turn Luna can't hear
           say(engineRef.current?.muted ? tRef.current.muted : tRef.current.yourTurn);
@@ -194,6 +231,7 @@ export default function TalkApp() {
         },
         closed: () => {
           setSubmitting(false);
+          clearWaitTimer();
           if (doneRef.current) return;
           const r = reconnectRef.current;
           if (r.attempts < RETRY_DELAYS.length) {
@@ -216,7 +254,7 @@ export default function TalkApp() {
       setPhase('idle');
       say(tRef.current.micDenied, true);
     }
-  }, [appendAiDelta, say]);
+  }, [appendAiDelta, say, startWaitTimer, clearWaitTimer]);
 
   const toggleMute = useCallback(() => {
     const engine = engineRef.current;
@@ -245,6 +283,7 @@ export default function TalkApp() {
     }
     setTextMode(toText);
     if (toText) {
+      setMuted(false); // entering text mode lifts mute (engine cleared it)
       setPhase('listening');
       say(tRef.current.textModeOn);
       setTimeout(() => inputRef.current?.focus(), 50);
@@ -258,10 +297,20 @@ export default function TalkApp() {
     e?.preventDefault();
     const t = draft.trim();
     if (!t || !engineRef.current || doneRef.current) return;
-    engineRef.current.sendText(t);
+    if (!engineRef.current.sendText(t)) {
+      // socket not open — keep the draft, never let the message vanish
+      say(tRef.current.sendFailed, true);
+      return;
+    }
+    // render the bubble immediately; the server echo confirms it (pending off)
+    const id = nid();
+    pendingSendRef.current.push({ id, text: t });
+    setMessages((ms) => [...ms, { id, role: 'me', text: t, pending: true }]);
+    say(tRef.current.sentWaiting);
+    startWaitTimer();
     setDraft('');
     inputRef.current?.focus();
-  }, [draft]);
+  }, [draft, say, startWaitTimer]);
 
   const retryNow = useCallback(() => {
     reconnectRef.current.attempts = 0;

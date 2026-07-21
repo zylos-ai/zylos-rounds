@@ -32,6 +32,9 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 
 export const GEMINI_VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Leda', 'Orus', 'Zephyr'];
 
+// 100ms of 16kHz mono PCM16 silence (3200 zero bytes) for the keepalive
+const SILENCE_100MS_16K = Buffer.alloc(3200).toString('base64');
+
 // These kick strings are relayed as user-role turns and steer the model, so
 // they follow the member's conversation language.
 const KICK_STRINGS = {
@@ -85,6 +88,13 @@ export class GeminiUpstream {
     this.rsPos = 0;
     this.rsTail = null;
     this.lpHist = null; // last LP.length-1 raw samples for filter continuity
+    // Audio-starvation keepalive. Gemini aborts a session (1008 "operation
+    // was aborted") after ~2.5 min without realtimeInput — which is exactly
+    // what a muted or text-mode client produces (it sends no frames at all).
+    // A 100ms zero-PCM chunk every 5s of client silence keeps the session
+    // alive; silence carries no user signal and never trips server VAD.
+    this.lastAudioAt = Date.now();
+    this.keepalive = null;
     const m = model.startsWith('models/') ? model : `models/${model}`;
     this.model = m;
     this.ws = _socket || new WebSocket(`${wsUrl}?key=${encodeURIComponent(key)}`, {
@@ -93,6 +103,10 @@ export class GeminiUpstream {
     this.ws.on('open', () => this.emit('open'));
     this.ws.on('error', e => this.emit('error', e));
     this.ws.on('close', (code, reason) => {
+      if (this.keepalive) {
+        clearInterval(this.keepalive);
+        this.keepalive = null;
+      }
       const t = this.usageTotals;
       if (t.input_text + t.input_audio + t.output_text + t.output_audio > 0) {
         console.log(`[rounds] gemini usage in_text=${t.input_text} in_audio=${t.input_audio} out_text=${t.output_text} out_audio=${t.output_audio}`);
@@ -157,9 +171,18 @@ export class GeminiUpstream {
             },
           },
         });
+        if (!this.keepalive) {
+          this.keepalive = setInterval(() => {
+            if (this.ws.readyState !== 1 || Date.now() - this.lastAudioAt < 4500) return;
+            this.lastAudioAt = Date.now();
+            this.toGemini({ realtimeInput: { audio: { data: SILENCE_100MS_16K, mimeType: 'audio/pcm;rate=16000' } } });
+          }, 5000);
+          this.keepalive.unref?.(); // never hold the process open
+        }
         return;
       }
       case 'input_audio_buffer.append': {
+        this.lastAudioAt = Date.now();
         const pcm16k = this.resample24to16(Buffer.from(ev.audio || '', 'base64'));
         if (pcm16k.length) {
           this.toGemini({ realtimeInput: { audio: { data: Buffer.from(pcm16k.buffer, pcm16k.byteOffset, pcm16k.byteLength).toString('base64'), mimeType: 'audio/pcm;rate=16000' } } });

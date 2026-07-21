@@ -331,6 +331,11 @@ export class Relay {
       });
 
     const killTimer = setTimeout(() => finish('timeout'), maxSessionMs);
+    // App-level heartbeat: browsers cannot send WS pings, and on flaky mobile
+    // links a dead socket can stay half-open for minutes. A 20s beacon gives
+    // the client's stale-socket watchdog something to miss.
+    const heartbeat = setInterval(() => safeSend(client, { type: 'app.ping' }), 20000);
+    heartbeat.unref?.();
     let closed = false;
     let greeted = false;
     const store = this.store;
@@ -339,6 +344,7 @@ export class Relay {
       if (closed) return;
       closed = true;
       clearTimeout(killTimer);
+      clearInterval(heartbeat);
       try { upstream.close(); } catch { /* already closed */ }
       try { client.close(); } catch { /* already closed */ }
       self.active = Math.max(0, self.active - 1);
