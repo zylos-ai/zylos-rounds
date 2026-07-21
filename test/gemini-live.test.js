@@ -193,3 +193,31 @@ test('instructed first response.create counts as greeting — later bare one mus
   up.send(JSON.stringify({ type: 'response.create' }));
   assert.equal(sock.sent.length, n);
 });
+
+test('silence keepalive feeds an audio-starved session, real audio holds it off (v0.22.6)', (t) => {
+  t.mock.timers.enable({ apis: ['setInterval', 'Date'] });
+  const { sock, up } = boot();
+  up.send(SESSION_UPDATE); // starts the keepalive
+  const silenceFrames = () => sock.sent.filter(m => {
+    if (!m.realtimeInput?.audio) return false;
+    const buf = Buffer.from(m.realtimeInput.audio.data, 'base64');
+    return buf.every(b => b === 0);
+  });
+
+  // no client audio at all: first tick past the 4.5s starvation window sends silence
+  t.mock.timers.tick(5000);
+  assert.equal(silenceFrames().length, 1);
+  const f = silenceFrames()[0].realtimeInput.audio;
+  assert.equal(f.mimeType, 'audio/pcm;rate=16000');
+  assert.equal(Buffer.from(f.data, 'base64').length, 3200); // 100ms @16kHz PCM16
+
+  // live mic audio resets the starvation clock — no silence while frames flow
+  t.mock.timers.tick(3999); // t=8999
+  up.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: Buffer.alloc(4800, 0x40).toString('base64') }));
+  t.mock.timers.tick(1001); // t=10000: interval fires, but audio was 1s ago
+  assert.equal(silenceFrames().length, 1);
+
+  // starve again: the next interval past the window resumes the keepalive
+  t.mock.timers.tick(5000); // t=15000, last audio t=8999
+  assert.equal(silenceFrames().length, 2);
+});

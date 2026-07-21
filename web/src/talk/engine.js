@@ -66,6 +66,10 @@ export class TalkEngine {
     this.itemSchedMs = 0;
     // cross-packet resample phase
     this.dsPos = 0;
+    // stale-socket watchdog (half-open mobile connections receive nothing
+    // but never fire onclose; the server heartbeats every 20s)
+    this.lastMsgAt = 0;
+    this.watchdog = null;
   }
 
   /** Acquire mic + audio graph, then open the relay WS. Throws if mic denied. */
@@ -150,6 +154,22 @@ export class TalkEngine {
     const mode = this.textMode ? '&mode=text' : '';
     this.ws = new WebSocket(`${proto}://${location.host}${this.base}/ws?token=${this.token}${mode}`);
     this.on.connecting();
+    this.lastMsgAt = Date.now();
+    if (!this.watchdog) {
+      // With the server heartbeating every 20s, 45s of silence means the
+      // socket is dead (half-open) — close it so the reconnect flow runs
+      // instead of the user typing/talking into a black hole.
+      this.watchdog = setInterval(() => {
+        if (this.done) return;
+        if (this.ws && this.ws.readyState === 1 && Date.now() - this.lastMsgAt > 45000) {
+          try {
+            this.ws.close();
+          } catch {
+            /* already closing */
+          }
+        }
+      }, 10000);
+    }
     this.ws.onclose = () => {
       if (!this.done) this.on.closed();
     };
@@ -158,6 +178,7 @@ export class TalkEngine {
     this.ws.onerror = () => {};
     this.ws.onmessage = (e) => {
       let ev;
+      this.lastMsgAt = Date.now();
       try {
         ev = JSON.parse(e.data);
       } catch {
@@ -270,6 +291,9 @@ export class TalkEngine {
     if (this.done) return;
     this.textMode = mode === 'text';
     if (this.textMode) {
+      // Entering text mode lifts mute: the typed channel must never feel
+      // gated, and a stale mute would only resurface as a surprise later.
+      this.muted = false;
       this.flushPlayback();
       this.curItemId = null;
       this.releaseMic();
@@ -284,15 +308,21 @@ export class TalkEngine {
     this.send({ type: 'app.set_mode', mode: this.textMode ? 'text' : 'voice' });
   }
 
-  /** Send a typed message (text mode). */
+  /**
+   * Send a typed message (text mode). Returns false when the socket is not
+   * open — the caller must keep the draft and surface the failure instead of
+   * letting the message vanish silently.
+   */
   sendText(text) {
     const t = (text || '').trim();
-    if (!t || this.done) return;
-    this.send({
+    if (!t || this.done) return false;
+    const sent = this.send({
       type: 'conversation.item.create',
       item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: t }] },
     });
+    if (!sent) return false;
     this.send({ type: 'response.create' });
+    return true;
   }
 
   reconnect() {
@@ -318,7 +348,11 @@ export class TalkEngine {
   }
 
   send(obj) {
-    if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(obj));
+    if (this.ws && this.ws.readyState === 1) {
+      this.ws.send(JSON.stringify(obj));
+      return true;
+    }
+    return false;
   }
 
   playDelta(ev) {
@@ -381,6 +415,10 @@ export class TalkEngine {
   }
 
   destroy() {
+    if (this.watchdog) {
+      clearInterval(this.watchdog);
+      this.watchdog = null;
+    }
     try {
       if (this.ws) this.ws.close();
     } catch {

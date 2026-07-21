@@ -5,7 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.22.5] - 2026-07-21
+## [0.22.6] - 2026-07-21
+
+### Fixed
+- **Mute no longer blocks the typed channel** (owner report): switching to text
+  mode now lifts mute on the spot — a stale mute can never gate or confuse the
+  typed conversation, and the muted status can't linger into text mode.
+- **Root cause of "typed text disappears": upstream audio starvation.** Gemini
+  aborts a Live session (`1008 The operation was aborted`) after ~2.5 minutes
+  without incoming audio — exactly what a muted or text-mode client produces.
+  Reproduced in sandbox (session died at t+153s of muted idle). The adapter now
+  streams a 100ms zero-PCM silence frame after every 5s of client-audio
+  starvation: sessions stay alive through long mutes and full text-mode
+  conversations (silence carries no user signal, never trips VAD, negligible cost).
+- **Typed messages can no longer vanish silently.** Send now fails loudly when
+  the socket is down (draft is kept in the box + error status) and the bubble
+  renders immediately client-side (dimmed until the server echo confirms it),
+  instead of depending on the round-trip echo to appear at all.
+
+### Added
+- **Waiting-state feedback for weak networks** (owner report): after a typed
+  send the status shows 已发出 ✓ 等待回复中…; a voice turn shows 已收到，等待回复中…
+  as soon as the server registers it; if no reply starts within 12s the status
+  escalates to 网络较慢，仍在等待回复…. Statuses clear on the first reply token.
+- **Half-open connection detection**: the relay heartbeats `app.ping` every
+  20s; the client watchdog force-closes a socket that has been silent for 45s
+  so the auto-reconnect flow runs instead of the user talking into a dead link.
 
 ### Changed
 - Documented the **follow-up convention** in both `SKILL.md` (server) and `client/SKILL.md` (mirrored to the client): always `followup list` before adding, and when new info is progress/a decision on the same topic as an existing entry, replace it (`followup remove` + add) instead of accumulating duplicates — one current follow-up per topic. Also surfaced `followup list/add/remove` in the server SKILL.md CLI examples (previously undocumented there). Docs-only.
