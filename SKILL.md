@@ -1,6 +1,6 @@
 ---
 name: rounds
-version: 0.22.2
+version: 0.22.3
 description: >-
   Rounds (formerly standup) — delegated 1:1 structured voice conversations for
   teams. An AI agent (realtime voice, Chinese or English per member — member
@@ -153,6 +153,7 @@ $CLI member list                       # roster + links + today's status
 $CLI member add 小王
 $CLI member add Alex --language en     # English member: talk page + voice + profile in English
 $CLI member remove 3                   # deactivate (history kept)
+$CLI member rename 3 Linfan             # rename (display-only; links & history unaffected)
 $CLI member reset-link 3
 $CLI member set-language 3 en          # zh|en; empty arg = follow team default
 echo "前端负责人，关注上线节奏" | $CLI member set-context 3

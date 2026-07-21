@@ -114,6 +114,37 @@ test('wrong or missing bearer key is rejected on every admin route', async () =>
   }
 });
 
+test('rename endpoint: renames, keeps links, rejects dup/empty/missing', async () => {
+  const { call, close } = await boot();
+  try {
+    const added = await call('POST', '/api/members', { name: 'leslie' });
+    const id = added.data.id;
+    const origLink = added.data.links[0].link;
+
+    const put = await call('PUT', `/api/members/${id}/name`, { name: 'Linfan' });
+    assert.equal(put.status, 200);
+    assert.equal(put.data.name, 'Linfan');
+
+    const me = (await call('GET', '/api/members')).data.members.find(m => m.id === id);
+    assert.equal(me.name, 'Linfan');
+    assert.equal(me.links[0].link, origLink); // link keyed by token — unaffected by rename
+
+    // same name is a no-op 200
+    assert.equal((await call('PUT', `/api/members/${id}/name`, { name: 'Linfan' })).status, 200);
+
+    // collision with another member's name → 409
+    const other = (await call('POST', '/api/members', { name: 'Sam' })).data.id;
+    assert.equal((await call('PUT', `/api/members/${other}/name`, { name: 'Linfan' })).status, 409);
+
+    // validation
+    assert.equal((await call('PUT', `/api/members/${id}/name`, { name: '   ' })).status, 400);
+    assert.equal((await call('PUT', `/api/members/${id}/name`, { name: 'x'.repeat(65) })).status, 400);
+    assert.equal((await call('PUT', '/api/members/9999/name', { name: 'Ghost' })).status, 404);
+  } finally {
+    close();
+  }
+});
+
 test('profile endpoint: set, clear, appears in context/members', async () => {
   const { call, close } = await boot();
   try {

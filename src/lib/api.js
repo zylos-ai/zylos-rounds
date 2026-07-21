@@ -171,6 +171,9 @@ export class Api {
     m = p.match(/^\/api\/members\/(\d+)\/language$/);
     if (m && req.method === 'PUT') return await this.putMemberLanguage(req, res, Number(m[1])), true;
 
+    m = p.match(/^\/api\/members\/(\d+)\/name$/);
+    if (m && req.method === 'PUT') return await this.putMemberName(req, res, Number(m[1])), true;
+
     if (p === '/api/members' && req.method === 'GET') return this.listMembers(req, res), true;
     if (p === '/api/members' && req.method === 'POST') return await this.addMember(req, res), true;
 
@@ -622,6 +625,29 @@ export class Api {
     if (v && !LANGUAGES.includes(v)) return sendJson(res, 400, { error: 'invalid_language' });
     this.store.setMemberLanguage(id, v || null);
     sendJson(res, 200, { id, language: v, language_effective: this.settings.memberLanguage(this.store.getMemberById(id)) });
+  }
+
+  // Rename a member. Name is globally unique; display-only — talk links (keyed
+  // by token) and all history (keyed by id) are unaffected.
+  async putMemberName(req, res, id) {
+    const member = this.store.getMemberById(id);
+    if (!member) return sendJson(res, 404, { error: 'not_found' });
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      return sendJson(res, 400, { error: 'bad_request' });
+    }
+    const name = String(body.name || '').trim();
+    if (!name || name.length > 64) return sendJson(res, 400, { error: 'invalid_name' });
+    if (name === member.name) return sendJson(res, 200, { id, name });
+    try {
+      this.store.setMemberName(id, name);
+    } catch (err) {
+      if (String(err.message).includes('UNIQUE')) return sendJson(res, 409, { error: 'duplicate_name' });
+      throw err;
+    }
+    sendJson(res, 200, { id, name });
   }
 
   // Manual correction surface for the auto-maintained profile (动态画像).
