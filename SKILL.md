@@ -1,6 +1,6 @@
 ---
 name: rounds
-version: 0.22.4
+version: 0.22.5
 description: >-
   Rounds (formerly standup) — delegated 1:1 structured voice conversations for
   teams. An AI agent (realtime voice, Chinese or English per member — member
@@ -169,6 +169,10 @@ echo "内容..." | $CLI knowledge add --title "发布系统" --tags "release"
 $CLI knowledge update 2 --title "新标题"
 $CLI knowledge remove 2
 
+$CLI followup list --task 1            # review a task's follow-ups — ALWAYS do this before adding (see convention below)
+$CLI followup add --task 1 --scope team "套餐方向已达成共识：走三档" # append (补充/跟进); default scope=private
+$CLI followup remove 5                  # drop a superseded entry
+
 $CLI report today                      # or: report 2026-07-18 / report history
 $CLI settings get
 $CLI settings set --voice cedar
@@ -179,6 +183,17 @@ $CLI token create avatar               # plaintext shown ONCE in the response �
 $CLI token rotate 2                    # new secret for key 2; old plaintext dies immediately
 $CLI token revoke 2                    # revoke a named key
 ```
+
+**Follow-up convention (all agents must follow).** A follow-up (补充/跟进)
+records new info or progress on a task and is carried into its next cycle.
+Before you add one, **always run `followup list --task <id>` first** to review
+the task's existing follow-ups. If your new entry is progress or a decision on
+the **same topic** as an existing one, **update it — `followup remove` the
+stale entry, then add the current state — instead of accumulating duplicates**
+(there is no in-place edit; replace = remove + add). Example: a standup raises
+"套餐方向待对齐"; once the team reaches consensus, replace that entry with
+"套餐方向已达成共识：…" rather than leaving both. Keep each topic represented by
+a single, current follow-up.
 
 Credential resolution: `--url`/`--key` flags → `ROUNDS_URL`/`ROUNDS_API_KEY`
 env → `cli.json` (`{"url","apiKey"}`) in `$ROUNDS_HOME` / `~/.rounds/` /
