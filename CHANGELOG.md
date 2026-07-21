@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.22.2] - 2026-07-21
+
+### Fixed
+- `client/SKILL.md` version was stuck at 0.19.6, which failed the `mirror-client` workflow's version-consistency gate on every release since v0.20.0 — so the portable client mirror (`zylos-ai/zylos-rounds-client`) had not updated in seven releases. Bumped it in lockstep and added it (plus `scripts/cli.js` `CLIENT_VERSION`) to the release checklist so the gate stays green. First release to actually mirror the `followup` client commands.
+
+### Changed
+- `client/SKILL.md`: documented the `followup` commands in the usage examples.
+
 ## [0.22.1] - 2026-07-21
 
 ### Removed

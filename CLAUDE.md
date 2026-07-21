@@ -69,10 +69,18 @@ Browser screenshot verification is mandatory for any frontend change.
 
 ## Release Process
 
-All four files in the same commit (inside the feature PR, not after merge):
-`package.json`, `package-lock.json` (run `npm install`), `SKILL.md`
-frontmatter version, `CHANGELOG.md` entry. After merge:
-`gh release create vX.Y.Z --target main`.
+Bump ALL SIX version stamps in the same commit (inside the feature PR, not
+after merge) — the `mirror-client` workflow has a gate that fails the whole
+release if any of `package.json` / `scripts/cli.js` `CLIENT_VERSION` /
+`client/SKILL.md` disagree with the tag:
+1. `package.json`
+2. `package-lock.json` (run `npm install`)
+3. `SKILL.md` frontmatter version
+4. **`client/SKILL.md` frontmatter version** (mirrored to the client repo — easy to forget; its staleness silently broke mirroring for 7 releases)
+5. **`scripts/cli.js` `CLIENT_VERSION`** (asserted by `test/cli.test.js` AND the mirror gate)
+6. `CHANGELOG.md` entry
+
+After merge: `gh release create vX.Y.Z --target main` (the tag push triggers `mirror-client`).
 
 ## Directory Convention
 
