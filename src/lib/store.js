@@ -293,6 +293,19 @@ export const MIGRATIONS = [
       DELETE FROM knowledge WHERE tags='decision';
     `,
   },
+  {
+    // v0.24 ChatGPT/Codex subscription provider: a provider now carries an
+    // auth_type. 'api_key' (default) keeps the existing static-key behaviour;
+    // 'chatgpt_oauth' stores an independent OAuth token family (device-flow
+    // login) as a JSON blob in oauth_json — access/refresh/id tokens plus the
+    // earliest_refresh_at hint and the chatgpt account id. Such a provider's
+    // api_key column stays null and is never read.
+    version: 13,
+    sql: `
+      ALTER TABLE providers ADD COLUMN auth_type TEXT NOT NULL DEFAULT 'api_key';
+      ALTER TABLE providers ADD COLUMN oauth_json TEXT;
+    `,
+  },
 ];
 
 export class Store {
@@ -343,11 +356,11 @@ export class Store {
     return this.db.prepare('SELECT * FROM providers WHERE slug=?').get(slug) ?? null;
   }
 
-  createProvider({ slug, name, baseUrl, apiKey, capRealtime, capModels }) {
+  createProvider({ slug, name, baseUrl, apiKey, capRealtime, capModels, authType }) {
     this.db.prepare(`
-      INSERT INTO providers(slug,name,base_url,api_key,cap_realtime,cap_models,is_builtin)
-      VALUES(?,?,?,?,?,?,0)
-    `).run(slug, name, baseUrl, apiKey || null, capRealtime ? 1 : 0, capModels ? 1 : 0);
+      INSERT INTO providers(slug,name,base_url,api_key,cap_realtime,cap_models,is_builtin,auth_type)
+      VALUES(?,?,?,?,?,?,0,?)
+    `).run(slug, name, baseUrl, apiKey || null, capRealtime ? 1 : 0, capModels ? 1 : 0, authType || 'api_key');
     return this.getProvider(slug);
   }
 
@@ -364,6 +377,18 @@ export class Store {
     this.db.prepare(`
       UPDATE providers SET name=?, base_url=?, api_key=?, cap_realtime=?, cap_models=? WHERE slug=?
     `).run(next.name, next.base_url, next.api_key, next.cap_realtime, next.cap_models, slug);
+    return this.getProvider(slug);
+  }
+
+  /**
+   * Persist an OAuth token family onto a chatgpt_oauth provider. `oauth` is
+   * the parsed token object (access_token/refresh_token/... + chatgpt_account_id
+   * + earliest_refresh_at); null disconnects the provider. Stored as JSON so
+   * the refresh path can round-trip the whole family atomically.
+   */
+  setProviderOAuth(slug, oauth) {
+    this.db.prepare('UPDATE providers SET oauth_json=? WHERE slug=?')
+      .run(oauth ? JSON.stringify(oauth) : null, slug);
     return this.getProvider(slug);
   }
 

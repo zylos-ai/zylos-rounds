@@ -8,7 +8,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sendJson, readJsonBody, browserOrigin, todayLocal } from './http-util.js';
-import { MODEL_OPTIONS, VOICE_OPTIONS, SLOTS, LANGUAGES, providerProtocol } from './settings.js';
+import { MODEL_OPTIONS, VOICE_OPTIONS, SLOTS, LANGUAGES, providerProtocol, AUTH_CHATGPT_OAUTH, CHATGPT_MODEL_OPTIONS } from './settings.js';
+import * as chatgptOAuth from './chatgpt-oauth.js';
 import { GEMINI_VOICES } from './gemini-live.js';
 import { ONESHOT_CYCLE, currentCycleKey, cadenceLabel, parseDowSet } from './cycle.js';
 
@@ -217,6 +218,14 @@ export class Api {
     m = p.match(/^\/api\/providers\/([a-z0-9-]+)\/test$/);
     if (m && req.method === 'POST') return await this.testProvider(req, res, m[1]), true;
 
+    // ChatGPT subscription device-flow connect (RFC 8628-style).
+    m = p.match(/^\/api\/providers\/([a-z0-9-]+)\/oauth\/start$/);
+    if (m && req.method === 'POST') return await this.oauthStart(res, m[1]), true;
+    m = p.match(/^\/api\/providers\/([a-z0-9-]+)\/oauth\/status$/);
+    if (m && req.method === 'GET') return this.oauthStatus(res, m[1]), true;
+    m = p.match(/^\/api\/providers\/([a-z0-9-]+)\/oauth\/disconnect$/);
+    if (m && req.method === 'POST') return this.oauthDisconnect(res, m[1]), true;
+
     if (p === '/api/settings' && req.method === 'GET') return this.getSettings(res), true;
     if (p === '/api/settings' && req.method === 'PUT') return await this.putSettings(req, res), true;
     if (p === '/api/settings/test-connection' && req.method === 'POST') {
@@ -325,11 +334,16 @@ export class Api {
 
   // Keys are write-only: the view exposes only where a key comes from.
   providerView(p) {
+    const authType = p.auth_type || 'api_key';
     return {
       slug: p.slug,
       name: p.name,
       base_url: p.base_url,
+      auth_type: authType,
       key_source: this.settings.providerKeySource(p), // 'db' | 'none'
+      // ChatGPT subscription providers expose their (non-secret) connection
+      // status instead of a key source.
+      oauth: authType === AUTH_CHATGPT_OAUTH ? this.settings.oauthStatus(p) : undefined,
       cap_realtime: Boolean(p.cap_realtime),
       cap_models: Boolean(p.cap_models),
       protocol: providerProtocol(p),
@@ -372,6 +386,25 @@ export class Api {
       body = await readJsonBody(req);
     } catch {
       return sendJson(res, 400, { error: 'bad_request' });
+    }
+    // ChatGPT subscription provider: no static key, no base URL to enter, and
+    // no realtime/list capabilities. Auth is established afterwards via the
+    // device-flow connect endpoints; base_url is informational only.
+    if (body.auth_type === AUTH_CHATGPT_OAUTH) {
+      const name = String(body.name || '').trim();
+      if (!name || name.length > 64) return sendJson(res, 400, { error: 'invalid_name' });
+      let slug = body.slug !== undefined ? String(body.slug).trim()
+        : (name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'chatgpt');
+      if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(slug)) return sendJson(res, 400, { error: 'invalid_slug' });
+      if (this.store.getProvider(slug)) {
+        if (body.slug !== undefined) return sendJson(res, 409, { error: 'slug_taken' });
+        const base = slug; for (let n = 2; this.store.getProvider(slug); n++) slug = `${base}-${n}`;
+      }
+      const created = this.store.createProvider({
+        slug, name, baseUrl: chatgptOAuth.ISSUER,
+        authType: AUTH_CHATGPT_OAUTH, capRealtime: false, capModels: false,
+      });
+      return sendJson(res, 201, this.providerView(created));
     }
     const { fields, error } = this.providerFields(body);
     if (error) return sendJson(res, 400, { error });
@@ -448,6 +481,68 @@ export class Api {
     return sendJson(res, 200, await this.settings.testConnection(provider));
   }
 
+  // ---- ChatGPT subscription device-flow connect (v0.24) ----
+  //
+  // A per-slug in-memory session holds the pending device authorization while
+  // the human confirms on another device. A background poll exchanges the code
+  // for tokens on confirmation and persists the family; the UI polls
+  // oauth/status. The session is ephemeral — a restart mid-connect just means
+  // the user clicks "connect" again.
+
+  async oauthStart(res, slug) {
+    const provider = this.store.getProvider(slug);
+    if (!provider) return sendJson(res, 404, { error: 'not_found' });
+    if (provider.auth_type !== AUTH_CHATGPT_OAUTH) return sendJson(res, 400, { error: 'not_oauth_provider' });
+    this._oauthSessions ??= new Map();
+    let dc;
+    try {
+      dc = await chatgptOAuth.requestDeviceCode({ proxy: this.settings.env.proxy });
+    } catch (err) {
+      return sendJson(res, 502, { error: 'device_code_failed', detail: String(err.message || '').slice(0, 160) });
+    }
+    const session = { state: 'pending', userCode: dc.userCode, verificationUrl: dc.verificationUrl, expiresAt: dc.expiresAt, error: null };
+    this._oauthSessions.set(slug, session);
+    // Background poll → exchange → persist. Fire-and-forget; status endpoint reports progress.
+    (async () => {
+      try {
+        const { authorizationCode, codeVerifier } = await chatgptOAuth.pollForAuthorization({
+          deviceAuthId: dc.deviceAuthId, userCode: dc.userCode, interval: dc.interval,
+          expiresAt: dc.expiresAt, proxy: this.settings.env.proxy,
+          shouldStop: () => this._oauthSessions.get(slug) !== session,
+        });
+        const tokens = await chatgptOAuth.exchangeAuthCode({ authorizationCode, codeVerifier, proxy: this.settings.env.proxy });
+        this.store.setProviderOAuth(slug, tokens);
+        session.state = 'connected';
+      } catch (err) {
+        session.state = 'error';
+        session.error = String(err.message || 'failed').slice(0, 160);
+      }
+    })();
+    return sendJson(res, 200, { user_code: dc.userCode, verification_url: dc.verificationUrl, expires_at: dc.expiresAt });
+  }
+
+  oauthStatus(res, slug) {
+    const provider = this.store.getProvider(slug);
+    if (!provider) return sendJson(res, 404, { error: 'not_found' });
+    if (provider.auth_type !== AUTH_CHATGPT_OAUTH) return sendJson(res, 400, { error: 'not_oauth_provider' });
+    const session = this._oauthSessions?.get(slug);
+    const status = this.settings.oauthStatus(provider);
+    // A persisted token family always reports connected, regardless of any
+    // stale pending session.
+    if (status.connected) return sendJson(res, 200, { state: 'connected', ...status });
+    if (session) return sendJson(res, 200, { state: session.state, user_code: session.userCode, verification_url: session.verificationUrl, expires_at: session.expiresAt, error: session.error });
+    return sendJson(res, 200, { state: 'idle', connected: false });
+  }
+
+  oauthDisconnect(res, slug) {
+    const provider = this.store.getProvider(slug);
+    if (!provider) return sendJson(res, 404, { error: 'not_found' });
+    if (provider.auth_type !== AUTH_CHATGPT_OAUTH) return sendJson(res, 400, { error: 'not_oauth_provider' });
+    this._oauthSessions?.delete(slug);
+    this.settings.disconnectOAuth(slug);
+    return sendJson(res, 200, { state: 'idle', connected: false });
+  }
+
   // The key itself is write-only: GET exposes only whether/where one is set.
   getSettings(res) {
     sendJson(res, 200, {
@@ -455,6 +550,7 @@ export class Api {
       model: this.settings.resolveModel(),
       voice: this.settings.resolveVoice(),
       model_options: MODEL_OPTIONS, // suggestions only since v0.8
+      chatgpt_model_options: CHATGPT_MODEL_OPTIONS, // suggestions for subscription providers
       voice_options: VOICE_OPTIONS,
       gemini_voice_options: GEMINI_VOICES,
       // team default language: stored value ('' = unset, default applies)

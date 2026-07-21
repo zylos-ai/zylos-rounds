@@ -6,6 +6,7 @@
 import { request as httpsRequest } from 'node:https';
 import { request as httpRequest } from 'node:http';
 import { HttpsProxyAgent } from 'https-proxy-agent';
+import { callResponses } from './chatgpt-oauth.js';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -81,11 +82,17 @@ function callOnce({ base, model, key, prompt, proxy, timeoutMs, onUsage }) {
  * with a short linear backoff. `onUsage` (optional) receives the response's
  * usage object for cost tracking.
  */
-export async function callChatModel({ base, model, key, prompt, proxy, timeoutMs = 60_000, onUsage, attempts = 1 }) {
+export async function callChatModel({ base, model, key, prompt, proxy, timeoutMs = 60_000, onUsage, attempts = 1, authType = 'api_key', getAuth }) {
   const total = Math.max(1, attempts | 0);
   let lastErr;
   for (let i = 0; i < total; i++) {
     try {
+      if (authType === 'chatgpt_oauth') {
+        // ChatGPT subscription provider: mint (and refresh) the bearer per
+        // attempt via getAuth, then call the ChatGPT backend Responses API.
+        const { accessToken, accountId } = await getAuth();
+        return await callResponses({ accessToken, accountId, model, prompt, proxy, timeoutMs, onUsage });
+      }
       return await callOnce({ base, model, key, prompt, proxy, timeoutMs, onUsage });
     } catch (err) {
       lastErr = err;
