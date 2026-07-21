@@ -20,8 +20,14 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import { callChatModel } from './llm.js';
 import { DEFAULT_PROFILE_MODEL } from './profile.js';
 import { GEMINI_VOICES } from './gemini-live.js';
+import * as chatgptOAuth from './chatgpt-oauth.js';
 
 export const BUILTIN_PROVIDER = 'openai';
+// auth_type values for a provider row.
+export const AUTH_API_KEY = 'api_key';
+export const AUTH_CHATGPT_OAUTH = 'chatgpt_oauth';
+// Suggested models for a ChatGPT subscription provider (no backend list API).
+export const CHATGPT_MODEL_OPTIONS = ['gpt-5.5', 'gpt-5.5-codex', 'gpt-5-codex'];
 // Suggestions (datalist) — no longer a validation whitelist since v0.8.
 export const MODEL_OPTIONS = ['gpt-realtime-2.1', 'gpt-realtime', 'gpt-realtime-mini', 'gemini-2.5-flash-native-audio-latest', 'gemini-3.1-flash-live-preview'];
 
@@ -62,6 +68,51 @@ export class Settings {
   /** 'db' | 'none' — whether a provider has a key stored. */
   providerKeySource(provider) {
     return provider?.api_key ? 'db' : 'none';
+  }
+
+  // ---- ChatGPT subscription providers (auth_type='chatgpt_oauth') ----
+
+  /** Parsed OAuth token family for a provider row, or null. */
+  providerOAuth(provider) {
+    if (!provider?.oauth_json) return null;
+    try { return JSON.parse(provider.oauth_json); }
+    catch { return null; }
+  }
+
+  /** Non-secret connection status for the settings UI. */
+  oauthStatus(provider) {
+    return chatgptOAuth.tokenMeta(this.providerOAuth(provider));
+  }
+
+  /**
+   * Return a usable access token for a chatgpt_oauth provider, refreshing (and
+   * persisting the rotated family) when the current one is near expiry. A
+   * single in-flight refresh per slug is shared so concurrent profile/digest
+   * calls never trigger duplicate refreshes (which could race the rotation).
+   */
+  async ensureAccessToken(provider) {
+    const oauth = this.providerOAuth(provider);
+    if (!oauth?.access_token) throw new Error('provider not connected');
+    if (!chatgptOAuth.needsRefresh(oauth)) {
+      const meta = chatgptOAuth.tokenMeta(oauth);
+      return { accessToken: oauth.access_token, accountId: meta.accountId };
+    }
+    if (!oauth.refresh_token) throw new Error('token expired and no refresh token');
+    this._refreshInflight ??= new Map();
+    if (!this._refreshInflight.has(provider.slug)) {
+      const p = (async () => {
+        const next = await chatgptOAuth.refreshTokens({ refreshToken: oauth.refresh_token, proxy: this.env.proxy });
+        this.store.setProviderOAuth(provider.slug, next);
+        const meta = chatgptOAuth.tokenMeta(next);
+        return { accessToken: next.access_token, accountId: meta.accountId };
+      })().finally(() => this._refreshInflight.delete(provider.slug));
+      this._refreshInflight.set(provider.slug, p);
+    }
+    return this._refreshInflight.get(provider.slug);
+  }
+
+  disconnectOAuth(slug) {
+    return this.store.setProviderOAuth(slug, null);
   }
 
   /**
@@ -241,12 +292,26 @@ export class Settings {
   /** Connection for one-shot text calls. kind: 'profile' | 'digest'. */
   textConnection(kind) {
     const provider = this.slotProvider(kind);
+    const authType = provider?.auth_type || AUTH_API_KEY;
+    const model = kind === 'digest' ? this.resolveDigestModel() : this.resolveProfileModel();
+    if (authType === AUTH_CHATGPT_OAUTH) {
+      return {
+        provider,
+        authType,
+        model,
+        // A truthy `key` marks the slot as usable; the real bearer is minted
+        // (and refreshed) per-call via getAuth so it is never stale.
+        key: this.providerOAuth(provider)?.access_token ? 'oauth' : '',
+        getAuth: () => this.ensureAccessToken(provider),
+      };
+    }
     return {
       provider,
+      authType,
       key: this.providerKey(provider),
       // profileApiBase remains a global test/E2E override for text calls
       base: this.getConfig().profileApiBase || provider?.base_url,
-      model: kind === 'digest' ? this.resolveDigestModel() : this.resolveProfileModel(),
+      model,
     };
   }
 
@@ -326,13 +391,16 @@ export class Settings {
    * chat-completions call. Honors the global profileApiBase E2E override.
    */
   async testTextModel(model, provider = this.builtinProvider()) {
-    const key = this.providerKey(provider);
-    if (!key) return { ok: false, error: 'no_key' };
+    const oauth = (provider?.auth_type === AUTH_CHATGPT_OAUTH);
+    if (!oauth && !this.providerKey(provider)) return { ok: false, error: 'no_key' };
+    if (oauth && !this.providerOAuth(provider)?.access_token) return { ok: false, error: 'not_connected' };
     try {
       await callChatModel({
         base: this.getConfig().profileApiBase || provider?.base_url,
         model,
-        key,
+        key: oauth ? 'oauth' : this.providerKey(provider),
+        authType: provider?.auth_type || AUTH_API_KEY,
+        getAuth: oauth ? () => this.ensureAccessToken(provider) : undefined,
         prompt: '只回复两个字符：OK',
         proxy: this.env.proxy,
         timeoutMs: 30_000,
@@ -340,7 +408,7 @@ export class Settings {
       return { ok: true };
     } catch (err) {
       const m = String(err.message || '');
-      if (m.includes('http_401')) return { ok: false, error: 'invalid_key' };
+      if (m.includes('http_401')) return { ok: false, error: oauth ? 'reconnect_needed' : 'invalid_key' };
       if (m.includes('http_404') || m.includes('http_400')) return { ok: false, error: 'invalid_model' };
       if (m.includes('timeout')) return { ok: false, error: 'timeout' };
       return { ok: false, error: 'network' };

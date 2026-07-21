@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.24.0] - 2026-07-21
+
+### Added
+- **ChatGPT/Codex subscription provider** — a provider can now authenticate with
+  a ChatGPT subscription (Plus/Pro) instead of a static API key, for the profile
+  and digest text slots. Establishes an independent OAuth token family via the
+  device-authorization flow (RFC 8628-style): the settings page shows a one-time
+  code + verification link, the user confirms on any device, and the server
+  polls, exchanges, and stores the token family. Never reads or writes the local
+  Codex CLI credentials (`~/.codex/auth.json`), so there is no refresh-token
+  rotation conflict; the login is revocable independently from ChatGPT account
+  settings.
+  - New `auth_type`/`oauth_json` columns on `providers` (migration v13).
+  - New `src/lib/chatgpt-oauth.js`: device flow, single-flight token refresh
+    (honoring `earliest_refresh_at`), and the ChatGPT-backend Responses call
+    (SSE aggregated to text, usage recorded like any other text call). All
+    network loops tolerate transient proxy/socket errors.
+  - Settings UI: pick "ChatGPT subscription" when adding a provider, connect /
+    reconnect / disconnect the account, and see plan / token expiry / account.
+    Model field suggests `gpt-5.5` presets; such providers are excluded from the
+    voice slot (no realtime models) and serve profile/digest only.
+
 ## [0.23.0] - 2026-07-21
 
 ### Added

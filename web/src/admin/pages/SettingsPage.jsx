@@ -21,6 +21,8 @@ const DICT = {
       invalid_model: '模型不可用，请检查模型名',
       bad_response: '返回格式异常，不是 OpenAI 兼容接口？',
       model_required: '该 provider 不支持模型列表，请填模型名后测试',
+      not_connected: '尚未连接 ChatGPT 账号',
+      reconnect_needed: '登录已失效，请重新连接',
     },
     testFailed: (err) => `失败（${err}）`,
     slotLabels: { voice: '语音', profile: '画像', digest: '汇总' },
@@ -62,6 +64,26 @@ const DICT = {
     changeKey: '改 key',
     edit: '编辑',
     delete: '删除',
+    // provider type + ChatGPT subscription connect
+    typeLabel: '接入方式',
+    typeApiKey: 'API Key',
+    typeChatgpt: 'ChatGPT 订阅',
+    chatgptFormHint: '用你的 ChatGPT 订阅账号（Plus/Pro）调用模型，仅用于画像与汇总；创建后再连接账号。',
+    connectChatgpt: '连接 ChatGPT 账号',
+    reconnectChatgpt: '重新连接',
+    disconnect: '断开连接',
+    connecting: '连接中…',
+    deviceStep1: '① 用任意设备的浏览器打开：',
+    deviceStep2: '② 登录 ChatGPT 后输入代码：',
+    deviceExpiresHint: '代码约 15 分钟内有效，确认后这里会自动完成。',
+    connectedBadge: '已连接',
+    notConnectedBadge: '未连接',
+    reconnectNeededBadge: '需重新连接',
+    planLabel: (p) => `套餐 ${p}`,
+    tokenExpiresLabel: (t) => `token 至 ${t}`,
+    accountLabel: (id) => `账号 ${id}`,
+    connectFailed: '连接失败，请重试',
+    disconnectConfirm: '断开后画像/汇总将无法使用该账号，确定断开？',
     connOk: '连接正常',
     requestFailed: '请求失败，请重试',
     inUseError: (slots) => `正在被「${slots}」使用，先把对应配置改为其他 provider`,
@@ -128,6 +150,8 @@ const DICT = {
       invalid_model: 'Model unavailable — check the model name',
       bad_response: 'Unexpected response format — not an OpenAI-compatible API?',
       model_required: 'This provider has no model list; enter a model name before testing',
+      not_connected: 'ChatGPT account not connected yet',
+      reconnect_needed: 'Login expired, please reconnect',
     },
     testFailed: (err) => `Failed (${err})`,
     slotLabels: { voice: 'voice', profile: 'profile', digest: 'digest' },
@@ -169,6 +193,26 @@ const DICT = {
     changeKey: 'Change key',
     edit: 'Edit',
     delete: 'Delete',
+    // provider type + ChatGPT subscription connect
+    typeLabel: 'Connection type',
+    typeApiKey: 'API Key',
+    typeChatgpt: 'ChatGPT subscription',
+    chatgptFormHint: 'Use your ChatGPT subscription (Plus/Pro) for model calls, profiles and digests only; connect the account after creating.',
+    connectChatgpt: 'Connect ChatGPT account',
+    reconnectChatgpt: 'Reconnect',
+    disconnect: 'Disconnect',
+    connecting: 'Connecting…',
+    deviceStep1: '① Open this link in any device’s browser:',
+    deviceStep2: '② Sign in to ChatGPT and enter this code:',
+    deviceExpiresHint: 'The code is valid for ~15 minutes; this completes automatically once you confirm.',
+    connectedBadge: 'Connected',
+    notConnectedBadge: 'Not connected',
+    reconnectNeededBadge: 'Reconnect needed',
+    planLabel: (p) => `Plan ${p}`,
+    tokenExpiresLabel: (t) => `token until ${t}`,
+    accountLabel: (id) => `account ${id}`,
+    connectFailed: 'Connection failed, please retry',
+    disconnectConfirm: 'After disconnecting, profiles/digests can no longer use this account. Disconnect?',
     connOk: 'Connection OK',
     requestFailed: 'Request failed, please retry',
     inUseError: (slots) => `In use by ${slots} — switch those settings to another provider first`,
@@ -248,6 +292,9 @@ function ProviderForm({ provider, onDone, onCancel }) {
   const [apiKey, setApiKey] = useState('');
   const [capRealtime, setCapRealtime] = useState(Boolean(provider?.cap_realtime));
   const [capModels, setCapModels] = useState(provider ? Boolean(provider.cap_models) : true);
+  // Connection type is chosen only when creating a new (non-builtin) provider.
+  const [authType, setAuthType] = useState(provider?.auth_type || 'api_key');
+  const chatgpt = authType === 'chatgpt_oauth';
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
 
@@ -257,7 +304,10 @@ function ProviderForm({ provider, onDone, onCancel }) {
     setBusy(true);
     setMsg('');
     try {
-      if (isNew) {
+      if (isNew && chatgpt) {
+        // ChatGPT subscription: only a display name; account is linked afterwards.
+        await api('api/providers', { method: 'POST', body: { name: name.trim(), auth_type: 'chatgpt_oauth' } });
+      } else if (isNew) {
         const body = { name: name.trim(), base_url: baseUrl.trim(), cap_realtime: capRealtime, cap_models: capModels };
         if (apiKey.trim()) body.api_key = apiKey.trim();
         await api('api/providers', { method: 'POST', body });
@@ -283,6 +333,15 @@ function ProviderForm({ provider, onDone, onCancel }) {
 
   return (
     <form onSubmit={submit} className="mt-3 rounded-lg border border-border bg-accent/40 p-4">
+      {isNew && !builtin ? (
+        <label className="mb-3 flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-muted-foreground">{T.typeLabel}</span>
+          <select value={authType} onChange={(e) => setAuthType(e.target.value)} className="h-10 w-[240px] rounded-md border border-input bg-background px-3 text-sm">
+            <option value="api_key">{T.typeApiKey}</option>
+            <option value="chatgpt_oauth">{T.typeChatgpt}</option>
+          </select>
+        </label>
+      ) : null}
       <div className="flex flex-wrap items-end gap-3">
         {!builtin ? (
           <>
@@ -290,18 +349,25 @@ function ProviderForm({ provider, onDone, onCancel }) {
               <span className="text-sm font-medium text-muted-foreground">{T.nameLabel}</span>
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={T.namePlaceholder} className="h-10 w-[220px] text-sm" />
             </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-muted-foreground">Base URL</span>
-              <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://..." className="h-10 w-[280px] text-sm" />
-            </label>
+            {!chatgpt ? (
+              <label className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium text-muted-foreground">Base URL</span>
+                <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://..." className="h-10 w-[280px] text-sm" />
+              </label>
+            ) : null}
           </>
         ) : null}
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-muted-foreground">API key{!isNew ? T.apiKeyKeepSuffix : ''}</span>
-          <Input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-..." autoComplete="off" className="h-10 w-[240px] text-sm" />
-        </label>
+        {!chatgpt ? (
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-muted-foreground">API key{!isNew ? T.apiKeyKeepSuffix : ''}</span>
+            <Input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-..." autoComplete="off" className="h-10 w-[240px] text-sm" />
+          </label>
+        ) : null}
       </div>
-      {!builtin ? (
+      {chatgpt ? (
+        <p className="mt-2 text-xs text-muted-foreground">{T.chatgptFormHint}</p>
+      ) : null}
+      {!builtin && !chatgpt ? (
         <div className="mt-3 flex flex-wrap gap-5">
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             <input type="checkbox" checked={capModels} onChange={(e) => setCapModels(e.target.checked)} className="h-4 w-4 accent-primary" />
@@ -314,7 +380,7 @@ function ProviderForm({ provider, onDone, onCancel }) {
         </div>
       ) : null}
       <div className="mt-4 flex items-center gap-3">
-        <Button type="submit" className="h-9 px-4 text-sm" disabled={busy || (isNew && (!name.trim() || !baseUrl.trim()))}>
+        <Button type="submit" className="h-9 px-4 text-sm" disabled={busy || (isNew && (!name.trim() || (!chatgpt && !baseUrl.trim())))}>
           {busy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
           {T.save}
         </Button>
@@ -322,6 +388,112 @@ function ProviderForm({ provider, onDone, onCancel }) {
         {msg ? <span className="text-sm text-destructive">{msg}</span> : null}
       </div>
     </form>
+  );
+}
+
+/**
+ * ChatGPT subscription connect: device-flow "connect account" button. On start
+ * it shows the one-time code + verification link and polls the server for
+ * confirmation, then refreshes. When connected, offers disconnect.
+ */
+function ChatGptConnectPanel({ provider, onChanged }) {
+  const T = useLangDict(DICT);
+  const [session, setSession] = useState(null); // { user_code, verification_url, expires_at }
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const pollRef = useRef(null);
+  const connected = provider.oauth?.connected;
+
+  useEffect(() => () => clearInterval(pollRef.current), []);
+
+  const startPoll = useCallback(() => {
+    clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      try {
+        const s = await api(`api/providers/${provider.slug}/oauth/status`);
+        if (s.state === 'connected') {
+          clearInterval(pollRef.current);
+          setSession(null);
+          await onChanged();
+        } else if (s.state === 'error') {
+          clearInterval(pollRef.current);
+          setSession(null);
+          setErr(s.error || T.connectFailed);
+        }
+      } catch (e) {
+        if (e.status === 401) clearInterval(pollRef.current);
+      }
+    }, 3000);
+  }, [provider.slug, onChanged, T]);
+
+  const onConnect = async () => {
+    if (busy) return;
+    setBusy(true);
+    setErr('');
+    try {
+      const r = await api(`api/providers/${provider.slug}/oauth/start`, { method: 'POST' });
+      setSession(r);
+      startPoll();
+    } catch (e) {
+      if (e.status !== 401) setErr(e.data?.detail || T.connectFailed);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onDisconnect = async () => {
+    if (busy || !window.confirm(T.disconnectConfirm)) return;
+    setBusy(true);
+    setErr('');
+    try {
+      await api(`api/providers/${provider.slug}/oauth/disconnect`, { method: 'POST' });
+      setSession(null);
+      await onChanged();
+    } catch (e) {
+      if (e.status !== 401) setErr(T.connectFailed);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-3">
+      {!connected && !session ? (
+        <Button type="button" variant="outline" className="h-9 px-3 text-sm" disabled={busy} onClick={onConnect}>
+          {busy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : <KeyRound strokeWidth={1.75} />}
+          {T.connectChatgpt}
+        </Button>
+      ) : null}
+
+      {session ? (
+        <div className="rounded-lg border border-border bg-background p-4 text-sm">
+          <p className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.75} />
+            {T.connecting}
+          </p>
+          <p className="mt-3">{T.deviceStep1}</p>
+          <a href={session.verification_url} target="_blank" rel="noreferrer" className="break-all font-medium text-primary underline">
+            {session.verification_url}
+          </a>
+          <p className="mt-3">{T.deviceStep2}</p>
+          <code className="mt-1 inline-block rounded bg-accent px-3 py-1.5 text-base font-semibold tracking-widest">{session.user_code}</code>
+          <p className="mt-3 text-xs text-muted-foreground">{T.deviceExpiresHint}</p>
+        </div>
+      ) : null}
+
+      {connected ? (
+        <Button type="button" variant="ghost" className="h-8 px-2.5 text-sm text-muted-foreground hover:text-destructive" disabled={busy} onClick={onDisconnect}>
+          {busy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
+          {T.disconnect}
+        </Button>
+      ) : null}
+
+      {err ? (
+        <p className="mt-2 flex items-center gap-1.5 text-sm text-destructive">
+          <XCircle className="h-4 w-4" strokeWidth={1.75} />{err}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -767,7 +939,13 @@ export default function SettingsPage() {
     }
   };
 
-  const suggestionsFor = (slug, fallback = []) => modelCache[slug || 'openai'] || fallback;
+  const suggestionsFor = (slug, fallback = []) => {
+    if (modelCache[slug || 'openai']) return modelCache[slug || 'openai'];
+    // ChatGPT subscription providers have no model-list API — suggest the presets.
+    const prov = providers.find((p) => p.slug === (slug || 'openai'));
+    if (prov?.auth_type === 'chatgpt_oauth') return settings.chatgpt_model_options || [];
+    return fallback;
+  };
 
   const onSaveVoice = async (e) => {
     e.preventDefault();
@@ -870,20 +1048,34 @@ export default function SettingsPage() {
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                   <span className="text-[0.95rem] font-medium">{p.name}</span>
                   {p.is_builtin ? <Badge variant="accent">{T.builtinBadge}</Badge> : null}
-                  {p.key_source === 'none'
-                    ? <Badge>{T.noKeyBadge}</Badge>
-                    : <Badge variant="success">{T.keySetBadge}</Badge>}
-                  {p.cap_realtime ? <Badge>{T.voiceBadge}</Badge> : null}
-                  {p.cap_models ? <Badge>{T.modelListBadge}</Badge> : null}
+                  {p.auth_type === 'chatgpt_oauth' ? (
+                    <>
+                      <Badge variant="accent">{T.typeChatgpt}</Badge>
+                      {p.oauth?.connected
+                        ? <Badge variant="success">{T.connectedBadge}</Badge>
+                        : <Badge>{T.notConnectedBadge}</Badge>}
+                      {p.oauth?.connected && p.oauth.plan ? <Badge>{T.planLabel(p.oauth.plan)}</Badge> : null}
+                    </>
+                  ) : (
+                    <>
+                      {p.key_source === 'none'
+                        ? <Badge>{T.noKeyBadge}</Badge>
+                        : <Badge variant="success">{T.keySetBadge}</Badge>}
+                      {p.cap_realtime ? <Badge>{T.voiceBadge}</Badge> : null}
+                      {p.cap_models ? <Badge>{T.modelListBadge}</Badge> : null}
+                    </>
+                  )}
                   {p.in_use.length ? (
                     <span className="text-xs text-muted-foreground">{T.inUse(p.in_use.map((s) => T.slotLabels[s] || s).join(T.slotJoiner))}</span>
                   ) : null}
                   <span className="grow" />
                   <div className="flex items-center gap-1.5">
-                    <Button type="button" variant="ghost" className="h-8 px-2.5 text-sm text-muted-foreground" disabled={Boolean(provBusy[p.slug])} onClick={() => onTestProvider(p)}>
-                      {provBusy[p.slug] === 'test' ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
-                      {T.testConn}
-                    </Button>
+                    {p.auth_type !== 'chatgpt_oauth' ? (
+                      <Button type="button" variant="ghost" className="h-8 px-2.5 text-sm text-muted-foreground" disabled={Boolean(provBusy[p.slug])} onClick={() => onTestProvider(p)}>
+                        {provBusy[p.slug] === 'test' ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
+                        {T.testConn}
+                      </Button>
+                    ) : null}
                     <Button type="button" variant="ghost" className="h-8 px-2.5 text-sm text-muted-foreground" onClick={() => setEditing(editing === p.slug ? null : p.slug)}>
                       <Pencil strokeWidth={1.75} />
                       {p.is_builtin ? T.changeKey : T.edit}
@@ -896,7 +1088,18 @@ export default function SettingsPage() {
                     ) : null}
                   </div>
                 </div>
-                <p className="mt-1 break-all text-xs text-muted-foreground">{p.base_url}</p>
+                {p.auth_type === 'chatgpt_oauth' ? (
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    {p.oauth?.accountIdPrefix ? <span>{T.accountLabel(p.oauth.accountIdPrefix)}</span> : null}
+                    {p.oauth?.expiresAt ? <span>{T.tokenExpiresLabel(new Date(p.oauth.expiresAt).toLocaleString())}</span> : null}
+                    {p.oauth?.email ? <span>{p.oauth.email}</span> : null}
+                  </div>
+                ) : (
+                  <p className="mt-1 break-all text-xs text-muted-foreground">{p.base_url}</p>
+                )}
+                {p.auth_type === 'chatgpt_oauth' ? (
+                  <ChatGptConnectPanel provider={p} onChanged={async () => { await Promise.all([reloadProviders(), load()]); }} />
+                ) : null}
                 {provMsg && provMsg.slug === p.slug ? (
                   <p className={cn('mt-2 flex items-center gap-1.5 text-sm', provMsg.ok ? 'text-success' : 'text-destructive')}>
                     {provMsg.ok ? <CheckCircle2 className="h-4 w-4" strokeWidth={1.75} /> : <XCircle className="h-4 w-4" strokeWidth={1.75} />}

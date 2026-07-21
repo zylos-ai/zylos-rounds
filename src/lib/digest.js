@@ -229,6 +229,8 @@ export class DigestGenerator {
       base: conn.base,
       model: conn.model,
       key: conn.key,
+      authType: conn.authType,
+      getAuth: conn.getAuth,
       prompt: this.buildPrompt(task, rows, key),
       proxy: this.env.proxy,
       timeoutMs: 120_000,

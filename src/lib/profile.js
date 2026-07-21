@@ -220,6 +220,8 @@ export class ProfileUpdater {
       base: conn.base,
       model: conn.model,
       key: conn.key,
+      authType: conn.authType,
+      getAuth: conn.getAuth,
       prompt,
       proxy: this.env.proxy,
       attempts: 3, // auto-retry transient proxy/network hiccups (idempotent overwrite)
