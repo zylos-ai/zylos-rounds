@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.23.0] - 2026-07-21
+
+### Added
+- **Last report injected into daily-call context** (plan-change baseline): the
+  member's previous report — its plan and any blockers — now rides into the
+  standup instructions as a `【上次日报】` / `[Last report]` block, so the agent
+  can compare today's stated work against the previous plan and gently probe
+  divergences, and can ask whether last time's blockers got resolved. A full
+  production day showed the model never proactively calls
+  `recall_member_history` for this on its own; injection makes the baseline
+  free. Daily task only; skipped when there is no prior report or its plan is
+  empty.
+
+### Changed
+- **One-question-at-a-time hardened into a hard rule** (daily flow, zh+en):
+  each message may contain at most one question; blockers and meeting topics
+  must be asked separately, each getting a clear answer before moving on. A
+  production-day review showed bundled questions were the top probe failure —
+  answers to the first question were routinely lost.
+- **Garbled-input guard added to the safety rule** (zh+en): transcriptions that
+  are gibberish or clearly not real speech must be re-confirmed as "didn't
+  catch that" — never recorded as "no" or any assumed answer.
+- Default daily probe now points the plan-change bullet at the injected last
+  report instead of suggesting a `recall_member_history` call.
+
 ## [0.22.6] - 2026-07-21
 
 ### Fixed
