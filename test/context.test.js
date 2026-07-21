@@ -241,3 +241,48 @@ test('continuation replaces the scripted flow line instead of overriding it (v0.
   assert.doesNotMatch(draft, /依次了解四件事/);
   s.close();
 });
+
+test('daily flow injects the member last report as plan-change baseline', () => {
+  const s = tmpStore();
+  const ctx = new AgentContext(s);
+  const id = Number(s.addMember('Nick', 'tok').lastInsertRowid);
+  const member = s.getMemberById(id);
+
+  // No history yet → no block.
+  assert.doesNotMatch(ctx.buildInstructions(member), /【上次日报/);
+
+  // Previous report with plan + blocker → injected with date, plan, blockers.
+  s.upsertSummary(id, '2026-07-20', { yesterday: ['x'], today: ['发版 v1', '写文档'], blockers: ['等 review'], topics_for_meeting: [] }, '{}', 'm');
+  const out = ctx.buildInstructions(member);
+  assert.match(out, /【上次日报（2026-07-20）】/);
+  assert.match(out, /当时的计划：\n- 发版 v1\n- 写文档/);
+  assert.match(out, /当时的卡点：\n- 等 review/);
+
+  // Empty plan in the previous report → nothing injected.
+  const id2 = Number(s.addMember('Ada', 'tok2').lastInsertRowid);
+  s.upsertSummary(id2, '2026-07-20', { yesterday: ['y'], today: [], blockers: [], topics_for_meeting: [] }, '{}', 'm');
+  assert.doesNotMatch(ctx.buildInstructions(s.getMemberById(id2)), /【上次日报/);
+
+  // Generic tasks don't get it.
+  const generic = s.createTask({ type: 'oneshot', title: 'Q2 复盘' });
+  assert.doesNotMatch(ctx.buildInstructions(member, generic), /【上次日报/);
+
+  // English variant uses the en template.
+  const en = ctx.buildInstructions(member, null, null, 'Asia/Shanghai', 'en');
+  assert.match(en, /\[Last report \(2026-07-20\)\]/);
+  assert.match(en, /Planned then:\n- 发版 v1/);
+  s.close();
+});
+
+test('daily flow carries the one-question-at-a-time hard rule and garbled-input guard', () => {
+  const s = tmpStore();
+  const ctx = new AgentContext(s);
+  const zh = ctx.buildInstructions({ name: 'Nick', context: '' });
+  assert.match(zh, /每条消息里最多只包含一个问题/);
+  assert.match(zh, /卡点和待议题必须分开问/);
+  assert.match(zh, /乱码或明显不成话/);
+  const en = ctx.buildInstructions({ name: 'Nick', context: '' }, null, null, 'Asia/Shanghai', 'en');
+  assert.match(en, /each message contains at most one question/);
+  assert.match(en, /garbled or clearly not real speech/);
+  s.close();
+});
