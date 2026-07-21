@@ -582,6 +582,11 @@ export class Store {
     return this.db.prepare('UPDATE members SET context=? WHERE id=?').run(context ?? null, id);
   }
 
+  // Name is globally UNIQUE — a colliding rename throws and the caller maps it to 409.
+  setMemberName(id, name) {
+    return this.db.prepare('UPDATE members SET name=? WHERE id=?').run(name, id);
+  }
+
   setMemberProfile(id, profile) {
     return this.db.prepare(`
       UPDATE members SET profile=?, profile_updated_at=datetime('now','localtime') WHERE id=?
