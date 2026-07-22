@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.27.0] - 2026-07-23
+
+Generic-task cycle views: the task detail page for non-builtin tasks aligns
+with the built-in daily's presentation (backlog #2/#3) — results read like a
+report, management lives in its own card.
+
+### Added
+- **Not-reported roster for generic tasks** — the cycle view shows a
+  "not reported" card with count and names, same as the built-in daily. (#3)
+- **Member result cards for generic tasks** — completed members render as a
+  collapsed card grid (name + duration, expand for key points / highlights /
+  transcript, expand-all toggle), replacing the old row-per-member list where
+  results were folded behind the link-management row. (#2)
+
+### Changed
+- **Link management separated from results** — generic tasks now reuse the
+  member-links card (copy / open / reset, status badge); management actions
+  and result content no longer share a row. Card copy generalized for
+  non-daily tasks ("voice conversation", "task closed").
+- Generic task detail page order now mirrors the built-in daily:
+  digest → cycle results → follow-ups → member links.
+
 ## [0.26.0] - 2026-07-23
 
 Cycle-anchored carry-over: the three "since the previous cycle" improvements

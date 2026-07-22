@@ -1,0 +1,4 @@
+# Built web assets (vite output) — generated, not hand-edited.
+# Bundled dependency template literals contain trailing whitespace
+# (e.g. react-remove-scroll-bar CSS), so whitespace checks don't apply.
+src/public/assets/** -whitespace linguist-generated=true

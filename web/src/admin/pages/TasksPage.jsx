@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Plus, Loader2, Copy, Check, ExternalLink, Sparkles, RefreshCw,
-  ChevronDown, ChevronRight, ArrowLeft, Trash2, CircleCheck, RotateCcw,
+  ChevronRight, ArrowLeft, Trash2, CircleCheck, RotateCcw,
   Repeat, FlaskConical, NotebookPen,
 } from 'lucide-react';
 import { cn, copyText } from '@/lib/utils';
@@ -25,6 +25,7 @@ import { api } from '../api';
 import { navigate } from '../router';
 import { useLangDict } from '../i18n';
 import DayReportView from './DayReportView';
+import CycleResultsView from './CycleResultsView';
 import FollowupPanel from './FollowupPanel';
 
 const DICT = {
@@ -117,16 +118,8 @@ const DICT = {
     digestNotYetCustom: '，按自定义 instruction 输出。',
     digestNotYetRecurring: '，按事项输出进展 / 卡点与风险 / 待议。',
     digestNotYetOneshot: '，输出共识 / 分歧 / 重点信号。',
-    participants: '参与成员',
-    cycleFrom: (key, current) => `${key} 起的这一期${current ? '（本期）' : ''}`,
     memberDone: '已完成',
     memberPending: '待沟通',
-    copyTaskLink: (name) => `复制 ${name} 的任务链接`,
-    openTaskLink: (name) => `打开 ${name} 的任务链接`,
-    expandSummary: '展开小结',
-    keyPoints: '要点',
-    keySignals: '重点信号',
-    transcriptLabel: (mins) => `原始对话（${mins != null ? `${mins} 分钟` : '—'}）`,
     currentCycleSuffix: '（本期）',
     // reset link
     resetLinkTitle: (name) => `重置 ${name} 的任务链接`,
@@ -135,7 +128,7 @@ const DICT = {
     resetLink: '重置链接',
     // member links card (built-in daily)
     memberLinks: '成员链接',
-    memberLinksDesc: '每位成员用自己的任务专属链接进入语音汇报；任务停用后链接即失效',
+    memberLinksDesc: '每位成员用自己的任务专属链接进入语音对话；任务关闭后链接即失效',
     reported: '已汇报',
     notReported: '待汇报',
     copyLink: (name) => `复制 ${name} 的链接`,
@@ -243,16 +236,8 @@ const DICT = {
     digestNotYetCustom: ' to output using your custom instruction.',
     digestNotYetRecurring: ' to output progress / blockers & risks / for discussion, grouped by workstream.',
     digestNotYetOneshot: ' to output consensus / disagreements / key signals.',
-    participants: 'Participants',
-    cycleFrom: (key, current) => `cycle starting ${key}${current ? ' (current)' : ''}`,
     memberDone: 'Done',
     memberPending: 'Pending',
-    copyTaskLink: (name) => `Copy ${name}'s task link`,
-    openTaskLink: (name) => `Open ${name}'s task link`,
-    expandSummary: 'Toggle summary',
-    keyPoints: 'Key points',
-    keySignals: 'Key signals',
-    transcriptLabel: (mins) => `Transcript (${mins != null ? `${mins} min` : '—'})`,
     currentCycleSuffix: ' (current)',
     // reset link
     resetLinkTitle: (name) => `Reset ${name}'s task link`,
@@ -261,7 +246,7 @@ const DICT = {
     resetLink: 'Reset link',
     // member links card (built-in daily)
     memberLinks: 'Member links',
-    memberLinksDesc: 'Each member joins the voice report via their own task-specific link; links stop working once the task is disabled',
+    memberLinksDesc: 'Each member joins the voice conversation via their own task-specific link; links stop working once the task is closed',
     reported: 'Reported',
     notReported: 'Pending',
     copyLink: (name) => `Copy ${name}'s link`,
@@ -702,7 +687,6 @@ export function TaskDetailPage({ id, cycle }) {
   const [digesting, setDigesting] = useState(false);
   const [digestError, setDigestError] = useState('');
   const [copied, setCopied] = useState(0);
-  const [expanded, setExpanded] = useState(new Set());
   const copyTimer = useRef(null);
 
   const load = useCallback(async () => {
@@ -729,12 +713,6 @@ export function TaskDetailPage({ id, cycle }) {
       copyTimer.current = setTimeout(() => setCopied(0), 1500);
     }
   };
-  const toggleExpand = (memberId) => setExpanded((s) => {
-    const n = new Set(s);
-    if (n.has(memberId)) n.delete(memberId); else n.add(memberId);
-    return n;
-  });
-
   const triggerDigest = async () => {
     setDigesting(true);
     setDigestError('');
@@ -828,73 +806,13 @@ export function TaskDetailPage({ id, cycle }) {
       ) : (
         <>
           <DigestCard task={task} digesting={digesting} digestError={digestError} onTrigger={triggerDigest} onSaved={load} />
+          <CycleResultsView members={task.members} />
           <FollowupPanel
             taskId={task.id}
             cycle={task.type === 'recurring' ? task.cycle_key : null}
             canMutate={isCurrentCycle}
           />
-
-          <Card>
-            <CardContent className="py-5">
-              <h2 className="mb-4 text-lg font-semibold">
-                {T.participants}
-                {task.type === 'recurring' && task.cycle_key ? (
-                  <span className="ml-2 text-sm font-normal text-muted-foreground">
-                    {T.cycleFrom(task.cycle_key, isCurrentCycle)}
-                  </span>
-                ) : null}
-              </h2>
-              <div className="divide-y divide-border">
-                {task.members.map((m) => (
-                  <div key={m.member_id} className="py-3">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <span className="w-24 truncate font-medium">{m.name}</span>
-                      {m.status === 'submitted'
-                        ? <Badge className="bg-primary-soft text-primary border-transparent">{T.memberDone}</Badge>
-                        : <Badge variant="secondary">{T.memberPending}</Badge>}
-                      <code className="min-w-0 flex-1 truncate text-[0.85rem] text-muted-foreground max-sm:hidden">{m.link}</code>
-                      <div className="ml-auto flex gap-1">
-                        <Button variant="ghost" size="icon" title={T.copyTaskLink(m.name)} onClick={() => copy(m.member_id, m.link)}>
-                          {copied === m.member_id ? <Check className="h-4 w-4 text-primary" /> : <Copy className="h-4 w-4" />}
-                        </Button>
-                        <Button variant="ghost" size="icon" title={T.openTaskLink(m.name)} asChild>
-                          <a href={m.link} target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" /></a>
-                        </Button>
-                        <ResetLinkButton member={m} onReset={resetLink} />
-                        {(m.summary.length > 0 || m.transcript) && (
-                          <Button variant="ghost" size="icon" title={T.expandSummary} onClick={() => toggleExpand(m.member_id)}>
-                            {expanded.has(m.member_id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                    {expanded.has(m.member_id) && (
-                      <div className="mt-3 space-y-3 rounded-md bg-accent/50 px-4 py-3 text-[0.9rem] leading-relaxed">
-                        {m.summary.length > 0 && (
-                          <div>
-                            <p className="mb-1 font-medium text-muted-foreground">{T.keyPoints}</p>
-                            <ul className="list-disc space-y-1 pl-5">{m.summary.map((s, i) => <li key={i}>{s}</li>)}</ul>
-                          </div>
-                        )}
-                        {m.highlights.length > 0 && (
-                          <div>
-                            <p className="mb-1 font-medium text-muted-foreground">{T.keySignals}</p>
-                            <ul className="list-disc space-y-1 pl-5">{m.highlights.map((s, i) => <li key={i}>{s}</li>)}</ul>
-                          </div>
-                        )}
-                        {m.transcript && (
-                          <details>
-                            <summary className="cursor-pointer font-medium text-muted-foreground">{T.transcriptLabel(m.duration_s ? Math.round(m.duration_s / 60) : null)}</summary>
-                            <p className="mt-2 whitespace-pre-wrap text-muted-foreground">{m.transcript}</p>
-                          </details>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          <MemberLinksCard task={task} copied={copied} copy={copy} resetLink={resetLink} />
         </>
       )}
     </div>
@@ -949,7 +867,9 @@ function ResetLinkButton({ member, onReset }) {
   );
 }
 
-// Built-in daily: member links live on the task now (v0.7 task×member model)
+// Member links + per-member management actions (copy / open / reset). Shared
+// by the built-in daily and generic tasks — result content lives in
+// DayReportView / CycleResultsView, so management never shares a row with it.
 function MemberLinksCard({ task, copied, copy, resetLink }) {
   const T = useLangDict(DICT);
   return (
@@ -962,8 +882,8 @@ function MemberLinksCard({ task, copied, copy, resetLink }) {
             <div key={m.member_id} className="flex flex-wrap items-center gap-3 py-3">
               <span className="w-24 truncate font-medium">{m.name}</span>
               {m.status === 'submitted'
-                ? <Badge className="bg-primary-soft text-primary border-transparent">{T.reported}</Badge>
-                : <Badge variant="secondary">{T.notReported}</Badge>}
+                ? <Badge className="bg-primary-soft text-primary border-transparent">{task.is_builtin ? T.reported : T.memberDone}</Badge>
+                : <Badge variant="secondary">{task.is_builtin ? T.notReported : T.memberPending}</Badge>}
               <code className="min-w-0 flex-1 truncate text-[0.85rem] text-muted-foreground max-sm:hidden">{m.link || '—'}</code>
               {m.link && (
                 <div className="ml-auto flex gap-1">
