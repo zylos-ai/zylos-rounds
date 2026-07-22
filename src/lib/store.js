@@ -326,6 +326,13 @@ export const MIGRATIONS = [
       ALTER TABLE tasks ADD COLUMN carry_prior_summary INTEGER NOT NULL DEFAULT 1;
     `,
   },
+  {
+    version: 16,
+    sql: `
+      ALTER TABLE reports ADD COLUMN anchor_at TEXT;
+      ALTER TABLE cycle_records ADD COLUMN anchor_at TEXT;
+    `,
+  },
 ];
 
 export class Store {
@@ -597,14 +604,42 @@ export class Store {
     if (!memberId || !currentKey) return this.taskFollowupAnchor(task, currentKey);
     const row = (!task || task.is_builtin)
       ? this.db.prepare(
-        'SELECT updated_at FROM reports WHERE member_id=? AND report_date<? ORDER BY report_date DESC LIMIT 1'
+        'SELECT COALESCE(anchor_at, updated_at) AS anchor FROM reports WHERE member_id=? AND report_date<? ORDER BY report_date DESC LIMIT 1'
       ).get(memberId, currentKey)
       : this.db.prepare(
-        `SELECT updated_at FROM cycle_records
+        `SELECT COALESCE(anchor_at, updated_at) AS anchor FROM cycle_records
            WHERE task_id=? AND member_id=? AND cycle_key<? AND cycle_key<>'-'
          ORDER BY cycle_key DESC LIMIT 1`
       ).get(task.id, memberId, currentKey);
-    return row?.updated_at || this.taskFollowupAnchor(task, currentKey);
+    return row?.anchor || this.taskFollowupAnchor(task, currentKey);
+  }
+
+  /** Local "now" in SQLite's datetime('now','localtime') format — captured
+   *  through SQLite itself so anchor strings compare consistently with the
+   *  created_at/updated_at values it generates. */
+  nowLocal() {
+    return this.db.prepare("SELECT datetime('now','localtime') AS t").get().t;
+  }
+
+  /**
+   * Persist a member's injection anchor: the start moment of the session
+   * whose follow-up snapshot was injected. Session-end writes push
+   * updated_at past the snapshot moment, so follow-ups appended mid-session
+   * (after the snapshot, before finalize) would otherwise fall outside the
+   * next cycle's strict since-window and silently vanish. UPDATE only — a
+   * session that never wrote a record injected nothing worth anchoring to,
+   * and next cycle's re-injection is the correct outcome. Last session of a
+   * cycle wins (its snapshot supersedes earlier ones).
+   */
+  setInjectionAnchor(task, memberId, cycleKey, anchorAt) {
+    if (!anchorAt) return;
+    if (!task || task.is_builtin) {
+      this.db.prepare('UPDATE reports SET anchor_at=? WHERE member_id=? AND report_date=?')
+        .run(anchorAt, memberId, cycleKey);
+    } else {
+      this.db.prepare('UPDATE cycle_records SET anchor_at=? WHERE task_id=? AND member_id=? AND cycle_key=?')
+        .run(anchorAt, task.id, memberId, cycleKey);
+    }
   }
 
   /**

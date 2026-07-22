@@ -316,6 +316,44 @@ test('memberFollowupAnchor: member last-conversation moment, task fallback, null
   s.close();
 });
 
+test('injection anchor: snapshot moment survives session-end updated_at pushes', () => {
+  const s = tmpStore();
+  const member = Number(s.addMember('Nick', 'tok').lastInsertRowid);
+  const anchor = '2026-07-21 10:00:00';
+
+  // generic path: flush + finalize push updated_at past the snapshot moment
+  const task = s.createTask({ type: 'recurring', title: '增长日报', cadenceType: 'daily' });
+  s.addTaskMember(task.id, member, 'gt');
+  s.appendCycleTranscript(task.id, member, '2026-07-21', 'hello', 0, [1]);
+  s.setInjectionAnchor(task, member, '2026-07-21', anchor);
+  s.finalizeCycleRecord(task.id, member, '2026-07-21', 300);
+  const rec = s.getCycleRecord(task.id, member, '2026-07-21');
+  assert.notEqual(rec.updated_at, anchor); // finalize did push updated_at…
+  assert.equal(rec.anchor_at, anchor); // …but the frozen anchor survived
+  assert.equal(s.memberFollowupAnchor(task, member, '2026-07-22'), anchor);
+
+  // the P1 scenario: a follow-up appended mid-session (after the snapshot,
+  // before finalize) must fall inside the next cycle's since-window
+  const fid = Number(s.addFollowup({ taskId: task.id, content: 'added mid-call', scope: 'private' }).lastInsertRowid);
+  s.db.prepare('UPDATE follow_up SET created_at=? WHERE id=?').run('2026-07-21 10:30:00', fid);
+  const carried = s.recentFollowups(task.id, 'internal', {
+    since: s.memberFollowupAnchor(task, member, '2026-07-22'),
+  }).map(f => f.content);
+  assert.ok(carried.includes('added mid-call'));
+
+  // builtin path: same freeze on the reports row
+  const daily = s.ensureDailyTask('每日日报');
+  s.upsertSummary(member, '2026-07-21', { yesterday: [], today: [], blockers: [], topics_for_meeting: [] }, '{}', 'm');
+  s.setInjectionAnchor(daily, member, '2026-07-21', anchor);
+  s.finalizeReport(member, '2026-07-21', 300, 'm', true);
+  assert.equal(s.memberFollowupAnchor(daily, member, '2026-07-22'), anchor);
+
+  // UPDATE-only: anchoring a cycle with no record row is a no-op
+  s.setInjectionAnchor(task, member, '2026-07-23', anchor);
+  assert.ok(!s.getCycleRecord(task.id, member, '2026-07-23'));
+  s.close();
+});
+
 test('taskFollowupAnchor: previous ACTIVE cycle start (weekend gap), oneshot rows ignored', () => {
   const s = tmpStore();
   const task = s.createTask({ type: 'recurring', title: '增长日报', cadenceType: 'daily' });

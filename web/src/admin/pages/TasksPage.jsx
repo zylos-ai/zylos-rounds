@@ -822,7 +822,7 @@ export function TaskDetailPage({ id, cycle }) {
               digestSlot={<DigestCard task={task} digesting={digesting} digestError={digestError} onTrigger={triggerDigest} onSaved={load} />}
             />
           )}
-          <FollowupPanel taskId={task.id} cycle={task.cycle_key} canCompose={isCurrentCycle} />
+          <FollowupPanel taskId={task.id} cycle={task.cycle_key} canMutate={isCurrentCycle} />
           <MemberLinksCard task={task} copied={copied} copy={copy} resetLink={resetLink} />
         </>
       ) : (
@@ -831,7 +831,7 @@ export function TaskDetailPage({ id, cycle }) {
           <FollowupPanel
             taskId={task.id}
             cycle={task.type === 'recurring' ? task.cycle_key : null}
-            canCompose={isCurrentCycle}
+            canMutate={isCurrentCycle}
           />
 
           <Card>

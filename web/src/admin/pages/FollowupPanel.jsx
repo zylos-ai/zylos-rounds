@@ -57,8 +57,12 @@ const DICT = {
  * append a new one on the current cycle (private by default, or team-shared).
  * A follow-up is plain text — the general carry-forward container the daily
  * decision write-back dissolved into.
+ *
+ * `canMutate` gates every ledger mutation (compose AND delete): past-cycle
+ * pages are read-only views, and the ledger is global, so a delete from a
+ * historical page would silently edit other cycles' carry-forward too.
  */
-export default function FollowupPanel({ taskId, cycle = null, canCompose = true }) {
+export default function FollowupPanel({ taskId, cycle = null, canMutate = true }) {
   const T = useLangDict(DICT);
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -70,6 +74,10 @@ export default function FollowupPanel({ taskId, cycle = null, canCompose = true 
   const [confirmId, setConfirmId] = useState(null);
 
   const windowed = Boolean(cycle) && !showAll;
+
+  // The ledger toggle is per-view state — reset when switching task or cycle
+  // so a past "show full ledger" click doesn't leak into the next view.
+  useEffect(() => { setShowAll(false); }, [taskId, cycle]);
 
   const load = useCallback(async () => {
     try {
@@ -150,7 +158,7 @@ export default function FollowupPanel({ taskId, cycle = null, canCompose = true 
                     {f.scope === 'team' ? T.team : T.priv}
                   </span>
                   <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-[0.95rem] leading-relaxed">{f.content}</p>
-                  {confirmId === f.id ? (
+                  {!canMutate ? null : confirmId === f.id ? (
                     <span className="flex shrink-0 items-center gap-1.5 text-xs">
                       <button type="button" onClick={() => remove(f.id)} className="font-semibold text-destructive hover:underline">{T.confirm}</button>
                       <button type="button" onClick={() => setConfirmId(null)} className="text-muted-foreground hover:underline">{T.cancel}</button>
@@ -179,7 +187,7 @@ export default function FollowupPanel({ taskId, cycle = null, canCompose = true 
         )}
 
         {/* compose — current cycle only; past-cycle pages are read-only views */}
-        {canCompose ? (
+        {canMutate ? (
           <div className="space-y-2.5 border-t border-border pt-4">
             <textarea
               className={TEXTAREA_CLASS}

@@ -226,7 +226,7 @@ export class Relay {
    * Dispatch a realtime function_call. submit_standup_summary ends the flow;
    * the retrieval tools return data and prompt the model to continue speaking.
    */
-  handleToolCall(fc, { client, upstream, member, task, cycleKey, reportDate, model, markSaved, S = { saved: 'Saved' }, followupSnapshotIds }) {
+  handleToolCall(fc, { client, upstream, member, task, cycleKey, reportDate, model, markSaved, S = { saved: 'Saved' }, followupSnapshotIds, markAnchor = () => {} }) {
     const respond = output => {
       safeSend(upstream, {
         type: 'conversation.item.create',
@@ -241,6 +241,7 @@ export class Relay {
       case 'submit_standup_summary':
         try {
           this.store.upsertSummary(member.id, reportDate, args, fc.arguments, model, followupSnapshotIds);
+          markAnchor();
           markSaved();
           safeSend(client, { type: 'app.saved', summary: args });
           respond({ ok: true, message: S.saved });
@@ -253,6 +254,7 @@ export class Relay {
           const summary = JSON.stringify(Array.isArray(args.summary) ? args.summary : []);
           const highlights = JSON.stringify(Array.isArray(args.highlights) ? args.highlights : []);
           this.store.submitCycleSummary(task.id, member.id, cycleKey, summary, highlights, followupSnapshotIds);
+          markAnchor();
           markSaved();
           safeSend(client, { type: 'app.saved', summary: args });
           respond({ ok: true, message: S.saved });
@@ -323,6 +325,16 @@ export class Relay {
       : null;
     const followupSnapshot = this.context.followupsForTask(task, member, cycleKey);
     const followupSnapshotIds = followupSnapshot.map(f => f.id);
+    // Freeze the injection anchor at snapshot time: session-end writes push
+    // the record's updated_at past this moment, so the next cycle's
+    // since-window must anchor here or mid-session follow-ups are lost.
+    // Persisted piggyback on every write path (the row must exist first).
+    const snapshotAnchorAt = this.store.nowLocal();
+    const markAnchor = () => {
+      try {
+        this.store.setInjectionAnchor(task, member.id, generic ? cycleKey : reportDate, snapshotAnchorAt);
+      } catch (e) { console.log(`[rounds] anchor write failed: ${e.message}`); }
+    };
     console.log(`[rounds] session start ${member.name}${generic ? ` (task #${task.id} ${task.title}, cycle ${cycleKey})` : ''}`);
 
     // Gemini providers speak a different wire protocol — the adapter emulates
@@ -360,6 +372,7 @@ export class Relay {
       try {
         if (generic) store.appendCycleTranscript(task.id, member.id, cycleKey, chunk.join('\n'), 0, followupSnapshotIds);
         else store.appendTranscript(member.id, reportDate, chunk.join('\n'), 0, model, saved, followupSnapshotIds);
+        markAnchor();
         flushedIdx = end;
       } catch (e) { console.log(`[rounds] transcript flush failed: ${e.message}`); }
     }
@@ -393,6 +406,7 @@ export class Relay {
         if (generic) store.finalizeCycleRecord(task.id, member.id, cycleKey, dur);
         else store.finalizeReport(member.id, reportDate, dur, model, saved);
       }
+      if (flushedIdx > 0 || saved) markAnchor();
       console.log(`[rounds] session end ${member.name} (${reason}, ${dur}s, saved=${saved})`);
       // usage/cost row — best-effort, never let accounting break session close
       try {
@@ -527,7 +541,7 @@ export class Relay {
             usage.output_audio += ot.audio_tokens || 0;
           }
           const calls = (ev.response?.output || []).filter(i => i.type === 'function_call');
-          for (const fc of calls) this.handleToolCall(fc, { client, upstream, member, task, cycleKey, reportDate, model, markSaved: () => { saved = true; }, S, followupSnapshotIds });
+          for (const fc of calls) this.handleToolCall(fc, { client, upstream, member, task, cycleKey, reportDate, model, markSaved: () => { saved = true; }, S, followupSnapshotIds, markAnchor });
           break;
         }
         case 'conversation.item.input_audio_transcription.failed':
