@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.26.0] - 2026-07-23
+
+Cycle-anchored carry-over: the three "since the previous cycle" improvements
+(backlog #1/#5/#6) land together — one anchor semantic, told once.
+
+### Added
+- **Previous round's summary injection for recurring tasks** — a new
+  【上一轮小结】/[Previous round's summary] background block carries the
+  member's last submitted cycle summary (markdown, verbatim) into the next
+  round, with comparison guidance (things that went quiet get a gentle
+  follow-up). Task-level switch `carry_prior_summary` (API field
+  `carry_prior_summary`, default on; oneshot tasks unaffected). The built-in
+  daily keeps its own field-aware last-report block. (#1)
+- `GET /api/followups` accepts `?cycle=YYYY-MM-DD` to window the list to
+  follow-ups appended during that cycle, and always returns `total` (full
+  ledger count).
+
+### Changed
+- **Follow-up injection window: rolling 3 days → "new since the previous
+  cycle"** — for a member session the anchor is the moment of that member's
+  previous conversation; for digests it is the start of the task's most recent
+  *active* cycle (a Monday cycle anchors to Friday when the weekend had no
+  rounds). No prior history falls back to the legacy rolling window. Exactly
+  complements the prior-summary injection: "what they said last time" + "what
+  was appended since". (#6)
+- **Follow-up panel shows the viewed cycle's additions by default** — each
+  cycle starts empty; the cross-cycle ledger stays reachable via a "full
+  ledger" toggle, and past-cycle pages show their period read-only. (#5)
+
+### Removed
+- **"Follow-ups used this cycle" snapshot card** — with a deterministic
+  injection window the injected set is inferable, so the card is display
+  noise. The per-report snapshot data (`injected_followup_ids`) is still
+  recorded and stays available via the API for troubleshooting. (#5)
+
 ## [0.25.3] - 2026-07-22
 
 ### Fixed

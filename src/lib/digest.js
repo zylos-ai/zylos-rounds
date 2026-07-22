@@ -184,12 +184,15 @@ export class DigestGenerator {
     const cycleLine = task.type === 'recurring' && cycleKey && cycleKey !== ONESHOT_CYCLE
       ? L.cycle(cycleKey) : null;
 
-    // Follow-up closeout — feed in recently appended follow-ups (补充/跟进/更新,
-    // settled decisions included) so the model closes them out instead of
-    // re-surfacing them from stale reports. Applies to every task; visibility is
-    // scope-filtered by the task's audience (see Store.recentFollowups).
+    // Follow-up closeout — feed in follow-ups appended since the previous
+    // active cycle (补充/跟进/更新, settled decisions included) so the model
+    // closes them out instead of re-surfacing them from stale reports. Applies
+    // to every task; visibility is scope-filtered by the task's audience (see
+    // Store.recentFollowups). No prior active cycle → legacy rolling window.
     let followupsBlock = null;
-    const followups = this.store.recentFollowups?.(task.id, task.audience || 'internal') || [];
+    const fuSince = cycleKey && cycleKey !== ONESHOT_CYCLE
+      ? this.store.taskFollowupAnchor?.(task, cycleKey) : null;
+    const followups = this.store.recentFollowups?.(task.id, task.audience || 'internal', { since: fuSince }) || [];
     if (followups.length) {
       followupsBlock = `${L.priorFollowups}\n${L.priorFollowupsRule}\n`
         + followups.map(f => `- ${(f.content || '').trim()}`).join('\n');

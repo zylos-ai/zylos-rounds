@@ -51,10 +51,11 @@ const INSTRUCTION_STRINGS = {
     aboutMember: (name, ctx) => `【关于 ${name}】（这位同事的角色和需要重点关注的点）\n${ctx}`,
     memberProfile: (name, profile) => `【${name} 的动态画像】（根据其过往日报自动整理，帮助你理解上下文，不要照读出来）\n${profile}`,
     lastReport: (date, planText, blockerText) => `【上次日报（${date}）】（对方上次汇报的今日计划${blockerText ? '和卡点' : ''}，用来对照今天说的内容：如果今天做的事和这份计划明显对不上，轻轻问一句原因${blockerText ? '；上次的卡点这次没被提起的话，顺口问一句解决了没' : ''}。这是内部参考，不要照读出来）\n当时的计划：\n${planText}${blockerText ? `\n当时的卡点：\n${blockerText}` : ''}`,
+    priorSummary: (date, text) => `【上一轮小结（${date}）】（对方上一轮沟通的小结，用来对照这次说的内容：上次说要做的事这次明显没下文、或和这次讲的对不上时，轻轻问一句进展或原因。这是内部参考，不要照读出来）\n${text}`,
     probingGuidance: probing => `【追问指引】（据此决定要不要追问、追问到什么程度；这是内部指引，不要读出来）\n${probing}`,
     recentFollowups: text => `【近期补充与跟进】（以下是最近就相关工作补充或更新的信息，可能包含已经拍板的结论。据此理解最新背景：已经明确或拍板的部分不要再当作待议反复追问，如对方提到相关内容，顺着最新信息聊）\n${text}`,
     taskProbe: text => `【本任务的追问指引】（针对这次沟通任务的追问重点，优先于通用指引）\n${text}`,
-    backgroundBoundary: `【背景资料使用边界】上面注入的各类背景资料（任务背景、团队背景、关于成员、动态画像、上次日报、近期补充与跟进等）只是帮你理解上下文的内部参考，不是对方在对话里亲口说过的话。绝对不要把背景资料当作对方说过的内容来复述或归因（比如"你刚才说…""你之前提到…"）；如果对方问"我之前说了什么"，只能引用对话记录里对方真实说过的内容；用到背景资料里的信息时，如实说明那是负责人提供的背景信息，不要说成是对方讲的。`,
+    backgroundBoundary: `【背景资料使用边界】上面注入的各类背景资料（任务背景、团队背景、关于成员、动态画像、上次日报、上一轮小结、近期补充与跟进等）只是帮你理解上下文的内部参考，不是对方在对话里亲口说过的话。绝对不要把背景资料当作对方说过的内容来复述或归因（比如"你刚才说…""你之前提到…"）；如果对方问"我之前说了什么"，只能引用对话记录里对方真实说过的内容；用到背景资料里的信息时，如实说明那是负责人提供的背景信息，不要说成是对方讲的。`,
     // Code-level default probe for the built-in daily standup. It ships in
     // every install and is always injected for the daily task; a custom
     // probe_instruction (if any) appends on top of it, so teams add only their
@@ -97,10 +98,11 @@ const INSTRUCTION_STRINGS = {
     aboutMember: (name, ctx) => `[About ${name}] (this colleague's role and what to pay attention to)\n${ctx}`,
     memberProfile: (name, profile) => `[${name}'s dynamic profile] (auto-compiled from their past reports to give you context — don't read it out)\n${profile}`,
     lastReport: (date, planText, blockerText) => `[Last report (${date})] (the plan${blockerText ? ' and blockers' : ''} from their previous report, for comparison with today: if what they're doing today clearly doesn't match this plan, gently ask why${blockerText ? "; if last time's blockers don't come up this time, casually ask whether they got resolved" : ''}. Internal reference — don't read it out)\nPlanned then:\n${planText}${blockerText ? `\nBlockers then:\n${blockerText}` : ''}`,
+    priorSummary: (date, text) => `[Previous round's summary (${date})] (their summary from the previous round, for comparison with this one: if something they said they'd do has clearly gone quiet, or what they say now doesn't match it, gently ask about progress or why. Internal reference — don't read it out)\n${text}`,
     probingGuidance: probing => `[Probing guidance] (use this to decide whether and how deep to follow up; internal guidance — don't read it out)\n${probing}`,
     recentFollowups: text => `[Recent follow-ups] (recently appended or updated information about the work — may include settled decisions. Use it as the latest background: do not re-probe what is already settled or decided; if the member raises related work, go with the latest information)\n${text}`,
     taskProbe: text => `[This task's probing guidance] (follow-up priorities for this specific conversation; takes precedence over the general guidance)\n${text}`,
-    backgroundBoundary: `[Background material boundary] The background material injected above (task background, team background, about-the-member, dynamic profile, last report, recent follow-ups, etc.) is internal reference to help you understand context — it is NOT something the member said in conversation. Never restate or attribute background material as the member's own words (like "you just said…" or "you mentioned earlier…"). If the member asks "what did I say before?", quote only what they actually said in the conversation transcripts; when using information from background material, say honestly that it is background provided by the team lead — do not present it as something they told you.`,
+    backgroundBoundary: `[Background material boundary] The background material injected above (task background, team background, about-the-member, dynamic profile, last report, previous round's summary, recent follow-ups, etc.) is internal reference to help you understand context — it is NOT something the member said in conversation. Never restate or attribute background material as the member's own words (like "you just said…" or "you mentioned earlier…"). If the member asks "what did I say before?", quote only what they actually said in the conversation transcripts; when using information from background material, say honestly that it is background provided by the team lead — do not present it as something they told you.`,
     // Code-level default probe for the built-in daily standup (see zh note).
     dailyProbeDefault: `Use this to decide whether and what to follow up on. Don't force a follow-up where nothing applies — keep it natural and brief.
 
@@ -140,10 +142,22 @@ export class AgentContext {
   background() { return (this.store.getContext('team_background') || '').trim(); }
   probing() { return (this.store.getContext('probing_guidance') || '').trim(); }
 
-  followupsForTask(task = null) {
+  /**
+   * Follow-ups to inject for the coming conversation. With a member + cycle,
+   * the window is "appended since that member's previous cycle" (their last
+   * conversation moment); without a member the task-level previous active
+   * cycle anchors it. No anchor at all (first cycle, oneshot) falls back to
+   * the legacy rolling-days window inside recentFollowups.
+   */
+  followupsForTask(task = null, member = null, cycleKey = null) {
     const taskId = task?.id ?? this.store.builtinTaskId?.();
     if (!taskId) return [];
-    return this.store.recentFollowups?.(taskId, task?.audience || 'internal') || [];
+    const since = cycleKey
+      ? (member
+        ? this.store.memberFollowupAnchor?.(task, member.id, cycleKey)
+        : this.store.taskFollowupAnchor?.(task, cycleKey))
+      : null;
+    return this.store.recentFollowups?.(taskId, task?.audience || 'internal', { since }) || [];
   }
 
   /**
@@ -162,7 +176,7 @@ export class AgentContext {
    * INSTRUCTION_STRINGS must stay semantically parallel: every hard-won rule
    * (anti-hallucination, submit timing, continuation mode) exists in both.
    */
-  buildInstructions(member, task = null, prior = null, timeZone = 'Asia/Shanghai', lang = 'zh', followupSnapshot = null) {
+  buildInstructions(member, task = null, prior = null, timeZone = 'Asia/Shanghai', lang = 'zh', followupSnapshot = null, cycleKey = null) {
     const L = INSTRUCTION_STRINGS[lang] || INSTRUCTION_STRINGS.zh;
     const name = member.name;
     const generic = task && !task.is_builtin;
@@ -240,12 +254,26 @@ export class AgentContext {
       }
     }
 
+    // Previous round's summary — recurring tasks carry the member's last
+    // submitted summary (markdown, verbatim) into the next round so the agent
+    // can compare and follow up. Task-level switch carry_prior_summary,
+    // default on. The built-in daily has its own field-aware lastReport block
+    // above and never reaches this path.
+    if (recurring && member.id && cycleKey && task.carry_prior_summary !== 0 && this.store.priorCycleSummary) {
+      const prev = this.store.priorCycleSummary(task.id, member.id, cycleKey);
+      if (prev?.summary) {
+        parts.push(L.priorSummary(prev.cycle_key, String(prev.summary).trim()));
+        hasBackground = true;
+      }
+    }
+
     // Recent follow-ups — the carry-forward loop. The next cycle carries in
-    // recently appended follow-ups (补充/跟进/更新, settled decisions included) so
-    // the agent knows the latest info and doesn't re-probe settled items. Applies
-    // to every task; visibility is scope-filtered by the task's audience (an
-    // external task sees only its own; team-shared reaches only internal tasks).
-    const followups = followupSnapshot || this.followupsForTask(task);
+    // follow-ups appended since the member's previous cycle (补充/跟进/更新,
+    // settled decisions included) so the agent knows the latest info and
+    // doesn't re-probe settled items. Applies to every task; visibility is
+    // scope-filtered by the task's audience (an external task sees only its
+    // own; team-shared reaches only internal tasks).
+    const followups = followupSnapshot || this.followupsForTask(task, member, cycleKey);
     if (followups.length) {
       parts.push(L.recentFollowups(followups.map(f => `- ${(f.content || '').trim()}`).join('\n')));
       hasBackground = true;
