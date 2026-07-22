@@ -48,14 +48,15 @@ if (!settings.resolveKey()) {
 // Built-in try-it member: full talk flow, excluded from all rosters/digests.
 store.ensureTestMember('体验成员', crypto.randomBytes(8).toString('base64url'));
 
-// The daily standup is the built-in recurring communication task. v0.7: every
-// link is a per-(task, member) token — mint missing daily links idempotently
-// (existing tokens are kept; rotation happens only via the reset API).
+// The daily standup is the built-in recurring communication task. v0.28:
+// daily membership is explicit (join_daily on create / the roster API) —
+// the old boot-time backfill of every active member is gone, or it would
+// resurrect members removed from the daily on every restart. Only the
+// try-it member always keeps a link.
 const dailyTask = store.ensureDailyTask('每日日报');
-for (const mb of [...store.listActiveMembers(), store.getTestMember()].filter(Boolean)) {
-  if (!store.getTaskMember(dailyTask.id, mb.id)) {
-    store.addTaskMember(dailyTask.id, mb.id, crypto.randomBytes(8).toString('base64url'));
-  }
+const tryIt = store.getTestMember();
+if (tryIt && !store.getTaskMember(dailyTask.id, tryIt.id)) {
+  store.addTaskMember(dailyTask.id, tryIt.id, crypto.randomBytes(8).toString('base64url'));
 }
 
 // The agent's maintainable brain (background + probing + knowledge). Seed the

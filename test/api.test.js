@@ -68,10 +68,10 @@ async function boot() {
 test('bearer API key has full admin scope: roster, reports, settings', async () => {
   const { store, call, close } = await boot();
   try {
-    // roster management via bearer (owner's 2026-07-18 ruling); v0.7: adding a
-    // member mints their daily-task link
+    // roster management via bearer (owner's 2026-07-18 ruling); v0.28:
+    // joining the daily is opt-in, so this test passes join_daily explicitly
     const daily = store.getDailyTask();
-    const added = await call('POST', '/api/members', { name: '阿明' });
+    const added = await call('POST', '/api/members', { name: '阿明', join_daily: true });
     assert.equal(added.status, 201);
     const id = added.data.id;
     assert.equal(added.data.links.length, 1);
@@ -100,6 +100,100 @@ test('bearer API key has full admin scope: roster, reports, settings', async () 
   }
 });
 
+test('member add joins no tasks by default; join_daily=true opts into the daily', async () => {
+  const { store, call, close } = await boot();
+  try {
+    const daily = store.getDailyTask();
+    // v0.28 default: a new member gets no task links
+    const plain = await call('POST', '/api/members', { name: '默认成员' });
+    assert.equal(plain.status, 201);
+    assert.equal(plain.data.links.length, 0);
+    assert.equal(store.getTaskMember(daily.id, plain.data.id), undefined);
+
+    // explicit opt-in still mints the daily link
+    const opted = await call('POST', '/api/members', { name: '日报成员', join_daily: true });
+    assert.equal(opted.status, 201);
+    assert.equal(opted.data.links.length, 1);
+    assert.equal(opted.data.links[0].task_id, daily.id);
+
+    // reactivation honors the same default: no daily link resurrection
+    await call('DELETE', `/api/members/${plain.data.id}`);
+    const back = await call('POST', '/api/members', { name: '默认成员' });
+    assert.equal(back.status, 201);
+    assert.equal(back.data.id, plain.data.id);
+    assert.equal(back.data.links.length, 0);
+  } finally {
+    close();
+  }
+});
+
+test('task roster API: add mints a link, re-add is idempotent, remove kills the link', async () => {
+  const { store, call, close } = await boot();
+  try {
+    const daily = store.getDailyTask();
+    // 常驻 stays on the daily throughout — the roster views must converge
+    // to exactly her after 阿花 is removed
+    const stay = await call('POST', '/api/members', { name: '常驻', join_daily: true });
+    const m = await call('POST', '/api/members', { name: '阿花' });
+    const mid = m.data.id;
+
+    // add to the built-in daily via the explicit roster API
+    const added = await call('POST', `/api/tasks/${daily.id}/members`, { member_id: mid });
+    assert.equal(added.status, 201);
+    assert.match(added.data.link, /\/u\/[A-Za-z0-9_-]+$/);
+
+    // idempotent: re-add returns the existing link, not a new token
+    const again = await call('POST', `/api/tasks/${daily.id}/members`, { member_id: mid });
+    assert.equal(again.status, 200);
+    assert.equal(again.data.link, added.data.link);
+
+    // the minted link resolves to a talk session
+    const token = store.getTaskMember(daily.id, mid).token;
+    const sess = await call('GET', `/api/talk/session?token=${token}`, undefined, {});
+    assert.equal(sess.status, 200);
+    assert.equal(sess.data.name, '阿花');
+
+    // on the roster, the daily counts both members
+    let listed = (await call('GET', '/api/tasks')).data.tasks.find(t => t.is_builtin);
+    assert.equal(listed.member_count, 2);
+
+    // remove: 204, link dies, roster entry gone
+    const removed = await call('DELETE', `/api/tasks/${daily.id}/members/${mid}`);
+    assert.equal(removed.status, 204);
+    assert.equal(store.getTaskMember(daily.id, mid), undefined);
+    assert.equal((await call('GET', `/api/talk/session?token=${token}`, undefined, {})).status, 404);
+
+    // every daily view converges to the task roster, not all active members:
+    // task list count, detail member list, and the day report's missing list
+    listed = (await call('GET', '/api/tasks')).data.tasks.find(t => t.is_builtin);
+    assert.equal(listed.member_count, 1);
+    assert.equal(listed.submitted_count, 0);
+
+    const detail = (await call('GET', `/api/tasks/${daily.id}`)).data;
+    assert.equal(detail.member_count, 1);
+    assert.deepEqual(detail.members.map(x => x.name), ['常驻']);
+    assert.equal(detail.report.member_count, 1);
+    assert.deepEqual(detail.report.missing, ['常驻']);
+
+    const report = (await call('GET', `/api/reports/${detail.cycle_key}`)).data;
+    assert.equal(report.member_count, 1);
+    assert.deepEqual(report.missing, ['常驻']);
+    assert.ok(!report.missing.includes('阿花'));
+    assert.equal(stay.data.id > 0, true);
+
+    // 404s: unknown task, unknown member, member not on roster
+    assert.equal((await call('POST', '/api/tasks/9999/members', { member_id: mid })).status, 404);
+    assert.equal((await call('POST', `/api/tasks/${daily.id}/members`, { member_id: 9999 })).status, 404);
+    assert.equal((await call('DELETE', `/api/tasks/${daily.id}/members/${mid}`)).status, 404);
+
+    // deactivated members cannot be added
+    await call('DELETE', `/api/members/${mid}`);
+    assert.equal((await call('POST', `/api/tasks/${daily.id}/members`, { member_id: mid })).status, 404);
+  } finally {
+    close();
+  }
+});
+
 test('wrong or missing bearer key is rejected on every admin route', async () => {
   const { call, close } = await boot();
   try {
@@ -117,7 +211,7 @@ test('wrong or missing bearer key is rejected on every admin route', async () =>
 test('rename endpoint: renames, keeps links, rejects dup/empty/missing', async () => {
   const { call, close } = await boot();
   try {
-    const added = await call('POST', '/api/members', { name: 'leslie' });
+    const added = await call('POST', '/api/members', { name: 'leslie', join_daily: true });
     const id = added.data.id;
     const origLink = added.data.links[0].link;
 
@@ -250,7 +344,7 @@ test('task endpoints: create with links, digest trigger/overwrite, decoupled clo
 test('recurring task: create with cadence, cycle detail, per-cycle digest, custom instruction', async () => {
   const { store, call, close } = await boot();
   try {
-    const a = await call('POST', '/api/members', { name: '张三' });
+    const a = await call('POST', '/api/members', { name: '张三', join_daily: true });
 
     // cadence is validated
     assert.equal((await call('POST', '/api/tasks', {
@@ -302,7 +396,7 @@ test('recurring task: create with cadence, cycle detail, per-cycle digest, custo
 test('talk session resolves only task tokens and flags the built-in daily', async () => {
   const { store, call, close } = await boot();
   try {
-    const a = await call('POST', '/api/members', { name: '王五' });
+    const a = await call('POST', '/api/members', { name: '王五', join_daily: true });
     const daily = store.getDailyTask();
     const token = store.getTaskMember(daily.id, a.data.id).token;
     const sess = await call('GET', `/api/talk/session?token=${token}`, undefined, {});
@@ -423,7 +517,7 @@ test('providers: builtin seeded, CRUD, builtin guard, in-use delete guard, slot 
 test('talk session: date + prior record for the builtin daily (v0.9.2)', async () => {
   const { store, call, close } = await boot();
   try {
-    const m = await call('POST', '/api/members', { name: '王五' });
+    const m = await call('POST', '/api/members', { name: '王五', join_daily: true });
     const daily = (await call('GET', '/api/tasks')).data.tasks.find(t => t.is_builtin);
     const token = store.taskMembers(daily.id).find(r => r.member_id === m.data.id).token;
     const today = new Date().toLocaleDateString('sv', { timeZone: 'Asia/Shanghai' });

@@ -191,6 +191,12 @@ export class Api {
     m = p.match(/^\/api\/tasks\/(\d+)\/members\/(\d+)\/reset-token$/);
     if (m && req.method === 'POST') return this.resetTaskToken(req, res, Number(m[1]), Number(m[2])), true;
 
+    // task roster management — add/remove a member on an existing task
+    m = p.match(/^\/api\/tasks\/(\d+)\/members$/);
+    if (m && req.method === 'POST') return await this.addTaskMemberApi(req, res, Number(m[1])), true;
+    m = p.match(/^\/api\/tasks\/(\d+)\/members\/(\d+)$/);
+    if (m && req.method === 'DELETE') return this.removeTaskMemberApi(res, Number(m[1]), Number(m[2])), true;
+
     m = p.match(/^\/api\/tasks\/(\d+)$/);
     if (m && req.method === 'GET') return this.taskDetail(req, res, Number(m[1]), url.searchParams.get('cycle')), true;
     if (m && req.method === 'PUT') return await this.updateTask(req, res, Number(m[1])), true;
@@ -891,9 +897,14 @@ export class Api {
     const tasks = this.store.listTasks().map(t => {
       const base = this.taskJson(t);
       if (t.is_builtin) {
-        const members = this.store.listActiveMembers();
-        const done = this.store.submittedMemberIds(today);
-        return { ...base, cycle_key: today, member_count: members.length, submitted_count: done.length };
+        const members = this.store.dailyRosterMembers();
+        const done = new Set(this.store.submittedMemberIds(today));
+        return {
+          ...base,
+          cycle_key: today,
+          member_count: members.length,
+          submitted_count: members.filter(mb => done.has(mb.id)).length,
+        };
       }
       const key = t.type === 'oneshot' ? ONESHOT_CYCLE : currentCycleKey(t, today);
       const rows = (key ? this.store.cycleRecords(t.id, key) : this.store.taskMembers(t.id))
@@ -921,7 +932,7 @@ export class Api {
 
     if (task.is_builtin) {
       const date = requested || today;
-      const members = this.store.listActiveMembers();
+      const members = this.store.dailyRosterMembers();
       const links = new Map(this.store.taskMembers(id).map(r => [r.member_id, r.token]));
       const report = this.dayReportJson(date);
       const done = new Set(this.store.submittedMemberIds(date));
@@ -1132,6 +1143,42 @@ export class Api {
     sendJson(res, 200, { task_id: taskId, member_id: memberId, link: this.memberLink(req, token) });
   }
 
+  /** Add an active member to an existing task's roster (mints their link).
+   *  Idempotent: re-adding returns the existing link. This is also the
+   *  explicit path onto the built-in daily now that member creation no
+   *  longer auto-attaches. */
+  async addTaskMemberApi(req, res, taskId) {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      return sendJson(res, 400, { error: 'bad_request' });
+    }
+    const memberId = Number(body.member_id);
+    const task = this.store.getTask(taskId);
+    if (!task) return sendJson(res, 404, { error: 'not_found' });
+    const member = this.store.getMemberById(memberId);
+    if (!member || !member.active || member.is_test) return sendJson(res, 404, { error: 'member_not_found' });
+    const existing = this.store.getTaskMember(taskId, memberId);
+    if (existing) {
+      return sendJson(res, 200, { task_id: taskId, member_id: memberId, link: this.memberLink(req, existing.token) });
+    }
+    const token = newToken();
+    this.store.addTaskMember(taskId, memberId, token);
+    sendJson(res, 201, { task_id: taskId, member_id: memberId, link: this.memberLink(req, token) });
+  }
+
+  /** Remove a member from a task's roster — their link dies immediately.
+   *  Cycle records are kept in the store for audit, but note the task's
+   *  views list current roster members only, so a removed member's past
+   *  results leave the page with them. */
+  removeTaskMemberApi(res, taskId, memberId) {
+    if (!this.store.getTask(taskId)) return sendJson(res, 404, { error: 'not_found' });
+    if (!this.store.getTaskMember(taskId, memberId)) return sendJson(res, 404, { error: 'not_found' });
+    this.store.removeTaskMember(taskId, memberId);
+    sendJson(res, 204, {});
+  }
+
   /** Cross-task member entity: roster + one link per open task (v0.7). */
   memberJson(req, mb) {
     return {
@@ -1184,11 +1231,15 @@ export class Api {
     if (!name || name.length > 64) return sendJson(res, 400, { error: 'invalid_name' });
     const language = String(body.language ?? '').trim();
     if (language && !LANGUAGES.includes(language)) return sendJson(res, 400, { error: 'invalid_language' });
+    // Joining the built-in daily is an explicit choice now — in the
+    // multi-task era "new member ⇒ daily standup" stopped being a safe
+    // assumption (a growth-team roster is not a product-eng roster).
+    const joinDaily = Boolean(body.join_daily);
     try {
       const info = this.store.addMember(name, newToken());
       const id = Number(info.lastInsertRowid);
       if (language) this.store.setMemberLanguage(id, language);
-      this.mintDailyLink(id);
+      if (joinDaily) this.mintDailyLink(id);
       sendJson(res, 201, this.memberJson(req, this.store.getMemberById(id)));
     } catch (err) {
       if (!String(err.message).includes('UNIQUE')) throw err;
@@ -1197,7 +1248,7 @@ export class Api {
       this.store.reactivateMember(inactive.id, newToken());
       if (language) this.store.setMemberLanguage(inactive.id, language);
       // returning member: fresh daily link — the pre-deactivation one stays dead
-      this.mintDailyLink(inactive.id, { rotate: true });
+      if (joinDaily) this.mintDailyLink(inactive.id, { rotate: true });
       sendJson(res, 201, this.memberJson(req, this.store.getMemberById(inactive.id)));
     }
   }
@@ -1211,7 +1262,7 @@ export class Api {
   }
 
   history(res) {
-    const memberCount = this.store.listActiveMembers().length;
+    const memberCount = this.store.dailyRosterMembers().length;
     const days = this.store.reportHistory().map(d => ({
       date: d.report_date,
       submitted: Number(d.submitted),
@@ -1224,7 +1275,7 @@ export class Api {
   /** Day view of the built-in daily standup — shared by /api/reports/:date and the builtin task detail. */
   dayReportJson(date) {
     const rows = this.store.dayReports(date);
-    const members = this.store.listActiveMembers();
+    const members = this.store.dailyRosterMembers();
     const doneIds = new Set(rows.map(r => r.member_id));
     const contextFollowupIds = [...new Set(rows.flatMap(r => parseIdList(r.injected_followup_ids)))];
     return {
