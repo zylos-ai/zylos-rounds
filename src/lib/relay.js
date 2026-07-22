@@ -342,11 +342,34 @@ export class Relay {
     let greeted = false;
     const store = this.store;
     const self = this;
+
+    // Incremental durability: persist the conversation as it happens, not only
+    // at session end, so a crash/restart mid-call keeps what was already said.
+    // Write the contiguous run of already-filled transcript entries, stopping at
+    // the first unfilled ASR slot to preserve true conversation order (it flushes
+    // once its text arrives). Chunk writes carry duration 0; the real duration is
+    // recorded exactly once at finish().
+    let flushedIdx = 0;
+    function flushTranscript() {
+      let end = flushedIdx;
+      while (end < transcript.length && transcript[end].text != null) end++;
+      const chunk = transcript.slice(flushedIdx, end).map(e => e.text).filter(Boolean);
+      if (!chunk.length) { flushedIdx = end; return; }
+      try {
+        if (generic) store.appendCycleTranscript(task.id, member.id, cycleKey, chunk.join('\n'), 0, followupSnapshotIds);
+        else store.appendTranscript(member.id, reportDate, chunk.join('\n'), 0, model, saved, followupSnapshotIds);
+        flushedIdx = end;
+      } catch (e) { console.log(`[rounds] transcript flush failed: ${e.message}`); }
+    }
+    const flushTimer = setInterval(flushTranscript, 7000);
+    flushTimer.unref?.();
+
     function finish(reason) {
       if (closed) return;
       closed = true;
       clearTimeout(killTimer);
       clearInterval(heartbeat);
+      clearInterval(flushTimer);
       try { upstream.close(); } catch { /* already closed */ }
       try { client.close(); } catch { /* already closed */ }
       self.active = Math.max(0, self.active - 1);
@@ -354,10 +377,19 @@ export class Relay {
       // Entries are ordered slots: user slots are inserted at item-creation
       // time and filled by the (late) ASR result, so the archive keeps true
       // conversation order. Unfilled slots (failed/empty ASR) drop out here.
-      const lines = transcript.map(e => e.text).filter(Boolean);
-      if (lines.length) {
-        if (generic) store.appendCycleTranscript(task.id, member.id, cycleKey, lines.join('\n'), dur, followupSnapshotIds);
-        else store.appendTranscript(member.id, reportDate, lines.join('\n'), dur, model, saved, followupSnapshotIds);
+      // Flush the filled prefix, then persist the remaining tail (entries after
+      // an unfilled ASR slot, or the final turn) together with the real duration.
+      // Chunks written during the call carried duration 0, so the total lands
+      // exactly once; if everything was already flushed, record duration only.
+      flushTranscript();
+      const tail = transcript.slice(flushedIdx).map(e => e.text).filter(Boolean);
+      if (tail.length) {
+        if (generic) store.appendCycleTranscript(task.id, member.id, cycleKey, tail.join('\n'), dur, followupSnapshotIds);
+        else store.appendTranscript(member.id, reportDate, tail.join('\n'), dur, model, saved, followupSnapshotIds);
+        flushedIdx = transcript.length;
+      } else if (flushedIdx > 0) {
+        if (generic) store.finalizeCycleRecord(task.id, member.id, cycleKey, dur);
+        else store.finalizeReport(member.id, reportDate, dur, model, saved);
       }
       console.log(`[rounds] session end ${member.name} (${reason}, ${dur}s, saved=${saved})`);
       // usage/cost row — best-effort, never let accounting break session close
@@ -463,6 +495,7 @@ export class Relay {
           const slot = transcript.find(e => e.id === ev.item_id);
           if (slot) slot.text = text ? `${member.name}: ${text}` : null;
           else if (text) transcript.push({ id: ev.item_id, text: `${member.name}: ${text}` });
+          flushTranscript(); // a filled slot may unblock the persistable prefix
           // ASR sidecar billing (OpenAI path only): the event's usage carries
           // either billed seconds or token counts (~1000 audio tokens/min on
           // the 4o-transcribe rate card — $6/1M ≈ $0.006/min)
@@ -472,11 +505,11 @@ export class Relay {
           break;
         }
         case 'response.output_audio_transcript.done':
-          if (ev.transcript?.trim()) transcript.push({ text: `Luna: ${ev.transcript.trim()}` });
+          if (ev.transcript?.trim()) { transcript.push({ text: `Luna: ${ev.transcript.trim()}` }); flushTranscript(); }
           break;
         case 'response.output_text.done':
         case 'response.text.done':
-          if (ev.text?.trim()) transcript.push({ text: `Luna: ${ev.text.trim()}` });
+          if (ev.text?.trim()) { transcript.push({ text: `Luna: ${ev.text.trim()}` }); flushTranscript(); }
           break;
         case 'response.done': {
           const u = ev.response?.usage;

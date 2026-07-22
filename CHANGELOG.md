@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.25.2] - 2026-07-22
+
+### Fixed
+- **Conversations now persist incrementally (crash/restart durability)** —
+  previously a voice session's transcript was buffered in memory and only
+  written to the DB on clean session end, so a service restart mid-call lost the
+  entire conversation. The relay now flushes the contiguous run of already-filled
+  transcript entries as the call proceeds (after each answered turn / ASR result,
+  plus a 7s safety timer), stopping at the first unfilled ASR slot to preserve
+  true order. Chunk writes carry duration 0; the real duration is recorded once
+  at session end (`store.finalizeReport` / `store.finalizeCycleRecord`). A restart
+  now loses at most the last unfinished turn instead of the whole conversation.
+
 ## [0.25.1] - 2026-07-22
 
 ### Changed
