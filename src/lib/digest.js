@@ -157,7 +157,7 @@ export class DigestGenerator {
         highlights: JSON.stringify(parseList(r.topics).map(s => `[${L.secTopics}] ${s}`)),
         transcript: r.transcript || '',
       })),
-      ...this.store.listActiveMembers().filter(m => !done.has(m.id))
+      ...this.store.dailyRosterMembers().filter(m => !done.has(m.id))
         .map(m => ({ name: m.name, status: 'pending', summary: '[]', highlights: '[]', transcript: '' })),
     ];
   }

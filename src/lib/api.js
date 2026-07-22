@@ -897,9 +897,14 @@ export class Api {
     const tasks = this.store.listTasks().map(t => {
       const base = this.taskJson(t);
       if (t.is_builtin) {
-        const members = this.store.listActiveMembers();
-        const done = this.store.submittedMemberIds(today);
-        return { ...base, cycle_key: today, member_count: members.length, submitted_count: done.length };
+        const members = this.store.dailyRosterMembers();
+        const done = new Set(this.store.submittedMemberIds(today));
+        return {
+          ...base,
+          cycle_key: today,
+          member_count: members.length,
+          submitted_count: members.filter(mb => done.has(mb.id)).length,
+        };
       }
       const key = t.type === 'oneshot' ? ONESHOT_CYCLE : currentCycleKey(t, today);
       const rows = (key ? this.store.cycleRecords(t.id, key) : this.store.taskMembers(t.id))
@@ -927,7 +932,7 @@ export class Api {
 
     if (task.is_builtin) {
       const date = requested || today;
-      const members = this.store.listActiveMembers();
+      const members = this.store.dailyRosterMembers();
       const links = new Map(this.store.taskMembers(id).map(r => [r.member_id, r.token]));
       const report = this.dayReportJson(date);
       const done = new Set(this.store.submittedMemberIds(date));
@@ -1257,7 +1262,7 @@ export class Api {
   }
 
   history(res) {
-    const memberCount = this.store.listActiveMembers().length;
+    const memberCount = this.store.dailyRosterMembers().length;
     const days = this.store.reportHistory().map(d => ({
       date: d.report_date,
       submitted: Number(d.submitted),
@@ -1270,7 +1275,7 @@ export class Api {
   /** Day view of the built-in daily standup — shared by /api/reports/:date and the builtin task detail. */
   dayReportJson(date) {
     const rows = this.store.dayReports(date);
-    const members = this.store.listActiveMembers();
+    const members = this.store.dailyRosterMembers();
     const doneIds = new Set(rows.map(r => r.member_id));
     const contextFollowupIds = [...new Set(rows.flatMap(r => parseIdList(r.injected_followup_ids)))];
     return {

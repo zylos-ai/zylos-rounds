@@ -26,6 +26,15 @@ explicit operation, and joining the built-in daily is opt-in.
   stopped being a safe assumption; pass `join_daily: true` (UI checkbox /
   CLI `--join-daily`) for the old behavior. Reactivating a former member
   follows the same rule.
+- **The built-in daily's views are roster-based.** Task list counts, task
+  detail members, day-report `member_count`/`missing`, report history and
+  the digest's pending list all follow the daily's `task_members` roster
+  instead of "every active member" — removing a member from the daily now
+  actually takes effect everywhere.
+- **Startup no longer backfills every active member onto the daily.**
+  The v0.7-era boot loop would have resurrected removed members (with
+  fresh links) on every restart; only the try-it member keeps a
+  guaranteed link.
 
 ## [0.27.0] - 2026-07-23
 

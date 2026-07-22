@@ -131,6 +131,9 @@ test('task roster API: add mints a link, re-add is idempotent, remove kills the 
   const { store, call, close } = await boot();
   try {
     const daily = store.getDailyTask();
+    // 常驻 stays on the daily throughout — the roster views must converge
+    // to exactly her after 阿花 is removed
+    const stay = await call('POST', '/api/members', { name: '常驻', join_daily: true });
     const m = await call('POST', '/api/members', { name: '阿花' });
     const mid = m.data.id;
 
@@ -150,11 +153,33 @@ test('task roster API: add mints a link, re-add is idempotent, remove kills the 
     assert.equal(sess.status, 200);
     assert.equal(sess.data.name, '阿花');
 
+    // on the roster, the daily counts both members
+    let listed = (await call('GET', '/api/tasks')).data.tasks.find(t => t.is_builtin);
+    assert.equal(listed.member_count, 2);
+
     // remove: 204, link dies, roster entry gone
     const removed = await call('DELETE', `/api/tasks/${daily.id}/members/${mid}`);
     assert.equal(removed.status, 204);
     assert.equal(store.getTaskMember(daily.id, mid), undefined);
     assert.equal((await call('GET', `/api/talk/session?token=${token}`, undefined, {})).status, 404);
+
+    // every daily view converges to the task roster, not all active members:
+    // task list count, detail member list, and the day report's missing list
+    listed = (await call('GET', '/api/tasks')).data.tasks.find(t => t.is_builtin);
+    assert.equal(listed.member_count, 1);
+    assert.equal(listed.submitted_count, 0);
+
+    const detail = (await call('GET', `/api/tasks/${daily.id}`)).data;
+    assert.equal(detail.member_count, 1);
+    assert.deepEqual(detail.members.map(x => x.name), ['常驻']);
+    assert.equal(detail.report.member_count, 1);
+    assert.deepEqual(detail.report.missing, ['常驻']);
+
+    const report = (await call('GET', `/api/reports/${detail.cycle_key}`)).data;
+    assert.equal(report.member_count, 1);
+    assert.deepEqual(report.missing, ['常驻']);
+    assert.ok(!report.missing.includes('阿花'));
+    assert.equal(stay.data.id > 0, true);
 
     // 404s: unknown task, unknown member, member not on roster
     assert.equal((await call('POST', '/api/tasks/9999/members', { member_id: mid })).status, 404);

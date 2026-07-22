@@ -777,6 +777,18 @@ export class Store {
     return this.db.prepare('SELECT * FROM members WHERE active=1 AND is_test=0 ORDER BY id').all();
   }
 
+  /** Active non-test members on the built-in daily's roster. Since v0.28
+   *  membership is per-task, so the daily's denominator (counts, missing
+   *  lists, digests) is its roster — not every active member. */
+  dailyRosterMembers() {
+    return this.db.prepare(`
+      SELECT m.* FROM task_members tm JOIN members m ON m.id=tm.member_id
+      WHERE tm.task_id=(SELECT id FROM tasks WHERE is_builtin=1 ORDER BY id LIMIT 1)
+        AND m.active=1 AND m.is_test=0
+      ORDER BY m.id
+    `).all();
+  }
+
   getTestMember() {
     return this.db.prepare('SELECT * FROM members WHERE is_test=1 ORDER BY id LIMIT 1').get();
   }
