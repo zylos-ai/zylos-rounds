@@ -194,7 +194,7 @@ export class Relay {
     });
   }
 
-  sessionUpdate(member, task, prior = null, mode = 'voice', followupSnapshot = null) {
+  sessionUpdate(member, task, prior = null, mode = 'voice', followupSnapshot = null, cycleKey = null) {
     const cfg = this.getConfig();
     const generic = task && !task.is_builtin;
     // The member's language drives instructions, tool descriptions and the
@@ -207,7 +207,7 @@ export class Relay {
       session: {
         type: 'realtime',
         output_modalities: mode === 'text' ? ['text'] : ['audio'],
-        instructions: this.context.buildInstructions(member, task, prior, this.settings.resolveTimeZone(), lang, followupSnapshot),
+        instructions: this.context.buildInstructions(member, task, prior, this.settings.resolveTimeZone(), lang, followupSnapshot, cycleKey),
         tools: generic ? tools.generic : tools.daily,
         tool_choice: 'auto',
         audio: {
@@ -321,7 +321,7 @@ export class Relay {
     const prior = priorRec?.transcript
       ? { transcript: priorRec.transcript, submitted: priorRec.status === 'submitted' }
       : null;
-    const followupSnapshot = this.context.followupsForTask(task);
+    const followupSnapshot = this.context.followupsForTask(task, member, cycleKey);
     const followupSnapshotIds = followupSnapshot.map(f => f.id);
     console.log(`[rounds] session start ${member.name}${generic ? ` (task #${task.id} ${task.title}, cycle ${cycleKey})` : ''}`);
 
@@ -424,7 +424,7 @@ export class Relay {
       }
     }
 
-    upstream.on('open', () => upstream.send(JSON.stringify(this.sessionUpdate(member, task, prior, mode, followupSnapshot))));
+    upstream.on('open', () => upstream.send(JSON.stringify(this.sessionUpdate(member, task, prior, mode, followupSnapshot, cycleKey))));
     upstream.on('error', e => {
       console.error('[rounds] upstream error', e.message);
       safeSend(client, { type: 'app.error', message: S.errUpstream });

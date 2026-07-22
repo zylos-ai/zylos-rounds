@@ -317,6 +317,15 @@ export const MIGRATIONS = [
       ALTER TABLE cycle_records ADD COLUMN injected_followup_ids TEXT;
     `,
   },
+  {
+    // v0.26 cross-cycle carry: recurring tasks inject the member's previous
+    // cycle summary into the next conversation. Task-level switch, default on
+    // (0 disables); oneshot tasks ignore it.
+    version: 15,
+    sql: `
+      ALTER TABLE tasks ADD COLUMN carry_prior_summary INTEGER NOT NULL DEFAULT 1;
+    `,
+  },
 ];
 
 export class Store {
@@ -516,8 +525,18 @@ export class Store {
       .run(taskId, body, sc, who);
   }
 
-  listFollowups(taskId) {
-    return this.db.prepare('SELECT * FROM follow_up WHERE task_id=? ORDER BY created_at DESC, id DESC').all(taskId);
+  listFollowups(taskId, { from = null, until = null } = {}) {
+    const conds = ['task_id=?'];
+    const vals = [taskId];
+    if (from) { conds.push('datetime(created_at) >= datetime(?)'); vals.push(from); }
+    if (until) { conds.push('datetime(created_at) < datetime(?)'); vals.push(until); }
+    return this.db.prepare(
+      `SELECT * FROM follow_up WHERE ${conds.join(' AND ')} ORDER BY created_at DESC, id DESC`
+    ).all(...vals);
+  }
+
+  countFollowups(taskId) {
+    return this.db.prepare('SELECT COUNT(*) n FROM follow_up WHERE task_id=?').get(taskId)?.n || 0;
   }
 
   followupsByIds(ids = []) {
@@ -541,23 +560,85 @@ export class Store {
    * Recent follow-ups to deterministically inject into `taskId`'s next cycle
    * (probing + digest closeout). Own follow-ups always; team-shared from any
    * task only when the task is internal; never another task's private ones.
+   *
+   * Window: `since` (a local datetime string) selects follow-ups appended
+   * after that moment — the "new since the previous cycle" carry rule. When
+   * no anchor exists (first-ever cycle, oneshot tasks) the legacy rolling
+   * `days` window applies instead.
    */
-  recentFollowups(taskId, audience = 'internal', days = 3, limit = 30) {
-    const since = `-${Math.max(0, Number(days) || 0)} days`;
+  recentFollowups(taskId, audience = 'internal', { since = null, days = 3, limit = 30 } = {}) {
     const lim = Math.max(1, Number(limit) || 1);
+    const cond = since
+      ? 'datetime(created_at) > datetime(?)'
+      : "datetime(created_at) >= datetime('now','localtime', ?)";
+    const anchor = since || `-${Math.max(0, Number(days) || 0)} days`;
     if (audience === 'external') {
       return this.db.prepare(
         `SELECT * FROM follow_up
-           WHERE task_id=? AND datetime(created_at) >= datetime('now','localtime', ?)
+           WHERE task_id=? AND ${cond}
          ORDER BY created_at DESC, id DESC LIMIT ?`
-      ).all(taskId, since, lim);
+      ).all(taskId, anchor, lim);
     }
     return this.db.prepare(
       `SELECT * FROM follow_up
-         WHERE datetime(created_at) >= datetime('now','localtime', ?)
+         WHERE ${cond}
            AND (task_id=? OR scope='team')
        ORDER BY created_at DESC, id DESC LIMIT ?`
-    ).all(since, taskId, lim);
+    ).all(anchor, taskId, lim);
+  }
+
+  /**
+   * Injection anchor for one member: the moment of their last conversation in
+   * a cycle before `currentKey`. Follow-ups appended after it are "new since
+   * their previous cycle". Falls back to the task-level anchor (member's first
+   * cycle), then null (caller applies the legacy days window).
+   */
+  memberFollowupAnchor(task, memberId, currentKey) {
+    if (!memberId || !currentKey) return this.taskFollowupAnchor(task, currentKey);
+    const row = (!task || task.is_builtin)
+      ? this.db.prepare(
+        'SELECT updated_at FROM reports WHERE member_id=? AND report_date<? ORDER BY report_date DESC LIMIT 1'
+      ).get(memberId, currentKey)
+      : this.db.prepare(
+        `SELECT updated_at FROM cycle_records
+           WHERE task_id=? AND member_id=? AND cycle_key<? AND cycle_key<>'-'
+         ORDER BY cycle_key DESC LIMIT 1`
+      ).get(task.id, memberId, currentKey);
+    return row?.updated_at || this.taskFollowupAnchor(task, currentKey);
+  }
+
+  /**
+   * Task-level injection anchor: start (00:00 local) of the most recent cycle
+   * with any activity before `currentKey`. "Previous cycle" follows activity,
+   * not the calendar — a Monday cycle anchors to Friday when the weekend had
+   * no rounds. Null when the task has no prior active cycle.
+   */
+  taskFollowupAnchor(task, currentKey) {
+    if (!currentKey || currentKey === '-') return null;
+    const row = (!task || task.is_builtin)
+      ? this.db.prepare('SELECT MAX(report_date) k FROM reports WHERE report_date<?').get(currentKey)
+      : this.db.prepare(
+        `SELECT MAX(k) k FROM (
+           SELECT cycle_key k FROM cycle_records WHERE task_id=? AND cycle_key<? AND cycle_key<>'-'
+           UNION SELECT cycle_key k FROM cycle_digests WHERE task_id=? AND cycle_key<? AND cycle_key<>'-'
+         )`
+      ).get(task.id, currentKey, task.id, currentKey);
+    return row?.k ? `${row.k} 00:00:00` : null;
+  }
+
+  /**
+   * The member's most recent submitted summary in a cycle before `beforeKey` —
+   * the "what they said last round" injection for recurring tasks. Markdown
+   * text carried verbatim; null when they have no prior summary.
+   */
+  priorCycleSummary(taskId, memberId, beforeKey) {
+    if (!beforeKey || beforeKey === '-') return null;
+    return this.db.prepare(
+      `SELECT cycle_key, summary, highlights FROM cycle_records
+         WHERE task_id=? AND member_id=? AND cycle_key<? AND cycle_key<>'-'
+           AND summary IS NOT NULL AND TRIM(summary)<>''
+       ORDER BY cycle_key DESC LIMIT 1`
+    ).get(taskId, memberId, beforeKey) || null;
   }
 
   /**
@@ -814,13 +895,15 @@ export class Store {
       digestInstruction: 'digest_instruction', probeInstruction: 'probe_instruction',
       cadenceType: 'cadence_type', cadenceDow: 'cadence_dow',
       cadenceIntervalDays: 'cadence_interval_days', cadenceAnchor: 'cadence_anchor',
+      carryPriorSummary: 'carry_prior_summary',
     };
     const sets = [];
     const vals = [];
+    const bools = new Set(['digestCloseLinked', 'carryPriorSummary']);
     for (const [k, col] of Object.entries(cols)) {
       if (fields[k] === undefined) continue;
       sets.push(`${col}=?`);
-      vals.push(k === 'digestCloseLinked' ? (fields[k] ? 1 : 0) : (fields[k] ?? null));
+      vals.push(bools.has(k) ? (fields[k] ? 1 : 0) : (fields[k] ?? null));
     }
     // editing the auto-trigger re-arms it
     if (fields.digestAutoAt !== undefined) sets.push('digest_auto_fired=0');

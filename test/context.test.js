@@ -393,3 +393,40 @@ test('buildInstructions can use a captured follow-up snapshot', () => {
   assert.doesNotMatch(snapped, /old decision/);
   s.close();
 });
+
+test('prior cycle summary injects for recurring tasks, honors the carry switch', () => {
+  const s = tmpStore();
+  const ctx = new AgentContext(s);
+  const member = s.getMemberById(Number(s.addMember('Nick', 'tok').lastInsertRowid));
+  const task = s.createTask({ type: 'recurring', title: '增长日报', cadenceType: 'daily' });
+  s.addTaskMember(task.id, member.id, 'gt');
+  s.submitCycleSummary(task.id, member.id, '2026-07-21', '## 进展\n- 完成灰度发布', '[]');
+
+  // recurring + cycleKey → previous summary carried verbatim
+  const out = ctx.buildInstructions(member, s.getTask(task.id), null, 'Asia/Shanghai', 'zh', null, '2026-07-22');
+  assert.match(out, /【上一轮小结（2026-07-21）】/);
+  assert.match(out, /完成灰度发布/);
+  assert.match(out, /【背景资料使用边界】/);
+  // en variant stays parallel
+  const en = ctx.buildInstructions(member, s.getTask(task.id), null, 'Asia/Shanghai', 'en', null, '2026-07-22');
+  assert.match(en, /Previous round's summary \(2026-07-21\)/);
+
+  // switch off → no injection
+  s.updateTask(task.id, { carryPriorSummary: false });
+  const off = ctx.buildInstructions(member, s.getTask(task.id), null, 'Asia/Shanghai', 'zh', null, '2026-07-22');
+  assert.doesNotMatch(off, /【上一轮小结/);
+  s.updateTask(task.id, { carryPriorSummary: true });
+
+  // no cycleKey (defensive) and first cycle → no injection
+  assert.doesNotMatch(ctx.buildInstructions(member, s.getTask(task.id)), /【上一轮小结/);
+  assert.doesNotMatch(
+    ctx.buildInstructions(member, s.getTask(task.id), null, 'Asia/Shanghai', 'zh', null, '2026-07-21'),
+    /【上一轮小结/
+  );
+
+  // oneshot tasks never carry
+  const one = s.createTask({ type: 'oneshot', title: '访谈' });
+  s.addTaskMember(one.id, member.id, 'ot');
+  assert.doesNotMatch(ctx.buildInstructions(member, s.getTask(one.id), null, 'Asia/Shanghai', 'zh', null, '-'), /【上一轮小结/);
+  s.close();
+});

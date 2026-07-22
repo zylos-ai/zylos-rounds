@@ -268,3 +268,109 @@ test('report and cycle records persist injected follow-up snapshot ids', () => {
   assert.deepEqual(JSON.parse(s.getCycleRecord(task.id, member, '-').injected_followup_ids), [later]);
   s.close();
 });
+
+test('recentFollowups since-anchor: strictly-after window replaces the rolling days window', () => {
+  const s = tmpStore();
+  const task = s.createTask({ type: 'recurring', title: '增长日报', cadenceType: 'daily' });
+  const oldId = Number(s.addFollowup({ taskId: task.id, content: 'settled last week', scope: 'private' }).lastInsertRowid);
+  s.addFollowup({ taskId: task.id, content: 'fresh since prior cycle', scope: 'private' });
+  s.db.prepare('UPDATE follow_up SET created_at=? WHERE id=?').run('2026-07-10 09:00:00', oldId);
+
+  // anchored: only strictly-after entries
+  const anchored = s.recentFollowups(task.id, 'internal', { since: '2026-07-15 00:00:00' }).map(f => f.content);
+  assert.deepEqual(anchored, ['fresh since prior cycle']);
+  // boundary is exclusive — a follow-up created exactly at the anchor moment
+  // was already visible to that conversation's snapshot
+  assert.equal(s.recentFollowups(task.id, 'internal', { since: '2026-07-10 09:00:00' })
+    .map(f => f.content).includes('settled last week'), false);
+  // no anchor: legacy rolling window keeps only recent entries
+  const legacy = s.recentFollowups(task.id, 'internal').map(f => f.content);
+  assert.deepEqual(legacy, ['fresh since prior cycle']);
+  const wide = s.recentFollowups(task.id, 'internal', { days: 30 }).map(f => f.content);
+  assert.ok(wide.includes('settled last week'));
+  s.close();
+});
+
+test('memberFollowupAnchor: member last-conversation moment, task fallback, null when no history', () => {
+  const s = tmpStore();
+  const daily = s.ensureDailyTask('每日日报');
+  const member = Number(s.addMember('Nick', 'tok').lastInsertRowid);
+  const other = Number(s.addMember('Wen', 'tok2').lastInsertRowid);
+
+  // builtin path: no history at all → null (legacy window applies)
+  assert.equal(s.memberFollowupAnchor(daily, member, '2026-07-22'), null);
+  // a prior report anchors that member to its updated_at moment
+  s.upsertSummary(member, '2026-07-21', { yesterday: [], today: [], blockers: [], topics_for_meeting: [] }, '{}', 'm');
+  const rep = s.getReport(member, '2026-07-21');
+  assert.equal(s.memberFollowupAnchor(daily, member, '2026-07-22'), rep.updated_at);
+  // member without own history falls back to the task-level anchor (cycle start)
+  assert.equal(s.memberFollowupAnchor(daily, other, '2026-07-22'), '2026-07-21 00:00:00');
+
+  // generic recurring path
+  const task = s.createTask({ type: 'recurring', title: '增长日报', cadenceType: 'daily' });
+  s.addTaskMember(task.id, member, 'gt');
+  assert.equal(s.memberFollowupAnchor(task, member, '2026-07-22'), null);
+  s.submitCycleSummary(task.id, member, '2026-07-21', '- did things', '[]');
+  const rec = s.getCycleRecord(task.id, member, '2026-07-21');
+  assert.equal(s.memberFollowupAnchor(task, member, '2026-07-22'), rec.updated_at);
+  s.close();
+});
+
+test('taskFollowupAnchor: previous ACTIVE cycle start (weekend gap), oneshot rows ignored', () => {
+  const s = tmpStore();
+  const task = s.createTask({ type: 'recurring', title: '增长日报', cadenceType: 'daily' });
+  const member = Number(s.addMember('Nick', 'tok').lastInsertRowid);
+  s.addTaskMember(task.id, member, 'gt');
+  assert.equal(s.taskFollowupAnchor(task, '2026-07-20'), null);
+  // Friday cycle happened; the Monday cycle anchors to Friday 00:00 — the
+  // weekend had no rounds so "previous cycle" follows activity, not calendar
+  s.submitCycleSummary(task.id, member, '2026-07-17', '- fri', '[]');
+  assert.equal(s.taskFollowupAnchor(task, '2026-07-20'), '2026-07-17 00:00:00');
+  // oneshot placeholder key never anchors anything
+  const one = s.createTask({ type: 'oneshot', title: '访谈' });
+  s.addTaskMember(one.id, member, 'ot');
+  s.submitCycleSummary(one.id, member, '-', '- x', '[]');
+  assert.equal(s.taskFollowupAnchor(one, '-'), null);
+  s.close();
+});
+
+test('priorCycleSummary: latest non-empty prior summary, blank ones skipped', () => {
+  const s = tmpStore();
+  const task = s.createTask({ type: 'recurring', title: '增长日报', cadenceType: 'daily' });
+  const member = Number(s.addMember('Nick', 'tok').lastInsertRowid);
+  s.addTaskMember(task.id, member, 'gt');
+  assert.equal(s.priorCycleSummary(task.id, member, '2026-07-22'), null);
+  s.submitCycleSummary(task.id, member, '2026-07-18', '## 进展\n- 完成 A', '[]');
+  // a later cycle with transcript but no summary must not shadow the real one
+  s.appendCycleTranscript(task.id, member, '2026-07-21', 'Nick: hi', 5);
+  const prev = s.priorCycleSummary(task.id, member, '2026-07-22');
+  assert.equal(prev.cycle_key, '2026-07-18');
+  assert.match(prev.summary, /完成 A/);
+  // only cycles strictly before the given key count
+  assert.equal(s.priorCycleSummary(task.id, member, '2026-07-18'), null);
+  s.close();
+});
+
+test('listFollowups window filter + countFollowups full-ledger count', () => {
+  const s = tmpStore();
+  const task = s.createTask({ type: 'recurring', title: '增长日报', cadenceType: 'daily' });
+  const a = Number(s.addFollowup({ taskId: task.id, content: 'day one', scope: 'private' }).lastInsertRowid);
+  s.addFollowup({ taskId: task.id, content: 'day two', scope: 'private' });
+  s.db.prepare('UPDATE follow_up SET created_at=? WHERE id=?').run('2026-07-21 10:00:00', a);
+  const win = s.listFollowups(task.id, { from: '2026-07-21 00:00:00', until: '2026-07-22 00:00:00' });
+  assert.deepEqual(win.map(f => f.content), ['day one']);
+  assert.equal(s.listFollowups(task.id).length, 2);
+  assert.equal(s.countFollowups(task.id), 2);
+  s.close();
+});
+
+test('carry_prior_summary: defaults on, updateTask can toggle it off and back', () => {
+  const s = tmpStore();
+  const task = s.createTask({ type: 'recurring', title: '增长日报', cadenceType: 'daily' });
+  assert.equal(s.getTask(task.id).carry_prior_summary, 1);
+  s.updateTask(task.id, { carryPriorSummary: false });
+  assert.equal(s.getTask(task.id).carry_prior_summary, 0);
+  s.updateTask(task.id, { carryPriorSummary: true });
+  assert.equal(s.getTask(task.id).carry_prior_summary, 1);
+  s.close();
+});

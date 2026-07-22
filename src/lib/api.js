@@ -11,7 +11,7 @@ import { sendJson, readJsonBody, browserOrigin, todayLocal } from './http-util.j
 import { MODEL_OPTIONS, VOICE_OPTIONS, SLOTS, LANGUAGES, providerProtocol, AUTH_CHATGPT_OAUTH, CHATGPT_MODEL_OPTIONS } from './settings.js';
 import * as chatgptOAuth from './chatgpt-oauth.js';
 import { GEMINI_VOICES } from './gemini-live.js';
-import { ONESHOT_CYCLE, currentCycleKey, cadenceLabel, parseDowSet } from './cycle.js';
+import { ONESHOT_CYCLE, currentCycleKey, nextCycleStart, cadenceLabel, parseDowSet } from './cycle.js';
 
 const SAMPLES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'assets', 'voice-samples');
 
@@ -803,9 +803,20 @@ export class Api {
 
   listFollowups(req, res, url) {
     const taskId = Number(url.searchParams.get('task_id'));
-    if (!taskId || !this.store.getTask(taskId)) return sendJson(res, 400, { error: 'invalid_task' });
+    const task = taskId ? this.store.getTask(taskId) : null;
+    if (!task) return sendJson(res, 400, { error: 'invalid_task' });
+    // Optional per-cycle window: ?cycle=YYYY-MM-DD limits to follow-ups
+    // appended during that cycle (display shows the period, data stays
+    // cross-cycle); `total` always carries the full-ledger count.
+    const cycle = String(url.searchParams.get('cycle') || '').trim();
+    let window = {};
+    if (cycle && task.type === 'recurring' && /^\d{4}-\d{2}-\d{2}$/.test(cycle)) {
+      const until = nextCycleStart(task, cycle);
+      window = { from: `${cycle} 00:00:00`, until: until ? `${until} 00:00:00` : null };
+    }
     sendJson(res, 200, {
-      followups: this.followupJson(this.store.listFollowups(taskId)),
+      followups: this.followupJson(this.store.listFollowups(taskId, window)),
+      total: this.store.countFollowups(taskId),
     });
   }
 
@@ -864,6 +875,7 @@ export class Api {
       deadline: task.deadline || null,
       digest_auto_at: task.digest_auto_at || null,
       digest_close_linked: Boolean(task.digest_close_linked),
+      carry_prior_summary: task.carry_prior_summary !== 0,
       digest_instruction: task.digest_instruction || '',
       probe_instruction: task.probe_instruction || '',
       cadence_type: task.cadence_type || null,
@@ -995,6 +1007,7 @@ export class Api {
       out.digestAutoAt = v || null;
     }
     if (body.digest_close_linked !== undefined) out.digestCloseLinked = Boolean(body.digest_close_linked);
+    if (body.carry_prior_summary !== undefined) out.carryPriorSummary = Boolean(body.carry_prior_summary);
     return { fields: out };
   }
 
