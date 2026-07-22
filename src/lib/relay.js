@@ -192,7 +192,7 @@ export class Relay {
     });
   }
 
-  sessionUpdate(member, task, prior = null, mode = 'voice') {
+  sessionUpdate(member, task, prior = null, mode = 'voice', followupSnapshot = null) {
     const cfg = this.getConfig();
     const generic = task && !task.is_builtin;
     // The member's language drives instructions, tool descriptions and the
@@ -205,7 +205,7 @@ export class Relay {
       session: {
         type: 'realtime',
         output_modalities: mode === 'text' ? ['text'] : ['audio'],
-        instructions: this.context.buildInstructions(member, task, prior, this.settings.resolveTimeZone(), lang),
+        instructions: this.context.buildInstructions(member, task, prior, this.settings.resolveTimeZone(), lang, followupSnapshot),
         tools: generic ? tools.generic : tools.daily,
         tool_choice: 'auto',
         audio: {
@@ -224,7 +224,7 @@ export class Relay {
    * Dispatch a realtime function_call. submit_standup_summary ends the flow;
    * the retrieval tools return data and prompt the model to continue speaking.
    */
-  handleToolCall(fc, { client, upstream, member, task, cycleKey, reportDate, model, markSaved, S }) {
+  handleToolCall(fc, { client, upstream, member, task, cycleKey, reportDate, model, markSaved, S = { saved: 'Saved' }, followupSnapshotIds }) {
     const respond = output => {
       safeSend(upstream, {
         type: 'conversation.item.create',
@@ -238,7 +238,7 @@ export class Relay {
     switch (fc.name) {
       case 'submit_standup_summary':
         try {
-          this.store.upsertSummary(member.id, reportDate, args, fc.arguments, model);
+          this.store.upsertSummary(member.id, reportDate, args, fc.arguments, model, followupSnapshotIds);
           markSaved();
           safeSend(client, { type: 'app.saved', summary: args });
           respond({ ok: true, message: S.saved });
@@ -250,7 +250,7 @@ export class Relay {
         try {
           const summary = JSON.stringify(Array.isArray(args.summary) ? args.summary : []);
           const highlights = JSON.stringify(Array.isArray(args.highlights) ? args.highlights : []);
-          this.store.submitCycleSummary(task.id, member.id, cycleKey, summary, highlights);
+          this.store.submitCycleSummary(task.id, member.id, cycleKey, summary, highlights, followupSnapshotIds);
           markSaved();
           safeSend(client, { type: 'app.saved', summary: args });
           respond({ ok: true, message: S.saved });
@@ -319,6 +319,8 @@ export class Relay {
     const prior = priorRec?.transcript
       ? { transcript: priorRec.transcript, submitted: priorRec.status === 'submitted' }
       : null;
+    const followupSnapshot = this.context.followupsForTask(task);
+    const followupSnapshotIds = followupSnapshot.map(f => f.id);
     console.log(`[rounds] session start ${member.name}${generic ? ` (task #${task.id} ${task.title}, cycle ${cycleKey})` : ''}`);
 
     // Gemini providers speak a different wire protocol — the adapter emulates
@@ -354,8 +356,8 @@ export class Relay {
       // conversation order. Unfilled slots (failed/empty ASR) drop out here.
       const lines = transcript.map(e => e.text).filter(Boolean);
       if (lines.length) {
-        if (generic) store.appendCycleTranscript(task.id, member.id, cycleKey, lines.join('\n'), dur);
-        else store.appendTranscript(member.id, reportDate, lines.join('\n'), dur, model, saved);
+        if (generic) store.appendCycleTranscript(task.id, member.id, cycleKey, lines.join('\n'), dur, followupSnapshotIds);
+        else store.appendTranscript(member.id, reportDate, lines.join('\n'), dur, model, saved, followupSnapshotIds);
       }
       console.log(`[rounds] session end ${member.name} (${reason}, ${dur}s, saved=${saved})`);
       // usage/cost row — best-effort, never let accounting break session close
@@ -388,7 +390,7 @@ export class Relay {
       }
     }
 
-    upstream.on('open', () => upstream.send(JSON.stringify(this.sessionUpdate(member, task, prior, mode))));
+    upstream.on('open', () => upstream.send(JSON.stringify(this.sessionUpdate(member, task, prior, mode, followupSnapshot))));
     upstream.on('error', e => {
       console.error('[rounds] upstream error', e.message);
       safeSend(client, { type: 'app.error', message: S.errUpstream });
@@ -490,7 +492,7 @@ export class Relay {
             usage.output_audio += ot.audio_tokens || 0;
           }
           const calls = (ev.response?.output || []).filter(i => i.type === 'function_call');
-          for (const fc of calls) this.handleToolCall(fc, { client, upstream, member, task, cycleKey, reportDate, model, markSaved: () => { saved = true; }, S });
+          for (const fc of calls) this.handleToolCall(fc, { client, upstream, member, task, cycleKey, reportDate, model, markSaved: () => { saved = true; }, S, followupSnapshotIds });
           break;
         }
         case 'conversation.item.input_audio_transcription.failed':

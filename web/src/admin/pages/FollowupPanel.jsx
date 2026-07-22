@@ -25,6 +25,9 @@ const DICT = {
     confirm: '确认删除？',
     cancel: '取消',
     error: '提交失败，请重试',
+    snapshotTitle: '本期已带入的补充',
+    snapshotSub: '这些是这一天 / 这一期对话开始时实际注入给 AI 的补充信息。',
+    snapshotEmpty: '这一期没有记录到已带入的补充信息。',
   },
   en: {
     title: 'Follow-ups',
@@ -41,6 +44,9 @@ const DICT = {
     confirm: 'Delete this?',
     cancel: 'Cancel',
     error: 'Submit failed, please retry',
+    snapshotTitle: 'Follow-ups Used This Cycle',
+    snapshotSub: 'These are the follow-ups actually injected into the AI when this day / cycle started.',
+    snapshotEmpty: 'No injected follow-up snapshot was recorded for this cycle.',
   },
 };
 
@@ -181,6 +187,52 @@ export default function FollowupPanel({ taskId }) {
             </div>
           </div>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function FollowupSnapshotPanel({ items = [] }) {
+  const T = useLangDict(DICT);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg">
+          <NotebookPen className="h-5 w-5 text-primary" strokeWidth={1.75} />
+          {T.snapshotTitle}
+          <span className="rounded-full border border-primary-line bg-primary-soft px-2.5 py-0.5 text-sm font-semibold text-primary">
+            {items.length}
+          </span>
+        </CardTitle>
+        <p className="mt-1 text-sm text-muted-foreground">{T.snapshotSub}</p>
+      </CardHeader>
+      <CardContent className="space-y-4 pt-1">
+        {items.length ? (
+          <ul className="space-y-2.5">
+            {items.map((f) => (
+              <li key={f.id} className="rounded-md border border-border bg-accent/40 px-3.5 py-2.5">
+                <div className="flex items-start gap-2">
+                  <span
+                    className={
+                      f.scope === 'team'
+                        ? 'inline-flex shrink-0 items-center gap-1 rounded-full border border-primary-line bg-primary-soft px-2 py-0.5 text-xs font-semibold text-primary'
+                        : 'inline-flex shrink-0 items-center gap-1 rounded-full border border-border-strong px-2 py-0.5 text-xs font-medium text-muted-foreground'
+                    }
+                  >
+                    {f.scope === 'team' ? <Users2 className="h-3 w-3" strokeWidth={2} /> : <Lock className="h-3 w-3" strokeWidth={2} />}
+                    {f.scope === 'team' ? T.team : T.priv}
+                  </span>
+                  <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-[0.95rem] leading-relaxed">{f.content}</p>
+                </div>
+                {f.created_at ? (
+                  <div className="mt-1 pl-1 text-xs text-faint">{String(f.created_at).slice(0, 16)}</div>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="rounded-md border border-dashed border-border px-3.5 py-4 text-center text-sm text-muted-foreground">{T.snapshotEmpty}</p>
+        )}
       </CardContent>
     </Card>
   );

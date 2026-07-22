@@ -24,6 +24,8 @@ const parseList = v => {
   }
 };
 
+const parseIdList = v => parseList(v).map(Number).filter(Number.isInteger);
+
 function newToken() {
   return crypto.randomBytes(8).toString('base64url');
 }
@@ -793,13 +795,17 @@ export class Api {
   }
 
   // ---- follow-ups (补充/跟进) — the generalized carry-forward container ----
+  followupJson(rows = []) {
+    return rows.map(f => ({
+      id: f.id, content: f.content, scope: f.scope, author: f.author, created_at: f.created_at,
+    }));
+  }
+
   listFollowups(req, res, url) {
     const taskId = Number(url.searchParams.get('task_id'));
     if (!taskId || !this.store.getTask(taskId)) return sendJson(res, 400, { error: 'invalid_task' });
     sendJson(res, 200, {
-      followups: this.store.listFollowups(taskId).map(f => ({
-        id: f.id, content: f.content, scope: f.scope, author: f.author, created_at: f.created_at,
-      })),
+      followups: this.followupJson(this.store.listFollowups(taskId)),
     });
   }
 
@@ -935,6 +941,7 @@ export class Api {
     if (current && !cycles.includes(current)) cycles.unshift(current);
     cycles.sort().reverse();
     const rows = key ? this.store.cycleRecords(id, key).filter(r => !r.is_test) : [];
+    const contextFollowupIds = [...new Set(rows.flatMap(r => parseIdList(r.injected_followup_ids)))];
     const digestRow = task.type === 'oneshot'
       ? { content: task.digest, updated_at: task.digest_updated_at }
       : (key ? this.store.getCycleDigest(id, key) : null);
@@ -956,6 +963,7 @@ export class Api {
         duration_s: r.duration_s || 0,
         updated_at: r.updated_at || null,
       })),
+      context_followups: this.followupJson(this.store.followupsByIds(contextFollowupIds)),
       digest: digestRow?.content || '',
       digest_updated_at: digestRow?.updated_at || null,
     });
@@ -1205,6 +1213,7 @@ export class Api {
     const rows = this.store.dayReports(date);
     const members = this.store.listActiveMembers();
     const doneIds = new Set(rows.map(r => r.member_id));
+    const contextFollowupIds = [...new Set(rows.flatMap(r => parseIdList(r.injected_followup_ids)))];
     return {
       date,
       member_count: members.length,
@@ -1220,6 +1229,7 @@ export class Api {
       })),
       missing: members.filter(mb => !doneIds.has(mb.id)).map(mb => mb.name),
       topics: rows.flatMap(r => parseList(r.topics).map(t => ({ name: r.name, topic: t }))),
+      context_followups: this.followupJson(this.store.followupsByIds(contextFollowupIds)),
     };
   }
 

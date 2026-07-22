@@ -208,3 +208,23 @@ test('follow-up scope: private stays in-task, team crosses, external is walled o
   assert.equal(s.recall(ext.id, 'external', 'ext').length, 1);
   s.close();
 });
+
+test('report and cycle records persist injected follow-up snapshot ids', () => {
+  const s = tmpStore();
+  const daily = s.ensureDailyTask('每日日报');
+  const member = Number(s.addMember('Nick', 'tok').lastInsertRowid);
+  const keep = Number(s.addFollowup({ taskId: daily.id, content: 'today context', scope: 'team' }).lastInsertRowid);
+  const later = Number(s.addFollowup({ taskId: daily.id, content: 'later context', scope: 'team' }).lastInsertRowid);
+
+  s.upsertSummary(member, '2026-07-22', { yesterday: [], today: [], blockers: [], topics_for_meeting: [] }, '{}', 'm', [keep]);
+  s.appendTranscript(member, '2026-07-22', 'Nick: hi', 10, 'm', true, [later]);
+  assert.deepEqual(JSON.parse(s.getReport(member, '2026-07-22').injected_followup_ids), [keep]);
+  assert.deepEqual(s.followupsByIds([later, keep]).map(f => f.id), [later, keep]);
+
+  const task = s.createTask({ type: 'oneshot', title: 'Q2' });
+  s.addTaskMember(task.id, member, 'tt');
+  s.submitCycleSummary(task.id, member, '-', JSON.stringify(['x']), JSON.stringify([]), [later]);
+  s.appendCycleTranscript(task.id, member, '-', 'Nick: q2', 12, [keep]);
+  assert.deepEqual(JSON.parse(s.getCycleRecord(task.id, member, '-').injected_followup_ids), [later]);
+  s.close();
+});

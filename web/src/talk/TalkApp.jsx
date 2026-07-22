@@ -256,6 +256,25 @@ export default function TalkApp() {
     }
   }, [appendAiDelta, say, startWaitTimer, clearWaitTimer]);
 
+  const continueSubmitted = useCallback(async () => {
+    try {
+      engineRef.current?.destroy();
+    } catch {
+      /* already closed */
+    }
+    engineRef.current = null;
+    doneRef.current = false;
+    reconnectRef.current.attempts = 0;
+    setSubmitting(false);
+    setSummary(null);
+    setMessages([]);
+    setMuted(false);
+    setTextMode(false);
+    setDraft('');
+    say(tRef.current.tapToAdd);
+    await startCall();
+  }, [say, startCall]);
+
   const toggleMute = useCallback(() => {
     const engine = engineRef.current;
     if (!engine || doneRef.current) return;
@@ -450,6 +469,10 @@ export default function TalkApp() {
                     <SummarySection icon={MessageCircle} title={T.secTopics} none={T.none} items={prior.summary.topics_for_meeting} />
                   </>
                 )}
+                <Button className="mt-5 w-full" onClick={continueSubmitted}>
+                  <MessageCircle strokeWidth={1.75} />
+                  {T.btnContinueSubmitted}
+                </Button>
               </CardContent>
             </Card>
           ) : null}
@@ -600,6 +623,12 @@ export default function TalkApp() {
                   <SummarySection icon={MessageCircle} title={T.secTopics} none={T.none} items={summary.topics_for_meeting} />
                 </>
               )}
+              {phase === 'done' ? (
+                <Button className="mt-5 w-full" onClick={continueSubmitted}>
+                  <MessageCircle strokeWidth={1.75} />
+                  {T.btnContinueSubmitted}
+                </Button>
+              ) : null}
             </CardContent>
           </Card>
         </div>

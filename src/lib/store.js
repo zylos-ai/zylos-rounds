@@ -306,6 +306,17 @@ export const MIGRATIONS = [
       ALTER TABLE providers ADD COLUMN oauth_json TEXT;
     `,
   },
+  {
+    // v0.25 per-cycle context snapshot: reports and generic cycle records keep
+    // the follow-up IDs actually injected when the member session started.
+    // Historical admin views can then show the context that specific run saw
+    // instead of recomputing from today's task-wide follow-up list.
+    version: 14,
+    sql: `
+      ALTER TABLE reports ADD COLUMN injected_followup_ids TEXT;
+      ALTER TABLE cycle_records ADD COLUMN injected_followup_ids TEXT;
+    `,
+  },
 ];
 
 export class Store {
@@ -507,6 +518,15 @@ export class Store {
 
   listFollowups(taskId) {
     return this.db.prepare('SELECT * FROM follow_up WHERE task_id=? ORDER BY created_at DESC, id DESC').all(taskId);
+  }
+
+  followupsByIds(ids = []) {
+    const nums = [...new Set(ids.map(Number).filter(Number.isInteger))];
+    if (!nums.length) return [];
+    const placeholders = nums.map(() => '?').join(',');
+    const rows = this.db.prepare(`SELECT * FROM follow_up WHERE id IN (${placeholders})`).all(...nums);
+    const order = new Map(nums.map((id, i) => [id, i]));
+    return rows.sort((a, b) => order.get(a.id) - order.get(b.id));
   }
 
   getFollowup(id) {
@@ -712,26 +732,30 @@ export class Store {
     `).all(limit);
   }
 
-  upsertSummary(memberId, date, args, rawJson, model) {
+  upsertSummary(memberId, date, args, rawJson, model, injectedFollowupIds = null) {
     const j = v => JSON.stringify(Array.isArray(v) ? v : []);
+    const snapshot = injectedFollowupIds ? JSON.stringify(injectedFollowupIds) : null;
     this.db.prepare(`
-      INSERT INTO reports(member_id,report_date,status,yesterday,today,blockers,topics,raw_json,model)
-      VALUES(?,?,'submitted',?,?,?,?,?,?)
+      INSERT INTO reports(member_id,report_date,status,yesterday,today,blockers,topics,raw_json,model,injected_followup_ids)
+      VALUES(?,?,'submitted',?,?,?,?,?,?,?)
       ON CONFLICT(member_id,report_date) DO UPDATE SET status='submitted',
         yesterday=excluded.yesterday,today=excluded.today,blockers=excluded.blockers,
         topics=excluded.topics,raw_json=excluded.raw_json,updated_at=datetime('now','localtime')
-    `).run(memberId, date, j(args.yesterday), j(args.today), j(args.blockers), j(args.topics_for_meeting), rawJson, model);
+        ,injected_followup_ids=COALESCE(reports.injected_followup_ids, excluded.injected_followup_ids)
+    `).run(memberId, date, j(args.yesterday), j(args.today), j(args.blockers), j(args.topics_for_meeting), rawJson, model, snapshot);
   }
 
-  appendTranscript(memberId, date, transcript, durationS, model, submitted) {
+  appendTranscript(memberId, date, transcript, durationS, model, submitted, injectedFollowupIds = null) {
+    const snapshot = injectedFollowupIds ? JSON.stringify(injectedFollowupIds) : null;
     this.db.prepare(`
-      INSERT INTO reports(member_id,report_date,status,transcript,duration_s,model) VALUES(?,?,?,?,?,?)
+      INSERT INTO reports(member_id,report_date,status,transcript,duration_s,model,injected_followup_ids) VALUES(?,?,?,?,?,?,?)
       ON CONFLICT(member_id,report_date) DO UPDATE SET
         transcript=COALESCE(reports.transcript,'')||char(10)||excluded.transcript,
         duration_s=COALESCE(reports.duration_s,0)+excluded.duration_s,
         status=CASE WHEN reports.status='submitted' THEN 'submitted' ELSE excluded.status END,
+        injected_followup_ids=COALESCE(reports.injected_followup_ids, excluded.injected_followup_ids),
         updated_at=datetime('now','localtime')
-    `).run(memberId, date, submitted ? 'submitted' : 'draft', transcript, durationS, model);
+    `).run(memberId, date, submitted ? 'submitted' : 'draft', transcript, durationS, model, snapshot);
   }
 
   // ---- communication tasks (沟通任务) ----
@@ -880,7 +904,8 @@ export class Store {
   cycleRecords(taskId, cycleKey) {
     return this.db.prepare(`
       SELECT tm.member_id, tm.token, m.name, m.active, m.is_test,
-        cr.status, cr.summary, cr.highlights, cr.transcript, cr.duration_s, cr.updated_at
+        cr.status, cr.summary, cr.highlights, cr.transcript, cr.duration_s,
+        cr.injected_followup_ids, cr.updated_at
       FROM task_members tm
       JOIN members m ON m.id=tm.member_id
       LEFT JOIN cycle_records cr ON cr.task_id=tm.task_id AND cr.member_id=tm.member_id AND cr.cycle_key=?
@@ -904,25 +929,29 @@ export class Store {
     `).all(taskId, taskId).map(r => r.cycle_key);
   }
 
-  submitCycleSummary(taskId, memberId, cycleKey, summary, highlights) {
+  submitCycleSummary(taskId, memberId, cycleKey, summary, highlights, injectedFollowupIds = null) {
+    const snapshot = injectedFollowupIds ? JSON.stringify(injectedFollowupIds) : null;
     this.db.prepare(`
-      INSERT INTO cycle_records(task_id,member_id,cycle_key,status,summary,highlights)
-      VALUES(?,?,?,'submitted',?,?)
+      INSERT INTO cycle_records(task_id,member_id,cycle_key,status,summary,highlights,injected_followup_ids)
+      VALUES(?,?,?,'submitted',?,?,?)
       ON CONFLICT(task_id,member_id,cycle_key) DO UPDATE SET status='submitted',
         summary=excluded.summary, highlights=excluded.highlights,
+        injected_followup_ids=COALESCE(cycle_records.injected_followup_ids, excluded.injected_followup_ids),
         updated_at=datetime('now','localtime')
-    `).run(taskId, memberId, cycleKey, summary ?? null, highlights ?? null);
+    `).run(taskId, memberId, cycleKey, summary ?? null, highlights ?? null, snapshot);
   }
 
-  appendCycleTranscript(taskId, memberId, cycleKey, transcript, durationS) {
+  appendCycleTranscript(taskId, memberId, cycleKey, transcript, durationS, injectedFollowupIds = null) {
+    const snapshot = injectedFollowupIds ? JSON.stringify(injectedFollowupIds) : null;
     this.db.prepare(`
-      INSERT INTO cycle_records(task_id,member_id,cycle_key,status,transcript,duration_s)
-      VALUES(?,?,?,'draft',?,?)
+      INSERT INTO cycle_records(task_id,member_id,cycle_key,status,transcript,duration_s,injected_followup_ids)
+      VALUES(?,?,?,'draft',?,?,?)
       ON CONFLICT(task_id,member_id,cycle_key) DO UPDATE SET
         transcript=COALESCE(cycle_records.transcript,'')||CASE WHEN cycle_records.transcript IS NULL THEN '' ELSE char(10) END||excluded.transcript,
         duration_s=COALESCE(cycle_records.duration_s,0)+excluded.duration_s,
+        injected_followup_ids=COALESCE(cycle_records.injected_followup_ids, excluded.injected_followup_ids),
         updated_at=datetime('now','localtime')
-    `).run(taskId, memberId, cycleKey, transcript, durationS);
+    `).run(taskId, memberId, cycleKey, transcript, durationS, snapshot);
   }
 
   // ---- per-cycle digests (recurring tasks; oneshot keeps tasks.digest) ----

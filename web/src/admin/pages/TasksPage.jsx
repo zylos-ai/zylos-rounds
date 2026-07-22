@@ -25,7 +25,7 @@ import { api } from '../api';
 import { navigate } from '../router';
 import { useLangDict } from '../i18n';
 import DayReportView from './DayReportView';
-import FollowupPanel from './FollowupPanel';
+import FollowupPanel, { FollowupSnapshotPanel } from './FollowupPanel';
 
 const DICT = {
   zh: {
@@ -822,13 +822,15 @@ export function TaskDetailPage({ id, cycle }) {
               digestSlot={<DigestCard task={task} digesting={digesting} digestError={digestError} onTrigger={triggerDigest} onSaved={load} />}
             />
           )}
-          <FollowupPanel taskId={task.id} />
+          <FollowupSnapshotPanel items={task.report?.context_followups || []} />
+          {isCurrentCycle && <FollowupPanel taskId={task.id} />}
           <MemberLinksCard task={task} copied={copied} copy={copy} resetLink={resetLink} />
         </>
       ) : (
         <>
           <DigestCard task={task} digesting={digesting} digestError={digestError} onTrigger={triggerDigest} onSaved={load} />
-          <FollowupPanel taskId={task.id} />
+          <FollowupSnapshotPanel items={task.context_followups || []} />
+          {isCurrentCycle && <FollowupPanel taskId={task.id} />}
 
           <Card>
             <CardContent className="py-5">

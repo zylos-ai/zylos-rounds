@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.25.0] - 2026-07-22
+
+### Added
+- **Per-cycle follow-up context snapshot** — reports and generic cycle records
+  now persist the follow-up IDs actually injected when a member's session
+  started (`injected_followup_ids`, migration v14). Admin history views show the
+  context that specific run saw (`context_followups` in the daily-report and
+  task-detail APIs; a read-only "本期已带入的补充" panel separate from the
+  editable current follow-ups) instead of recomputing from today's task-wide
+  follow-up list.
+- **Continue / revise after submit** — a member who reopens an already-submitted
+  task link now sees a "继续补充/修改" CTA; clicking it tears down the finished
+  session and starts a fresh continuation conversation that merges into the
+  existing summary/transcript, so no hidden page refresh is required.
+
+### Changed
+- **One-question-at-a-time hardening** — flowGeneric/flowDaily now cap each
+  message at one question / one question mark / one intent, plus a new
+  【复杂补充规则】/[Complex follow-up rule]: when a member dumps a lot, adds
+  items, corrects, or jumps topic, acknowledge first and then ask only the
+  single most important gap (zh+en).
+- **Bulk-text direct extraction** — new 【整段文字日报规则】/【整段文字输入规则】:
+  when a member types or pastes a complete standup/material, extract it straight
+  into the summary and restate for confirmation instead of restarting the oral
+  interview from question one (zh+en).
+- **Confirm-before-submit for custom interviews** — the generic ending now
+  restates the key points and gets the member's confirmation *before* calling
+  `submit_conversation_summary`. The daily standup (`submit_standup_summary`)
+  flow is unchanged.
+
 ## [0.24.0] - 2026-07-21
 
 ### Added

@@ -202,7 +202,13 @@ test('submission-gate hard rule present in all instruction variants', () => {
   const member = { name: 'Nick', context: '' };
   assert.match(ctx.buildInstructions(member), /提交时机的硬规则/);
   const task = s.createTask({ type: 'oneshot', title: '复盘' });
-  assert.match(ctx.buildInstructions(member, task), /提交时机的硬规则/);
+  const generic = ctx.buildInstructions(member, task);
+  assert.match(generic, /提交时机的硬规则/);
+  assert.match(generic, /先用一两句话向对方复述关键点并请本人确认/);
+  assert.match(generic, /才调用 submit_conversation_summary/);
+  const enGeneric = ctx.buildInstructions(member, task, null, 'Asia/Shanghai', 'en');
+  assert.match(enGeneric, /first restate the key points/);
+  assert.match(enGeneric, /Only after they confirm it is accurate/);
   // continuation with prior submit must not encourage early wrap-up
   const cont = ctx.buildInstructions(member, null, { transcript: 'x', submitted: true });
   assert.match(cont, /已提交过不等于可以早点收尾/);
@@ -279,10 +285,54 @@ test('daily flow carries the one-question-at-a-time hard rule and garbled-input 
   const ctx = new AgentContext(s);
   const zh = ctx.buildInstructions({ name: 'Nick', context: '' });
   assert.match(zh, /每条消息里最多只包含一个问题/);
+  assert.match(zh, /一个问号、一个问题意图/);
   assert.match(zh, /卡点和待议题必须分开问/);
+  assert.match(zh, /【复杂补充规则】/);
+  assert.match(zh, /只能选择一个最关键的缺口问/);
   assert.match(zh, /乱码或明显不成话/);
   const en = ctx.buildInstructions({ name: 'Nick', context: '' }, null, null, 'Asia/Shanghai', 'en');
   assert.match(en, /each message contains at most one question/);
+  assert.match(en, /one question mark, and one question intent/);
+  assert.match(en, /\[Complex follow-up rule\]/);
   assert.match(en, /garbled or clearly not real speech/);
+  s.close();
+});
+
+test('bulk text input rules prefer extraction over restarting the voice flow', () => {
+  const s = tmpStore();
+  const ctx = new AgentContext(s);
+  const member = { name: 'Nick', context: '' };
+
+  const daily = ctx.buildInstructions(member);
+  assert.match(daily, /【整段文字日报规则】/);
+  assert.match(daily, /直接抽取为小结并用一两句话复述确认/);
+  assert.match(daily, /不要再倒回去按语音流程逐项问"昨天做了什么"/);
+
+  const task = s.createTask({ type: 'oneshot', title: 'Q2 复盘' });
+  const generic = ctx.buildInstructions(member, task);
+  assert.match(generic, /【整段文字输入规则】/);
+  assert.match(generic, /明确说"请整理并提交"/);
+  assert.match(generic, /不要再倒回去按口头访谈流程从第一个问题重问/);
+  assert.match(generic, /每条消息里最多只包含一个问题、一个问号、一个问题意图/);
+
+  const en = ctx.buildInstructions(member, task, null, 'Asia/Shanghai', 'en');
+  assert.match(en, /\[Bulk text input rule\]/);
+  assert.match(en, /prefer extracting it directly into this conversation's summary/);
+  assert.match(en, /Do not restart the oral interview from the first question/);
+  s.close();
+});
+
+test('buildInstructions can use a captured follow-up snapshot', () => {
+  const s = tmpStore();
+  const ctx = new AgentContext(s);
+  const daily = s.ensureDailyTask('每日日报');
+  s.addFollowup({ taskId: daily.id, content: 'old decision', scope: 'team' });
+  const fresh = { id: 999, content: 'captured context', scope: 'team' };
+
+  const live = ctx.buildInstructions({ name: 'Nick', context: '' }, daily);
+  assert.match(live, /old decision/);
+  const snapped = ctx.buildInstructions({ name: 'Nick', context: '' }, daily, null, 'Asia/Shanghai', 'zh', [fresh]);
+  assert.match(snapped, /captured context/);
+  assert.doesNotMatch(snapped, /old decision/);
   s.close();
 });
