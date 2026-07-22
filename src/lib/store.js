@@ -758,6 +758,21 @@ export class Store {
     `).run(memberId, date, submitted ? 'submitted' : 'draft', transcript, durationS, model, snapshot);
   }
 
+  /** Record only the session's duration/final status when the transcript was
+   *  already persisted incrementally during the call (chunk appends carry
+   *  duration 0, so the total is added exactly once here). Updates an existing
+   *  row only — a session with no persisted transcript creates nothing. */
+  finalizeReport(memberId, date, durationS, model, submitted) {
+    this.db.prepare(`
+      UPDATE reports SET
+        duration_s=COALESCE(duration_s,0)+?,
+        model=COALESCE(model,?),
+        status=CASE WHEN status='submitted' OR ? THEN 'submitted' ELSE status END,
+        updated_at=datetime('now','localtime')
+      WHERE member_id=? AND report_date=?
+    `).run(durationS || 0, model, submitted ? 1 : 0, memberId, date);
+  }
+
   // ---- communication tasks (沟通任务) ----
 
   /** Seed the built-in daily-standup task (is_builtin=1, cadence daily). Idempotent. */
@@ -952,6 +967,19 @@ export class Store {
         injected_followup_ids=COALESCE(cycle_records.injected_followup_ids, excluded.injected_followup_ids),
         updated_at=datetime('now','localtime')
     `).run(taskId, memberId, cycleKey, transcript, durationS, snapshot);
+  }
+
+  /** Cycle-record counterpart of finalizeReport — records only duration at
+   *  session end when the transcript was already persisted incrementally.
+   *  Status is left untouched (a cycle record flips to submitted only via
+   *  submitCycleSummary). Updates an existing row only. */
+  finalizeCycleRecord(taskId, memberId, cycleKey, durationS) {
+    this.db.prepare(`
+      UPDATE cycle_records SET
+        duration_s=COALESCE(duration_s,0)+?,
+        updated_at=datetime('now','localtime')
+      WHERE task_id=? AND member_id=? AND cycle_key=?
+    `).run(durationS || 0, taskId, memberId, cycleKey);
   }
 
   // ---- per-cycle digests (recurring tasks; oneshot keeps tasks.digest) ----

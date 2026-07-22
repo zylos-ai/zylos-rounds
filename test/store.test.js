@@ -73,6 +73,46 @@ test('transcript append accumulates and never downgrades submitted status', () =
   s.close();
 });
 
+test('incremental flush: cycle chunks persist with dur 0, finalize records duration once (crash-safe)', () => {
+  const s = tmpStore();
+  const member = Number(s.addMember('Nick', 'tokN').lastInsertRowid);
+  const task = s.createTask({ type: 'oneshot', title: 'Q2' });
+  s.addTaskMember(task.id, member, 'tokQ');
+  const CK = '-';
+  // live session flushing turn-by-turn — chunks carry duration 0
+  s.appendCycleTranscript(task.id, member, CK, 'Nick: 昨天做了发布', 0, [7]);
+  s.appendCycleTranscript(task.id, member, CK, 'Luna: 好的，今天呢', 0, [7]);
+  // ---- a crash here already leaves both turns on disk ----
+  let rec = s.getCycleRecord(task.id, member, CK);
+  assert.match(rec.transcript, /昨天做了发布[\s\S]*今天呢/); // order preserved
+  assert.equal(rec.duration_s, 0); // not double-counted mid-session
+  assert.equal(rec.status, 'draft');
+  // clean end records the total duration once, transcript untouched
+  s.finalizeCycleRecord(task.id, member, CK, 137);
+  rec = s.getCycleRecord(task.id, member, CK);
+  assert.equal(rec.duration_s, 137);
+  assert.match(rec.transcript, /昨天做了发布[\s\S]*今天呢/);
+  s.close();
+});
+
+test('incremental flush: daily finalizeReport records duration/status without touching the saved transcript', () => {
+  const s = tmpStore();
+  const id = Number(s.addMember('Owen', 'tokO').lastInsertRowid);
+  s.appendTranscript(id, '2026-07-22', 'Owen: 昨天', 0, 'm1', false);
+  s.appendTranscript(id, '2026-07-22', 'Luna: 今天?', 0, 'm1', false);
+  let rep = s.getReport(id, '2026-07-22');
+  assert.equal(rep.duration_s, 0);
+  assert.equal(rep.status, 'draft');
+  s.finalizeReport(id, '2026-07-22', 200, 'm1', false); // clean end, still draft
+  rep = s.getReport(id, '2026-07-22');
+  assert.equal(rep.duration_s, 200);
+  assert.equal(rep.status, 'draft');
+  assert.match(rep.transcript, /昨天[\s\S]*今天/);
+  s.finalizeReport(id, '2026-07-22', 0, 'm1', true); // a submitted finalize promotes status
+  assert.equal(s.getReport(id, '2026-07-22').status, 'submitted');
+  s.close();
+});
+
 test('deactivate then reactivate with same name preserves history', () => {
   const s = tmpStore();
   const info = s.addMember('孙七', 'tokS');
