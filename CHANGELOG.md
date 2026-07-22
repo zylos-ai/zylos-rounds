@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.28.0] - 2026-07-23
+
+Task roster management (backlog #4): membership on any task is now an
+explicit operation, and joining the built-in daily is opt-in.
+
+### Added
+- **Task member API** — `POST /api/tasks/:id/members` adds an active member
+  to an existing task and mints their link (idempotent: re-adding returns
+  the existing link); `DELETE /api/tasks/:id/members/:memberId` removes them
+  (their link dies immediately; cycle records are kept).
+- **CLI** — `task add-member <taskId> <memberId>`,
+  `task remove-member <taskId> <memberId>`, and `member add --join-daily`.
+- **Admin UI** — member-links card gains an add-member picker and per-member
+  remove; the members page add form gains a "join daily" checkbox.
+
+### Changed
+- **`POST /api/members` no longer auto-attaches the new member to the
+  built-in daily.** In the multi-task era "new member ⇒ daily standup"
+  stopped being a safe assumption; pass `join_daily: true` (UI checkbox /
+  CLI `--join-daily`) for the old behavior. Reactivating a former member
+  follows the same rule.
+
 ## [0.27.0] - 2026-07-23
 
 Generic-task cycle views: the task detail page for non-builtin tasks aligns

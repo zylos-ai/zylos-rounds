@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Plus, Loader2, Copy, Check, ExternalLink, Sparkles, RefreshCw,
   ChevronRight, ArrowLeft, Trash2, CircleCheck, RotateCcw,
-  Repeat, FlaskConical, NotebookPen,
+  Repeat, FlaskConical, NotebookPen, UserPlus, UserMinus,
 } from 'lucide-react';
 import { cn, copyText } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -129,6 +129,15 @@ const DICT = {
     // member links card (built-in daily)
     memberLinks: '成员链接',
     memberLinksDesc: '每位成员用自己的任务专属链接进入语音对话；任务关闭后链接即失效',
+    addTaskMember: '添加成员',
+    addTaskMemberPh: '选择成员…',
+    addTaskMemberConfirm: '添加',
+    addTaskMemberNone: '没有可添加的成员了',
+    addTaskMemberFailed: '添加失败，请重试',
+    removeTaskMember: (name) => `把 ${name} 移出本任务`,
+    removeTaskMemberConfirm: (name) => `把 ${name} 移出本任务？`,
+    removeTaskMemberDesc: '该成员的任务链接立即失效；已收集的对话记录保留在数据库，但不再显示在本任务页面。',
+    removeTaskMemberAction: '移出',
     reported: '已汇报',
     notReported: '待汇报',
     copyLink: (name) => `复制 ${name} 的链接`,
@@ -247,6 +256,15 @@ const DICT = {
     // member links card (built-in daily)
     memberLinks: 'Member links',
     memberLinksDesc: 'Each member joins the voice conversation via their own task-specific link; links stop working once the task is closed',
+    addTaskMember: 'Add member',
+    addTaskMemberPh: 'Pick a member…',
+    addTaskMemberConfirm: 'Add',
+    addTaskMemberNone: 'No members left to add',
+    addTaskMemberFailed: 'Failed to add. Please retry.',
+    removeTaskMember: (name) => `Remove ${name} from this task`,
+    removeTaskMemberConfirm: (name) => `Remove ${name} from this task?`,
+    removeTaskMemberDesc: 'Their task link stops working immediately; collected conversation records stay in the database but no longer appear on this task\'s page.',
+    removeTaskMemberAction: 'Remove',
     reported: 'Reported',
     notReported: 'Pending',
     copyLink: (name) => `Copy ${name}'s link`,
@@ -801,7 +819,7 @@ export function TaskDetailPage({ id, cycle }) {
             />
           )}
           <FollowupPanel taskId={task.id} cycle={task.cycle_key} canMutate={isCurrentCycle} />
-          <MemberLinksCard task={task} copied={copied} copy={copy} resetLink={resetLink} />
+          <MemberLinksCard task={task} copied={copied} copy={copy} resetLink={resetLink} onChanged={load} />
         </>
       ) : (
         <>
@@ -812,7 +830,7 @@ export function TaskDetailPage({ id, cycle }) {
             cycle={task.type === 'recurring' ? task.cycle_key : null}
             canMutate={isCurrentCycle}
           />
-          <MemberLinksCard task={task} copied={copied} copy={copy} resetLink={resetLink} />
+          <MemberLinksCard task={task} copied={copied} copy={copy} resetLink={resetLink} onChanged={load} />
         </>
       )}
     </div>
@@ -870,13 +888,87 @@ function ResetLinkButton({ member, onReset }) {
 // Member links + per-member management actions (copy / open / reset). Shared
 // by the built-in daily and generic tasks — result content lives in
 // DayReportView / CycleResultsView, so management never shares a row with it.
-function MemberLinksCard({ task, copied, copy, resetLink }) {
+function MemberLinksCard({ task, copied, copy, resetLink, onChanged }) {
   const T = useLangDict(DICT);
+  // Roster add flow: candidates are fetched on demand (active members not
+  // already on this task) so the list is fresh at the moment of adding.
+  const [adding, setAdding] = useState(false);
+  const [candidates, setCandidates] = useState(null);
+  const [selId, setSelId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const openAdd = async () => {
+    setAdding(true);
+    setErr('');
+    setSelId('');
+    try {
+      const r = await api('api/members');
+      const inTask = new Set(task.members.map((m) => m.member_id));
+      setCandidates((r.members || []).filter((mb) => !inTask.has(mb.id)));
+    } catch {
+      setCandidates([]);
+    }
+  };
+
+  const addMember = async () => {
+    if (!selId || busy) return;
+    setBusy(true);
+    setErr('');
+    try {
+      await api(`api/tasks/${task.id}/members`, { method: 'POST', body: { member_id: Number(selId) } });
+      setAdding(false);
+      setCandidates(null);
+      onChanged();
+    } catch (e) {
+      if (e.status !== 401) setErr(T.addTaskMemberFailed);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeMember = async (m) => {
+    await api(`api/tasks/${task.id}/members/${m.member_id}`, { method: 'DELETE' });
+    onChanged();
+  };
+
   return (
     <Card>
       <CardContent className="py-5">
-        <h2 className="mb-1 text-lg font-semibold">{T.memberLinks}</h2>
+        <div className="mb-1 flex items-center gap-3">
+          <h2 className="text-lg font-semibold">{T.memberLinks}</h2>
+          {!adding && (
+            <Button variant="outline" size="sm" className="ml-auto" onClick={openAdd}>
+              <UserPlus className="h-4 w-4" strokeWidth={1.75} />{T.addTaskMember}
+            </Button>
+          )}
+        </div>
         <p className="mb-4 text-sm text-muted-foreground">{T.memberLinksDesc}</p>
+        {adding && (
+          <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border-strong px-4 py-3">
+            {candidates === null ? (
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            ) : candidates.length === 0 ? (
+              <span className="text-sm text-muted-foreground">{T.addTaskMemberNone}</span>
+            ) : (
+              <>
+                <select
+                  value={selId}
+                  onChange={(e) => setSelId(e.target.value)}
+                  className="h-9 rounded-md border border-input bg-transparent px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="">{T.addTaskMemberPh}</option>
+                  {candidates.map((mb) => <option key={mb.id} value={mb.id}>{mb.name}</option>)}
+                </select>
+                <Button size="sm" onClick={addMember} disabled={busy || !selId}>
+                  {busy && <Loader2 className="h-4 w-4 animate-spin" />}{T.addTaskMemberConfirm}
+                </Button>
+              </>
+            )}
+            <Button variant="ghost" size="sm" onClick={() => { setAdding(false); setCandidates(null); }}>{T.cancel}</Button>
+            {err && <span className="text-sm text-destructive">{err}</span>}
+          </div>
+        )}
         <div className="divide-y divide-border">
           {task.members.map((m) => (
             <div key={m.member_id} className="flex flex-wrap items-center gap-3 py-3">
@@ -885,17 +977,20 @@ function MemberLinksCard({ task, copied, copy, resetLink }) {
                 ? <Badge className="bg-primary-soft text-primary border-transparent">{task.is_builtin ? T.reported : T.memberDone}</Badge>
                 : <Badge variant="secondary">{task.is_builtin ? T.notReported : T.memberPending}</Badge>}
               <code className="min-w-0 flex-1 truncate text-[0.85rem] text-muted-foreground max-sm:hidden">{m.link || '—'}</code>
-              {m.link && (
-                <div className="ml-auto flex gap-1">
-                  <Button variant="ghost" size="icon" title={T.copyLink(m.name)} onClick={() => copy(m.member_id, m.link)}>
-                    {copied === m.member_id ? <Check className="h-4 w-4 text-primary" /> : <Copy className="h-4 w-4" />}
-                  </Button>
-                  <Button variant="ghost" size="icon" title={T.openLink(m.name)} asChild>
-                    <a href={m.link} target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" /></a>
-                  </Button>
-                  <ResetLinkButton member={m} onReset={resetLink} />
-                </div>
-              )}
+              <div className="ml-auto flex gap-1">
+                {m.link && (
+                  <>
+                    <Button variant="ghost" size="icon" title={T.copyLink(m.name)} onClick={() => copy(m.member_id, m.link)}>
+                      {copied === m.member_id ? <Check className="h-4 w-4 text-primary" /> : <Copy className="h-4 w-4" />}
+                    </Button>
+                    <Button variant="ghost" size="icon" title={T.openLink(m.name)} asChild>
+                      <a href={m.link} target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" /></a>
+                    </Button>
+                    <ResetLinkButton member={m} onReset={resetLink} />
+                  </>
+                )}
+                <RemoveTaskMemberButton member={m} onRemove={removeMember} />
+              </div>
             </div>
           ))}
         </div>
@@ -917,6 +1012,33 @@ function MemberLinksCard({ task, copied, copy, resetLink }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// Removing a member from a task kills their link immediately; their records
+// stay in the DB but leave the task's pages — hence the explicit confirm.
+function RemoveTaskMemberButton({ member, onRemove }) {
+  const T = useLangDict(DICT);
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button variant="ghost" size="icon" title={T.removeTaskMember(member.name)}>
+          <UserMinus className="h-4 w-4" />
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{T.removeTaskMemberConfirm(member.name)}</AlertDialogTitle>
+          <AlertDialogDescription>{T.removeTaskMemberDesc}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{T.cancel}</AlertDialogCancel>
+          <AlertDialogAction onClick={() => onRemove(member)} className="bg-destructive text-white hover:bg-destructive/90">
+            {T.removeTaskMemberAction}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

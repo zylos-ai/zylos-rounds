@@ -1,6 +1,6 @@
 ---
 name: rounds
-version: 0.27.0
+version: 0.28.0
 description: >-
   Rounds (formerly standup) — delegated 1:1 structured voice conversations for
   teams. An AI agent (realtime voice, Chinese or English per member — member
@@ -150,9 +150,12 @@ DB directly.
 CLI="node ~/zylos/.claude/skills/rounds/scripts/cli.js"
 
 $CLI member list                       # roster + links + today's status
-$CLI member add 小王
+$CLI member add 小王                    # joins NO tasks by default (v0.28)
+$CLI member add 小王 --join-daily       # ...unless opted into the built-in daily
 $CLI member add Alex --language en     # English member: talk page + voice + profile in English
 $CLI member remove 3                   # deactivate (history kept)
+$CLI task add-member 4 12              # add member 12 to task 4 (mints their link; idempotent)
+$CLI task remove-member 4 12           # remove from task roster (link dies; records kept)
 $CLI member rename 3 Linfan             # rename (display-only; links & history unaffected)
 $CLI member reset-link 3
 $CLI member set-language 3 en          # zh|en; empty arg = follow team default

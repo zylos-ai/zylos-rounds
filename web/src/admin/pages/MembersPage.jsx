@@ -39,6 +39,7 @@ const DICT = {
     searchPlaceholder: '搜索成员',
     namePlaceholder: '新成员姓名',
     addMember: '添加成员',
+    joinDaily: '同时加入内置日报',
     memberExists: (n) => `成员「${n}」已存在`,
     addFailed: '添加失败，请重试',
     emptyRoster: '暂无成员，先在右上方添加',
@@ -93,6 +94,7 @@ const DICT = {
     searchPlaceholder: 'Search members',
     namePlaceholder: 'New member name',
     addMember: 'Add member',
+    joinDaily: 'Also join the built-in daily',
     memberExists: (n) => `Member "${n}" already exists`,
     addFailed: 'Failed to add — please try again',
     emptyRoster: 'No members yet — add one at the top right',
@@ -145,6 +147,7 @@ export default function MembersPage() {
   const [testMember, setTestMember] = useState(null);
   const [loadError, setLoadError] = useState('');
   const [name, setName] = useState('');
+  const [joinDaily, setJoinDaily] = useState(false);
   const [addError, setAddError] = useState('');
   const [busy, setBusy] = useState(false);
   const [copiedKey, setCopiedKey] = useState(null);
@@ -184,8 +187,9 @@ export default function MembersPage() {
     setBusy(true);
     setAddError('');
     try {
-      await api('api/members', { method: 'POST', body: { name: trimmed } });
+      await api('api/members', { method: 'POST', body: { name: trimmed, join_daily: joinDaily } });
       setName('');
+      setJoinDaily(false);
       await load();
     } catch (err) {
       if (err.status === 409) setAddError(T.memberExists(trimmed));
@@ -248,6 +252,15 @@ export default function MembersPage() {
             autoComplete="off"
             className="h-9 w-[180px] max-sm:w-[150px]"
           />
+          <label className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={joinDaily}
+              onChange={(e) => setJoinDaily(e.target.checked)}
+              className="h-4 w-4 rounded border-input accent-primary"
+            />
+            {T.joinDaily}
+          </label>
           <Button type="submit" size="sm" className="h-9" disabled={busy || !name.trim()}>
             {busy ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : null}
             {T.addMember}
