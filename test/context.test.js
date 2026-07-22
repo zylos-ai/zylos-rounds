@@ -126,7 +126,7 @@ test('buildInstructions injects only non-empty containers', () => {
   assert.match(full, /【关于 Nick】[\s\S]*Nick 是 QA/);
   assert.match(full, /【追问指引】[\s\S]*PG/);
 
-  assert.doesNotMatch(full, /动态画像/); // absent until auto-maintained
+  assert.doesNotMatch(full, /【Nick 的动态画像】/); // absent until auto-maintained
   const withProfile = ctx.buildInstructions({ name: 'Nick', context: '', profile: '- [2026-07-17] 负责发布系统' });
   assert.match(withProfile, /【Nick 的动态画像】[\s\S]*负责发布系统/);
   s.close();
@@ -319,6 +319,63 @@ test('bulk text input rules prefer extraction over restarting the voice flow', (
   assert.match(en, /\[Bulk text input rule\]/);
   assert.match(en, /prefer extracting it directly into this conversation's summary/);
   assert.match(en, /Do not restart the oral interview from the first question/);
+  s.close();
+});
+
+test('continuation: covered = substantively answered only; bridge is conditional (v0.25.3)', () => {
+  const s = tmpStore();
+  const ctx = new AgentContext(s);
+  const member = { name: 'Nick', context: '' };
+
+  // interrupted continuation: unanswered questions are not covered; the
+  // "pick up where we left off" bridge is conditional on substantive answers
+  const draft = ctx.buildInstructions(member, null, { transcript: 'T', submitted: false });
+  assert.match(draft, /对方没有回答的问题不算聊过/);
+  assert.match(draft, /当作正常开场直接进入主题/);
+
+  // submitted continuation carries the coverage criterion too
+  const sub = ctx.buildInstructions(member, null, { transcript: 'T', submitted: true });
+  assert.match(sub, /不算聊过/);
+
+  // the injected prior-transcript block repeats the criterion + conditional bridge
+  assert.match(draft, /【已聊过的内容】[\s\S]*基本没有实质回答/);
+
+  // en parity
+  const en = ctx.buildInstructions(member, null, { transcript: 'T', submitted: false }, 'Asia/Shanghai', 'en');
+  assert.match(en, /never answered is not covered/);
+  assert.match(en, /just open normally/);
+  s.close();
+});
+
+test('background boundary injected only alongside background material (v0.25.3)', () => {
+  const s = tmpStore();
+  const ctx = new AgentContext(s);
+
+  // bare install — no background blocks, no boundary
+  assert.doesNotMatch(ctx.buildInstructions({ name: 'Nick', context: '' }), /【背景资料使用边界】/);
+
+  // dynamic profile alone triggers it
+  const withProfile = ctx.buildInstructions({ name: 'Nick', context: '', profile: 'P' });
+  assert.match(withProfile, /【背景资料使用边界】/);
+  assert.match(withProfile, /不要把背景资料当作对方说过的内容/);
+
+  // generic task brief alone triggers it
+  const task = s.createTask({ type: 'oneshot', title: 'Q2 复盘', brief: '聊聊 Q2' });
+  assert.match(ctx.buildInstructions({ name: 'Nick', context: '' }, task), /【背景资料使用边界】/);
+
+  // team background alone triggers it
+  s.setContext('team_background', 'BG');
+  assert.match(ctx.buildInstructions({ name: 'Nick', context: '' }), /【背景资料使用边界】/);
+
+  // boundary sits after the background blocks and before the prior transcript
+  const cont = ctx.buildInstructions({ name: 'Nick', context: '', profile: 'P' }, null, { transcript: 'T', submitted: false });
+  assert.ok(cont.indexOf('【背景资料使用边界】') > cont.indexOf('动态画像'));
+  assert.ok(cont.indexOf('【背景资料使用边界】') < cont.indexOf('【已聊过的内容】'));
+
+  // en parity
+  const en = ctx.buildInstructions({ name: 'Nick', context: '', profile: 'P' }, null, null, 'Asia/Shanghai', 'en');
+  assert.match(en, /\[Background material boundary\]/);
+  assert.match(en, /Never restate or attribute background material/);
   s.close();
 });
 

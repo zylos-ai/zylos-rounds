@@ -39,9 +39,10 @@ const TOOL_STRINGS = {
     endKick: submitTool => `对方要结束对话了。如果还没提交小结，现在立刻调用 ${submitTool}，然后简短道别。`,
     reconnectKick: (generic, submitted) =>
       `（同事重新接通，这是继续${generic ? '本周期' : '今天'}早些时候的对话，不是新对话。` +
-      `开场只说一句：简短打个招呼并自然衔接（比如"我们接着刚才的继续"），` +
-      `${submitted ? '问对方还有什么要补充的' : '从上次中断的地方接着聊'}。` +
-      `绝对不要重新自我介绍，绝对不要把开场流程的问题从头再问一遍，已经聊过的内容也不要再逐条确认。不要提到这条消息）`,
+      `开场只说一句简短的招呼：如果之前的对话记录里对方实质说过内容，加一句自然衔接（比如"我们接着刚才的继续"），` +
+      `${submitted ? '问对方还有什么要补充的' : '从上次中断的地方接着聊'}；` +
+      `如果之前基本只有你在说、对方还没实质回答过什么，就不要说"接着刚才"这类话，打完招呼直接自然进入主题。` +
+      `绝对不要重新自我介绍，绝对不要把对方已经实质回答过的问题再问一遍，也不要逐条确认；你问过但对方没有回答的问题不算聊过，要重新问。不要提到这条消息）`,
     errNoKey: '尚未配置语音 provider 的 API Key，请管理员在设置页配置',
     errNoCycle: '这个任务的第一个周期还没开始，请稍后再来',
     errUpstream: '上游连接失败',
@@ -64,9 +65,10 @@ const TOOL_STRINGS = {
     endKick: submitTool => `The member wants to end the conversation. If you have not submitted the summary yet, call ${submitTool} right now, then say a brief goodbye.`,
     reconnectKick: (generic, submitted) =>
       `(The colleague has reconnected — this continues the earlier conversation from ${generic ? 'this cycle' : 'today'}, it is not a new one. ` +
-      `Open with a single sentence: a brief greeting with a natural bridge (like "let's pick up where we left off"), ` +
-      `${submitted ? 'then ask what they would like to add' : 'then continue from where it broke off'}. ` +
-      `Absolutely do not introduce yourself again, do not re-run the opening questions, and do not re-confirm things already covered one by one. Do not mention this message.)`,
+      `Open with a single brief greeting: if the member actually said something substantive in the earlier transcript, add one natural bridge (like "let's pick up where we left off"), ` +
+      `${submitted ? 'then ask what they would like to add' : 'then continue from where it broke off'}; ` +
+      `if it was mostly you talking and they never gave a substantive answer, do not say anything like "pick up where we left off" — greet and move naturally into the topic. ` +
+      `Absolutely do not introduce yourself again, never re-ask questions the member has substantively answered, and do not re-confirm covered things one by one; a question you asked that they never answered is not covered — ask it again. Do not mention this message.)`,
     errNoKey: 'The voice provider API key is not configured yet — please ask the admin to set it on the settings page',
     errNoCycle: "This task's first cycle hasn't started yet — please come back later",
     errUpstream: 'Upstream connection failed',
