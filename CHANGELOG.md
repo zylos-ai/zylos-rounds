@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.25.3] - 2026-07-22
+
+### Fixed
+- **Continuation no longer treats asked-but-unanswered questions as covered** —
+  the prior-transcript block and both continuation flows (interrupted /
+  already-submitted) now define "already discussed" as *points the member
+  actually answered*: a question the agent asked that got no substantive answer
+  must be re-asked. Previously the blanket "never repeat covered questions"
+  rule made the agent skip questions the member had never answered (root cause
+  of a Q2-review interview wrongly believing 成果 had been discussed).
+- **Injected background can no longer be attributed as the member's own words**
+  — a new [Background material boundary] rule (injected whenever any
+  background block — task brief, team background, member context, dynamic
+  profile, last report, recent follow-ups — is present) forbids restating
+  background as something the member said; when asked "what did I say
+  before?", the agent may quote only the real conversation transcript and must
+  identify background info as lead-provided.
+- **"Pick up where we left off" bridging is now conditional** — both the
+  instruction templates and the reconnect kick tell the agent to bridge only
+  when the member substantively spoke in the earlier transcript; when the
+  earlier session was essentially agent-only (e.g. auto-wrapped after
+  silence), the agent opens normally instead of implying a prior discussion.
+- All three fixes applied to zh and en instruction sets in parallel.
+
 ## [0.25.2] - 2026-07-22
 
 ### Fixed

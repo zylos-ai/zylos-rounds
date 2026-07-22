@@ -35,8 +35,8 @@ const INSTRUCTION_STRINGS = {
     locale: 'zh-CN',
     period: hour => hour < 5 ? '凌晨' : hour < 9 ? '早上' : hour < 12 ? '上午' : hour < 14 ? '中午' : hour < 18 ? '下午' : '晚上',
     timeLine: (dateStr, period, hm) => `现在是${dateStr}，${period} ${hm}。打招呼和措辞要符合这个时间段（比如下午就不要说早安），提到"今天/昨天"也以这个日期为准。`,
-    contFlowSubmitted: generic => `流程（继续模式）：${generic ? '本周期' : '今天'}的汇报早些时候已经聊完并提交过小结，这次是对方主动回来补充。开场简短打个招呼并用一句话自然衔接（比如"我们接着刚才的继续"），然后直接问对方有什么想补充或更新的，围绕对方说的内容自然展开。绝对不要重新走完整的提问流程，绝对不要把已经聊过的问题再问一遍。`,
-    contFlowInterrupted: `流程（继续模式）：早些时候的对话中断了，这次是接着聊。开场简短打个招呼并用一句话自然衔接，然后从中断的地方继续，只补还没聊到的部分，已经聊清楚的绝对不要重复问。`,
+    contFlowSubmitted: generic => `流程（继续模式）：${generic ? '本周期' : '今天'}的汇报早些时候已经聊完并提交过小结，这次是对方主动回来补充。开场简短打个招呼并用一句话自然衔接（比如"我们接着刚才的继续"），然后直接问对方有什么想补充或更新的，围绕对方说的内容自然展开。绝对不要重新走完整的提问流程，绝对不要把已经聊过的问题再问一遍。判断"已经聊过"只看对方实质回答过的点：你问过但对方没有回答的问题不算聊过，如果它还重要，找自然的时机重新问。`,
+    contFlowInterrupted: `流程（继续模式）：早些时候的对话中断了，这次是接着聊。先看下面的对话记录：如果对方之前实质说过内容，开场简短打个招呼并用一句话自然衔接，从中断的地方继续；如果之前基本只有你在说、对方还没实质回答过什么，就不要说"接着刚才的继续"这类话，当作正常开场直接进入主题。只补还没聊清楚的部分——判断"已聊过"只看对方实质回答过的点：对方实质回答过的绝对不要重复问；你问过但对方没有回答的问题不算聊过，要重新问。`,
     personaRecurring: (name, title) => `你是 Luna，代表团队负责人和同事「${name}」就「${title}」做本期的一对一语音沟通（这是一个定期进行的沟通任务）。全程说中文，口语自然、简短友好。`,
     personaOneshot: (name, title) => `你是 Luna，代表团队负责人和同事「${name}」做一次一对一语音沟通，主题是「${title}」。全程说中文，口语自然、简短友好。`,
     personaDaily: name => `你是团队的日报助手 Luna，正在和同事「${name}」做每日语音汇报，全程说中文，口语自然、简短友好。`,
@@ -54,6 +54,7 @@ const INSTRUCTION_STRINGS = {
     probingGuidance: probing => `【追问指引】（据此决定要不要追问、追问到什么程度；这是内部指引，不要读出来）\n${probing}`,
     recentFollowups: text => `【近期补充与跟进】（以下是最近就相关工作补充或更新的信息，可能包含已经拍板的结论。据此理解最新背景：已经明确或拍板的部分不要再当作待议反复追问，如对方提到相关内容，顺着最新信息聊）\n${text}`,
     taskProbe: text => `【本任务的追问指引】（针对这次沟通任务的追问重点，优先于通用指引）\n${text}`,
+    backgroundBoundary: `【背景资料使用边界】上面注入的各类背景资料（任务背景、团队背景、关于成员、动态画像、上次日报、近期补充与跟进等）只是帮你理解上下文的内部参考，不是对方在对话里亲口说过的话。绝对不要把背景资料当作对方说过的内容来复述或归因（比如"你刚才说…""你之前提到…"）；如果对方问"我之前说了什么"，只能引用对话记录里对方真实说过的内容；用到背景资料里的信息时，如实说明那是负责人提供的背景信息，不要说成是对方讲的。`,
     // Code-level default probe for the built-in daily standup. It ships in
     // every install and is always injected for the daily task; a custom
     // probe_instruction (if any) appends on top of it, so teams add only their
@@ -66,7 +67,7 @@ const INSTRUCTION_STRINGS = {
 - 当对方今天的计划和上次日报里说的明显不一样时，可以轻轻问一句原因（上次日报已附在上下文里，直接对照；更早的记录用 recall_member_history 查）。
 - 对方已经说得很具体，就不要为了追问而追问。`,
     transcriptTrimmed: `……（更早的内容略）`,
-    priorTranscript: (generic, submitted, t) => `【已聊过的内容】（这是${generic ? '本周期' : '今天'}早些时候你们已经聊过的对话记录，可能因断线或刷新中断。这次是继续，不是重新开始：开场用一句话自然衔接（比如"我们接着刚才的继续"），已经聊清楚的问题绝对不要重复问，直接从中断的地方接着聊${submitted ? '。小结之前已经提交过：如果对方这次补充了新内容，等对方明确表示结束时再把新旧内容合并重新提交一次小结；如果只是闲聊没有新信息，不用重复提交。注意：已提交过不等于可以早点收尾，这次对话该聊多久聊多久' : ''}）\n${t}`,
+    priorTranscript: (generic, submitted, t) => `【已聊过的内容】（这是${generic ? '本周期' : '今天'}早些时候你们已经聊过的对话记录，可能因断线或刷新中断。这次是继续，不是重新开始。判断哪些算"已聊过"，只看这份记录里对方实质回答过的点：对方实质回答过的绝对不要重复问；你问过但对方没有回答的问题不算聊过，要重新问。如果记录里对方基本没有实质回答，开场就不要说"我们接着刚才的继续"这类话，当作正常开场直接进入主题；否则用一句话自然衔接后从中断的地方接着聊${submitted ? '。小结之前已经提交过：如果对方这次补充了新内容，等对方明确表示结束时再把新旧内容合并重新提交一次小结；如果只是闲聊没有新信息，不用重复提交。注意：已提交过不等于可以早点收尾，这次对话该聊多久聊多久' : ''}）\n${t}`,
     toolsLine: `你有两个工具可以在需要时调用：` +
       `recall_member_history —— 当你想确认对方上次汇报说了什么、或想跟进之前的进展/卡点时调用；` +
       `search_team_knowledge —— 当对方提到某个项目/名词你需要背景、或需要核对团队已有信息时调用。` +
@@ -80,8 +81,8 @@ const INSTRUCTION_STRINGS = {
     locale: 'en-US',
     period: hour => hour < 5 ? 'early morning' : hour < 12 ? 'morning' : hour < 14 ? 'midday' : hour < 18 ? 'afternoon' : 'evening',
     timeLine: (dateStr, period, hm) => `It is now ${dateStr}, ${hm} in the ${period}. Match your greeting and wording to this time of day (don't say "good morning" in the afternoon), and treat "today/yesterday" relative to this date.`,
-    contFlowSubmitted: generic => `Flow (continuation mode): ${generic ? "this cycle's" : "today's"} report was already completed and its summary submitted earlier; the member has come back to add something. Open with a brief greeting and one natural bridging sentence (like "let's pick up where we left off"), then ask directly what they'd like to add or update, and follow their lead. Absolutely do not re-run the full question flow, and absolutely do not re-ask questions that were already covered.`,
-    contFlowInterrupted: `Flow (continuation mode): the earlier conversation was cut off; this session continues it. Open with a brief greeting and one natural bridging sentence, then continue from where it broke off — only cover what hasn't been discussed yet, and absolutely do not repeat questions that were already answered.`,
+    contFlowSubmitted: generic => `Flow (continuation mode): ${generic ? "this cycle's" : "today's"} report was already completed and its summary submitted earlier; the member has come back to add something. Open with a brief greeting and one natural bridging sentence (like "let's pick up where we left off"), then ask directly what they'd like to add or update, and follow their lead. Absolutely do not re-run the full question flow, and absolutely do not re-ask questions that were already covered. A question counts as covered only if the member actually answered it: a question you asked that they never answered is not covered — if it still matters, find a natural moment to ask it again.`,
+    contFlowInterrupted: `Flow (continuation mode): the earlier conversation was cut off; this session continues it. First look at the transcript below: if the member actually said something substantive earlier, open with a brief greeting and one natural bridging sentence and continue from where it broke off; if it was mostly you talking and the member never gave a substantive answer, do not say anything like "let's pick up where we left off" — just open normally and get into the topic. Only cover what hasn't truly been discussed — a point counts as covered only if the member actually answered it: never repeat what they substantively answered; a question you asked that they never answered is not covered — ask it again.`,
     personaRecurring: (name, title) => `You are Luna, speaking on behalf of the team lead in a one-on-one voice conversation with your colleague ${name} about "${title}" for this cycle (this is a recurring conversation task). Speak English throughout — conversational, brief and friendly.`,
     personaOneshot: (name, title) => `You are Luna, speaking on behalf of the team lead in a one-on-one voice conversation with your colleague ${name} on the topic "${title}". Speak English throughout — conversational, brief and friendly.`,
     personaDaily: name => `You are Luna, the team's standup assistant, doing the daily voice check-in with your colleague ${name}. Speak English throughout — conversational, brief and friendly.`,
@@ -99,6 +100,7 @@ const INSTRUCTION_STRINGS = {
     probingGuidance: probing => `[Probing guidance] (use this to decide whether and how deep to follow up; internal guidance — don't read it out)\n${probing}`,
     recentFollowups: text => `[Recent follow-ups] (recently appended or updated information about the work — may include settled decisions. Use it as the latest background: do not re-probe what is already settled or decided; if the member raises related work, go with the latest information)\n${text}`,
     taskProbe: text => `[This task's probing guidance] (follow-up priorities for this specific conversation; takes precedence over the general guidance)\n${text}`,
+    backgroundBoundary: `[Background material boundary] The background material injected above (task background, team background, about-the-member, dynamic profile, last report, recent follow-ups, etc.) is internal reference to help you understand context — it is NOT something the member said in conversation. Never restate or attribute background material as the member's own words (like "you just said…" or "you mentioned earlier…"). If the member asks "what did I say before?", quote only what they actually said in the conversation transcripts; when using information from background material, say honestly that it is background provided by the team lead — do not present it as something they told you.`,
     // Code-level default probe for the built-in daily standup (see zh note).
     dailyProbeDefault: `Use this to decide whether and what to follow up on. Don't force a follow-up where nothing applies — keep it natural and brief.
 
@@ -108,7 +110,7 @@ const INSTRUCTION_STRINGS = {
 - When today's plan clearly differs from their last report, gently ask why (their last report is attached in your context — compare against it directly; use recall_member_history for older records).
 - If they have already been specific, don't follow up just for the sake of it.`,
     transcriptTrimmed: `… (earlier content omitted)`,
-    priorTranscript: (generic, submitted, t) => `[What was already discussed] (this is the transcript of the conversation you two already had earlier ${generic ? 'this cycle' : 'today'}, possibly cut off by a dropped connection or page refresh. This session is a continuation, not a restart: open with one natural bridging sentence (like "let's pick up where we left off"), absolutely do not repeat questions that were already covered, and continue straight from where it broke off${submitted ? '. The summary was already submitted: if they add new content this time, wait until they clearly say they are done, then re-submit one summary merging old and new; if it was just small talk with nothing new, don\'t re-submit. Note: having already submitted does not mean wrapping up early — let this conversation run as long as it needs' : ''})\n${t}`,
+    priorTranscript: (generic, submitted, t) => `[What was already discussed] (this is the transcript of the conversation you two already had earlier ${generic ? 'this cycle' : 'today'}, possibly cut off by a dropped connection or page refresh. This session is a continuation, not a restart. Judge what counts as "already discussed" only by the points the member actually answered in this transcript: never repeat what they substantively answered; a question you asked that they never answered is not covered — ask it again. If the transcript shows the member gave essentially no substantive answers, do not open with anything like "let's pick up where we left off" — just open normally and get into the topic; otherwise use one natural bridging sentence and continue straight from where it broke off${submitted ? '. The summary was already submitted: if they add new content this time, wait until they clearly say they are done, then re-submit one summary merging old and new; if it was just small talk with nothing new, don\'t re-submit. Note: having already submitted does not mean wrapping up early — let this conversation run as long as it needs' : ''})\n${t}`,
     toolsLine: `You have two tools you can call when needed: ` +
       `recall_member_history — call it when you want to check what they said in previous reports, or to follow up on earlier progress or blockers; ` +
       `search_team_knowledge — call it when they mention a project or term you need background on, or you need to check existing team information. ` +
@@ -196,22 +198,27 @@ export class AgentContext {
     parts.push(L.oneQuestionRepair);
     parts.push(generic ? L.bulkTextGeneric : L.bulkTextDaily);
 
+    // Injected background is reference material, never the member's own words.
+    // When any such block is present, a boundary rule (backgroundBoundary) is
+    // appended so the model doesn't restate it attributed to the member.
+    let hasBackground = false;
+
     if (generic) {
       const brief = (task.brief || '').trim();
-      if (brief) parts.push(L.taskBrief(brief));
+      if (brief) { parts.push(L.taskBrief(brief)); hasBackground = true; }
       const questions = (task.questions || '').trim();
       if (questions) parts.push(L.taskQuestions(questions));
     }
 
     const bg = this.background();
-    if (bg) parts.push(L.teamBackground(bg));
+    if (bg) { parts.push(L.teamBackground(bg)); hasBackground = true; }
 
     const memberCtx = (member.context || '').trim();
-    if (memberCtx) parts.push(L.aboutMember(name, memberCtx));
+    if (memberCtx) { parts.push(L.aboutMember(name, memberCtx)); hasBackground = true; }
 
     // Auto-maintained profile — merged from past reports after each standup.
     const profile = (member.profile || '').trim();
-    if (profile) parts.push(L.memberProfile(name, profile));
+    if (profile) { parts.push(L.memberProfile(name, profile)); hasBackground = true; }
 
     // Last report (daily only) — the plan-change probe needs a baseline in
     // context: relying on the model to call recall_member_history on its own
@@ -228,6 +235,7 @@ export class AgentContext {
         const blockers = items(last.blockers);
         if (plan.length) {
           parts.push(L.lastReport(last.report_date, bullets(plan), blockers.length ? bullets(blockers) : ''));
+          hasBackground = true;
         }
       }
     }
@@ -240,6 +248,7 @@ export class AgentContext {
     const followups = followupSnapshot || this.followupsForTask(task);
     if (followups.length) {
       parts.push(L.recentFollowups(followups.map(f => `- ${(f.content || '').trim()}`).join('\n')));
+      hasBackground = true;
     }
 
     // Global probing guidance — a cross-task overlay, empty by default.
@@ -257,6 +266,11 @@ export class AgentContext {
     if (customProbe) probeParts.push(customProbe);
     const taskProbe = probeParts.join('\n\n');
     if (taskProbe) parts.push(L.taskProbe(taskProbe));
+
+    // Attribution boundary for everything injected above — placed after the
+    // background blocks and before the prior transcript, which IS the
+    // member's real speech and therefore exempt.
+    if (hasBackground) parts.push(L.backgroundBoundary);
 
     // Same-cycle continuation: an earlier session (dropped connection, page
     // refresh, or a reopened finished call) already covered part of the flow.
