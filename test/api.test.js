@@ -631,3 +631,35 @@ test('follow-ups: POST/GET/DELETE with scope + task validation', async () => {
     close();
   }
 });
+
+test('task detail exposes injected follow-up snapshots, not the current task-wide list', async () => {
+  const { store, call, close } = await boot();
+  try {
+    const daily = store.getDailyTask();
+    const member = (await call('POST', '/api/members', { name: 'Nick' })).data.id;
+    const injected = Number(store.addFollowup({ taskId: daily.id, content: 'carried into this day', scope: 'team' }).lastInsertRowid);
+    store.addFollowup({ taskId: daily.id, content: 'added after the day', scope: 'team' });
+    store.upsertSummary(member, '2026-07-22', {
+      yesterday: ['x'], today: ['y'], blockers: [], topics_for_meeting: [],
+    }, '{}', 'm', [injected]);
+
+    const day = await call('GET', '/api/reports/2026-07-22');
+    assert.equal(day.status, 200);
+    assert.deepEqual(day.data.context_followups.map(f => f.content), ['carried into this day']);
+
+    const dailyDetail = await call('GET', `/api/tasks/${daily.id}?cycle=2026-07-22`);
+    assert.deepEqual(dailyDetail.data.report.context_followups.map(f => f.content), ['carried into this day']);
+
+    const task = store.createTask({ type: 'oneshot', title: 'Q2' });
+    store.addTaskMember(task.id, member, 'q2tok');
+    const q2Injected = Number(store.addFollowup({ taskId: task.id, content: 'q2 context', scope: 'private' }).lastInsertRowid);
+    store.addFollowup({ taskId: task.id, content: 'q2 later', scope: 'private' });
+    store.submitCycleSummary(task.id, member, '-', JSON.stringify(['summary']), JSON.stringify([]), [q2Injected]);
+
+    const taskDetail = await call('GET', `/api/tasks/${task.id}`);
+    assert.equal(taskDetail.status, 200);
+    assert.deepEqual(taskDetail.data.context_followups.map(f => f.content), ['q2 context']);
+  } finally {
+    close();
+  }
+});
