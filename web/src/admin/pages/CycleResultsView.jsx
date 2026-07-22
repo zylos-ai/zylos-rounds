@@ -42,8 +42,12 @@ const DICT = {
  */
 export default function CycleResultsView({ members = [] }) {
   const T = useLangDict(DICT);
-  const done = members.filter((m) => m.status === 'submitted' || (m.transcript || '').trim());
-  const missing = members.filter((m) => !done.includes(m)).map((m) => m.name);
+  // "Done" is submitted-only — the same criterion as the API's
+  // submitted_count, the link-card badges and the built-in daily's day view
+  // (store.dayReports filters status='submitted'). A draft transcript from a
+  // dropped mid-call session must NOT clear a member off the missing roster.
+  const done = members.filter((m) => m.status === 'submitted');
+  const missing = members.filter((m) => m.status !== 'submitted').map((m) => m.name);
 
   const [openIds, setOpenIds] = useState(() => new Set());
   const toggle = (id) => setOpenIds((prev) => {
