@@ -757,3 +757,44 @@ test('task detail exposes injected follow-up snapshots, not the current task-wid
     close();
   }
 });
+
+test('draft resume exposes prior messages; talk reset clears own current-cycle record', async () => {
+  const { store, call, close } = await boot();
+  try {
+    const daily = store.getDailyTask();
+    const m = await call('POST', '/api/members', { name: '小李', join_daily: true });
+    const mid = m.data.id;
+    const token = store.getTaskMember(daily.id, mid).token;
+    const date = (await call('GET', `/api/talk/session?token=${token}`, undefined, {})).data.date;
+
+    // draft transcript → session carries role-tagged prior messages (a bare
+    // continuation line belongs to the preceding turn)
+    store.appendTranscript(mid, date, '小李: 昨天修了登录\nLuna: 收到，今天呢？\n再补一句', 30, 'm1', false);
+    let sess = await call('GET', `/api/talk/session?token=${token}`, undefined, {});
+    assert.equal(sess.status, 200);
+    assert.equal(sess.data.prior.status, 'draft');
+    assert.deepEqual(sess.data.prior.messages, [
+      { role: 'me', text: '昨天修了登录' },
+      { role: 'ai', text: '收到，今天呢？\n再补一句' },
+    ]);
+
+    // submitted records carry the summary, not a transcript payload
+    store.upsertSummary(mid, date, { yesterday: ['y'], today: ['t'], blockers: [], topics_for_meeting: [] }, '{}', 'm1');
+    sess = await call('GET', `/api/talk/session?token=${token}`, undefined, {});
+    assert.equal(sess.data.prior.status, 'submitted');
+    assert.equal(sess.data.prior.messages, undefined);
+
+    // member reset wipes the record with token auth only
+    const reset = await call('POST', `/api/talk/reset?token=${token}`, undefined, {});
+    assert.equal(reset.status, 200);
+    assert.equal(reset.data.cleared, true);
+    assert.equal(store.getReport(mid, date), undefined);
+    sess = await call('GET', `/api/talk/session?token=${token}`, undefined, {});
+    assert.equal(sess.data.prior, null);
+
+    // invalid token → 404, nothing cleared
+    assert.equal((await call('POST', '/api/talk/reset?token=nope', undefined, {})).status, 404);
+  } finally {
+    close();
+  }
+});

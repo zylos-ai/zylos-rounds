@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Mic,
   Check,
@@ -13,11 +13,13 @@ import {
   Link2Off,
   FlaskConical,
   RotateCw,
+  RotateCcw,
   MicOff,
   Keyboard,
   Send,
   Pause,
   Play,
+  Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -61,6 +63,10 @@ export default function TalkApp() {
   const [status, setStatus] = useState('');
   const [statusErr, setStatusErr] = useState(false);
   const [messages, setMessages] = useState([]);
+  // how many leading messages are the preloaded prior-draft transcript —
+  // they get a "conversation so far" divider after them and don't count as
+  // "the call started" for the hero → conversation layout switch
+  const [priorCount, setPriorCount] = useState(0);
   const [summary, setSummary] = useState(null);
   const [muted, setMuted] = useState(false);
   const [textMode, setTextMode] = useState(false);
@@ -120,6 +126,12 @@ export default function TalkApp() {
         document.title = `Rounds · ${generic ? generic.title : (data.name || '')}`;
         setReportDate(data.date || '');
         setPrior(data.prior || null);
+        // draft resume: render the conversation so far, so continuing never
+        // looks like a cold start (the call itself resumes server-side)
+        if (data.prior?.status === 'draft' && Array.isArray(data.prior.messages) && data.prior.messages.length) {
+          setMessages(data.prior.messages.map((m) => ({ id: nid(), role: m.role === 'ai' ? 'ai' : 'me', text: m.text })));
+          setPriorCount(data.prior.messages.length);
+        }
         setPhase('idle');
         if (data.prior?.status === 'submitted') say(M.tapToAdd);
         else if (data.prior?.status === 'draft') say(M.tapToContinue);
@@ -274,6 +286,7 @@ export default function TalkApp() {
     setSubmitting(false);
     setSummary(null);
     setMessages([]);
+    setPriorCount(0);
     setMuted(false);
     setTextMode(false);
     setDraft('');
@@ -385,6 +398,51 @@ export default function TalkApp() {
     await startCall();
   }, [startCall]);
 
+  // Self-service reset: wipe this cycle's own record server-side, then drop
+  // every trace of it locally so the page is a genuine cold start.
+  const [confirmingReset, setConfirmingReset] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const resetAll = useCallback(async () => {
+    setResetting(true);
+    try {
+      const res = await fetch(`${BASE}/api/talk/reset?token=${encodeURIComponent(TOKEN)}`, { method: 'POST' });
+      if (!res.ok) throw new Error('reset failed');
+    } catch {
+      setResetting(false);
+      say(tRef.current.resetFailed, true);
+      return;
+    }
+    try {
+      engineRef.current?.destroy();
+    } catch {
+      /* already closed */
+    }
+    engineRef.current = null;
+    pausedRef.current = false;
+    doneRef.current = false;
+    clearTimeout(reconnectRef.current.timer);
+    reconnectRef.current.attempts = 0;
+    clearWaitTimer();
+    pendingSendRef.current = [];
+    aiIdRef.current = null;
+    setResetting(false);
+    setConfirmingReset(false);
+    setSummary(null);
+    setMessages([]);
+    setPriorCount(0);
+    setPrior(null);
+    setMuted(false);
+    setTextMode(false);
+    setDraft('');
+    setPhase('idle');
+    say(tRef.current.resetDone);
+  }, [say, clearWaitTimer]);
+
+  // an open reset confirm doesn't survive the call starting
+  useEffect(() => {
+    if (phase === 'connecting' || phase === 'listening' || phase === 'speaking') setConfirmingReset(false);
+  }, [phase]);
+
   if (phase === 'loading') {
     return (
       <div className="flex min-h-dvh items-center justify-center text-sm text-muted-foreground">{T.loading}</div>
@@ -411,8 +469,37 @@ export default function TalkApp() {
 
   const inCall = phase === 'listening' || phase === 'speaking';
   // Hero (centered welcome) until the call is actually underway, then the
-  // top-anchored conversation layout takes over.
-  const started = inCall || phase === 'done' || messages.length > 0 || !!summary;
+  // top-anchored conversation layout takes over. Preloaded prior-draft
+  // messages don't count — the hero's "left off mid-chat" framing stays.
+  const started = inCall || phase === 'done' || messages.length > priorCount || !!summary;
+
+  const canReset = ['idle', 'paused', 'done', 'disconnected'].includes(phase)
+    && !submitting && Boolean(prior || messages.length || summary);
+
+  const resetUi = canReset ? (
+    confirmingReset ? (
+      <div className="mt-4 flex flex-col items-center gap-2.5">
+        <div className="text-center">
+          <div className="text-[0.95rem] font-semibold tracking-tight">{T.confirmResetQ}</div>
+          <div className="mx-auto mt-0.5 max-w-[340px] text-[0.85rem] text-muted-foreground">{T.confirmResetHint}</div>
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <Button variant="destructive" onClick={resetAll} disabled={resetting}>
+            {resetting ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : <Trash2 strokeWidth={1.75} />}
+            {T.btnConfirmReset}
+          </Button>
+          <Button variant="secondary" onClick={() => setConfirmingReset(false)} disabled={resetting}>
+            {T.btnCancel}
+          </Button>
+        </div>
+      </div>
+    ) : (
+      <Button variant="ghost" size="sm" className="mt-4" onClick={() => setConfirmingReset(true)}>
+        <RotateCcw strokeWidth={1.75} />
+        {T.btnReset}
+      </Button>
+    )
+  ) : null;
 
   const orb = (
     <button
@@ -540,6 +627,7 @@ export default function TalkApp() {
               {T.btnRetry}
             </Button>
           )}
+          {resetUi}
         </div>
       </div>
     );
@@ -658,24 +746,33 @@ export default function TalkApp() {
           )}
         </div>
         )}
+        {resetUi}
       </div>
 
       {/* chat log — the page's only scroll region; the stage above stays put */}
       <div ref={logRef} className="mt-4 min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col gap-2 pb-2">
-          {messages.map((m) => (
-            <div
-              key={m.id}
-              className={cn(
-                'max-w-[86%] whitespace-pre-wrap rounded-lg border px-3.5 py-2.5 text-[0.92rem] leading-relaxed',
-                m.role === 'ai'
-                  ? 'self-start border-border-strong bg-card shadow-xs'
-                  : 'self-end border-primary-line bg-primary-soft',
-                m.pending && 'text-muted-foreground'
+          {messages.map((m, i) => (
+            <Fragment key={m.id}>
+              <div
+                className={cn(
+                  'max-w-[86%] whitespace-pre-wrap rounded-lg border px-3.5 py-2.5 text-[0.92rem] leading-relaxed',
+                  m.role === 'ai'
+                    ? 'self-start border-border-strong bg-card shadow-xs'
+                    : 'self-end border-primary-line bg-primary-soft',
+                  m.pending && 'text-muted-foreground'
+                )}
+              >
+                {m.text || (m.pending ? '…' : '')}
+              </div>
+              {priorCount > 0 && i === priorCount - 1 && (
+                <div className="my-1.5 flex items-center gap-2.5 text-[0.75rem] text-faint">
+                  <span className="h-px flex-1 bg-border" />
+                  {T.priorDivider}
+                  <span className="h-px flex-1 bg-border" />
+                </div>
               )}
-            >
-              {m.text || (m.pending ? '…' : '')}
-            </div>
+            </Fragment>
           ))}
         </div>
 

@@ -412,3 +412,22 @@ test('carry_prior_summary: defaults on, updateTask can toggle it off and back', 
   assert.equal(s.getTask(task.id).carry_prior_summary, 1);
   s.close();
 });
+
+test('member self-service reset: deleteReport / deleteCycleRecord drop exactly one row', () => {
+  const s = tmpStore();
+  const id = Number(s.addMember('Rita', 'tokR').lastInsertRowid);
+  s.appendTranscript(id, '2026-07-23', 'Rita: hi', 10, 'm1', false);
+  s.appendTranscript(id, '2026-07-22', 'Rita: old', 10, 'm1', true);
+  assert.equal(s.deleteReport(id, '2026-07-23'), true);
+  assert.equal(s.getReport(id, '2026-07-23'), undefined);
+  assert.ok(s.getReport(id, '2026-07-22')); // other dates untouched
+  assert.equal(s.deleteReport(id, '2026-07-23'), false); // idempotent signal
+
+  const task = s.createTask({ type: 'oneshot', title: 'Q2' });
+  s.addTaskMember(task.id, id, 'tokQ2');
+  s.appendCycleTranscript(task.id, id, '-', 'Rita: q2', 5, null);
+  assert.equal(s.deleteCycleRecord(task.id, id, '-'), true);
+  assert.equal(s.getCycleRecord(task.id, id, '-'), undefined);
+  assert.equal(s.deleteCycleRecord(task.id, id, '-'), false);
+  s.close();
+});

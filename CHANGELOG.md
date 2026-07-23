@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.30.0] - 2026-07-23
+
+### Added
+- **Resume shows the conversation so far** — reopening a link with an in-progress (draft) record now renders the earlier transcript as chat bubbles with a "conversation so far" divider, instead of opening what looks like a cold start. `/api/talk/session` returns the parsed `prior.messages` for draft records (#16)
+- **Self-service reset ("start over")** — a member can wipe their own current-cycle record from the talk page (inline double-confirm). New token-authed `POST /api/talk/reset` deletes only the link's own (task, member, current cycle) record; history and other members are untouched (#16)
+
 ## [0.29.0] - 2026-07-23
 
 Talk-page pause UX (backlog #7): a temporary interruption now has an
