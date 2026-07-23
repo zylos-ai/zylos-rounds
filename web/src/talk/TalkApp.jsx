@@ -16,6 +16,8 @@ import {
   MicOff,
   Keyboard,
   Send,
+  Pause,
+  Play,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -43,7 +45,7 @@ const RETRY_DELAYS = [1000, 3000, 6000];
 
 export default function TalkApp() {
   // loading | invalid | idle | connecting | listening | speaking |
-  // reconnecting | disconnected | done
+  // reconnecting | disconnected | paused | done
   const [phase, setPhase] = useState('loading');
   // Browser language is the pre-session guess; the server's per-member
   // language (from /api/talk/session) takes over as soon as it loads.
@@ -67,6 +69,9 @@ export default function TalkApp() {
   const engineRef = useRef(null);
   const aiIdRef = useRef(null);
   const doneRef = useRef(false);
+  // deliberate pause: the engine teardown closes the WS, and this flag keeps
+  // the closed() handler from treating it as a drop and auto-reconnecting
+  const pausedRef = useRef(false);
   const reconnectRef = useRef({ attempts: 0, timer: null });
   const logRef = useRef(null);
   const summaryRef = useRef(null);
@@ -167,6 +172,7 @@ export default function TalkApp() {
           const wasReconnect = reconnectRef.current.attempts > 0;
           reconnectRef.current.attempts = 0;
           setMuted(engineRef.current?.muted ?? false);
+          setConfirmingEnd(false);
           setPhase('listening');
           say(wasReconnect ? tRef.current.reconnected : tRef.current.greeting);
         },
@@ -232,7 +238,7 @@ export default function TalkApp() {
         closed: () => {
           setSubmitting(false);
           clearWaitTimer();
-          if (doneRef.current) return;
+          if (doneRef.current || pausedRef.current) return;
           const r = reconnectRef.current;
           if (r.attempts < RETRY_DELAYS.length) {
             const delay = RETRY_DELAYS[r.attempts];
@@ -339,13 +345,45 @@ export default function TalkApp() {
   }, [say]);
 
   const [submitting, setSubmitting] = useState(false);
+  // light confirm on 结束并提交 — the control row swaps to a confirm block
+  const [confirmingEnd, setConfirmingEnd] = useState(false);
   const endCall = useCallback(() => {
     if (engineRef.current && !doneRef.current) {
+      setConfirmingEnd(false);
       setSubmitting(true);
       engineRef.current.end();
       say(tRef.current.generating);
     }
   }, [say]);
+
+  // Deliberate clean break: tear the engine down (mic released, WS closed)
+  // without triggering the reconnect flow. The server keeps the transcript,
+  // so reopening the same link continues the interrupted conversation —
+  // this button only makes that existing guarantee visible.
+  const pauseCall = useCallback(() => {
+    if (!engineRef.current || doneRef.current) return;
+    pausedRef.current = true;
+    setConfirmingEnd(false);
+    setSubmitting(false);
+    clearWaitTimer();
+    clearTimeout(reconnectRef.current.timer);
+    reconnectRef.current.attempts = 0;
+    try {
+      engineRef.current.destroy();
+    } catch {
+      /* already closed */
+    }
+    engineRef.current = null;
+    setMuted(false);
+    setTextMode(false);
+    setPhase('paused');
+    say(tRef.current.pausedStatus);
+  }, [say, clearWaitTimer]);
+
+  const resumeCall = useCallback(async () => {
+    pausedRef.current = false;
+    await startCall();
+  }, [startCall]);
 
   if (phase === 'loading') {
     return (
@@ -379,9 +417,9 @@ export default function TalkApp() {
   const orb = (
     <button
       type="button"
-      aria-label={T.ariaStart}
-      disabled={phase !== 'idle'}
-      onClick={startCall}
+      aria-label={phase === 'paused' ? T.btnResume : T.ariaStart}
+      disabled={phase !== 'idle' && phase !== 'paused'}
+      onClick={phase === 'paused' ? resumeCall : startCall}
       className={cn(
         'orb',
         phase === 'listening' && 'listening',
@@ -393,6 +431,8 @@ export default function TalkApp() {
         <Check className="h-[38px] w-[38px]" strokeWidth={1.6} />
       ) : phase === 'connecting' || phase === 'reconnecting' ? (
         <Loader2 className="h-[38px] w-[38px] animate-spin" strokeWidth={1.6} />
+      ) : phase === 'paused' ? (
+        <Play className="h-[38px] w-[38px]" strokeWidth={1.6} />
       ) : (
         <Mic className="h-[38px] w-[38px]" strokeWidth={1.6} />
       )}
@@ -488,6 +528,12 @@ export default function TalkApp() {
           </p>
           <div className="mt-12 max-sm:mt-10">{orb}</div>
           <div className="mt-5">{statusLine}</div>
+          {phase === 'paused' && (
+            <Button variant="secondary" className="mt-3" onClick={resumeCall}>
+              <Play strokeWidth={1.75} />
+              {T.btnResume}
+            </Button>
+          )}
           {phase === 'disconnected' && (
             <Button variant="secondary" className="mt-3" onClick={retryNow}>
               <RotateCw strokeWidth={1.75} />
@@ -543,7 +589,28 @@ export default function TalkApp() {
         {statusLine}
 
         {/* control row — one secondary button family under the orb */}
-        <div className="mt-2.5 flex items-center justify-center gap-2">
+        {inCall && confirmingEnd && !submitting ? (
+          <div className="mt-2.5 flex flex-col items-center gap-2.5">
+            <div className="text-center">
+              <div className="text-[0.95rem] font-semibold tracking-tight">{T.confirmEndQ}</div>
+              <div className="mt-0.5 text-[0.85rem] text-muted-foreground">{T.confirmEndHint}</div>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Button onClick={endCall}>
+                <Check strokeWidth={1.75} />
+                {T.btnConfirmEnd}
+              </Button>
+              <Button variant="secondary" onClick={pauseCall}>
+                <Pause strokeWidth={1.75} />
+                {T.btnPause}
+              </Button>
+              <Button variant="secondary" onClick={() => setConfirmingEnd(false)}>
+                {T.btnBack}
+              </Button>
+            </div>
+          </div>
+        ) : (
+        <div className="mt-2.5 flex flex-wrap items-center justify-center gap-2">
           {inCall && (
             <>
               <Button variant="secondary" onClick={toggleMode} disabled={submitting}>
@@ -561,11 +628,21 @@ export default function TalkApp() {
                   {muted ? T.btnUnmute : T.btnMute}
                 </Button>
               )}
-              <Button variant="secondary" onClick={endCall} disabled={submitting}>
+              <Button variant="secondary" onClick={pauseCall} disabled={submitting}>
+                <Pause strokeWidth={1.75} />
+                {T.btnPause}
+              </Button>
+              <Button variant="secondary" onClick={() => setConfirmingEnd(true)} disabled={submitting}>
                 {submitting ? <Loader2 className="animate-spin" strokeWidth={1.75} /> : <Check strokeWidth={1.75} />}
                 {submitting ? T.generating : T.btnEnd}
               </Button>
             </>
+          )}
+          {phase === 'paused' && (
+            <Button variant="secondary" onClick={resumeCall}>
+              <Play strokeWidth={1.75} />
+              {T.btnResume}
+            </Button>
           )}
           {phase === 'reconnecting' && (
             <Button variant="secondary" disabled>
@@ -580,6 +657,7 @@ export default function TalkApp() {
             </Button>
           )}
         </div>
+        )}
       </div>
 
       {/* chat log — the page's only scroll region; the stage above stays put */}

@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.29.0] - 2026-07-23
+
+Talk-page pause UX (backlog #7): a temporary interruption now has an
+explicit exit. Pure frontend + copy — no storage or protocol changes; the
+server's interrupted-continuation flow already made leaving safe, this
+release makes it visible.
+
+### Added
+- **"Pause for now" secondary button** in the in-call control row (and in
+  the submit confirm block): cleanly disconnects (mic released, socket
+  closed, no auto-reconnect) and shows a paused state — "progress saved,
+  reopen the same link anytime to continue" — with a Resume button and a
+  tappable orb to continue on the spot.
+- **Light confirm on "End & submit"**: the control row swaps to a confirm
+  block ("Finish and submit this report?" with a pause reminder) with
+  Submit / Pause / Keep-talking actions, preventing half-finished
+  accidental submissions and teaching that pausing is safe.
+
 ## [0.28.0] - 2026-07-23
 
 Task roster management (backlog #4): membership on any task is now an
