@@ -356,6 +356,8 @@ export class TalkEngine {
   }
 
   playDelta(ev) {
+    // a straggler delta after destroy() must not throw on the closed context
+    if (!this.ctx || this.ctx.state === 'closed') return;
     const bin = atob(ev.delta);
     const dv = new DataView(new ArrayBuffer(bin.length));
     for (let i = 0; i < bin.length; i++) dv.setUint8(i, bin.charCodeAt(i));
@@ -419,6 +421,11 @@ export class TalkEngine {
       clearInterval(this.watchdog);
       this.watchdog = null;
     }
+    // Teardown must go silent immediately: stop every scheduled audio source
+    // (a deliberate pause while Luna is mid-sentence would otherwise keep
+    // playing the queued buffers) and close the AudioContext so nothing can
+    // sound after this point and the audio device is released.
+    this.flushPlayback();
     try {
       if (this.ws) this.ws.close();
     } catch {
@@ -428,6 +435,11 @@ export class TalkEngine {
       this.releaseMic();
     } catch {
       /* noop */
+    }
+    try {
+      if (this.ctx && this.ctx.state !== 'closed') this.ctx.close();
+    } catch {
+      /* already closed */
     }
   }
 }
