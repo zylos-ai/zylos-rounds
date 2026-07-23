@@ -26,6 +26,22 @@ const parseList = v => {
 
 const parseIdList = v => parseList(v).map(Number).filter(Number.isInteger);
 
+/**
+ * Stored transcripts are speaker-prefixed lines ("Luna: …" / "<member>: …",
+ * one entry per turn; an entry's own newlines continue the previous turn).
+ * Parse them back into role-tagged messages so the talk page can render the
+ * conversation so far when a member resumes a draft.
+ */
+function transcriptMessages(transcript, memberName) {
+  const out = [];
+  for (const line of String(transcript || '').split('\n')) {
+    if (line.startsWith('Luna: ')) out.push({ role: 'ai', text: line.slice(6) });
+    else if (line.startsWith(`${memberName}: `)) out.push({ role: 'me', text: line.slice(memberName.length + 2) });
+    else if (out.length) out[out.length - 1].text += `\n${line}`;
+  }
+  return out.filter(m => m.text.trim());
+}
+
 function newToken() {
   return crypto.randomBytes(8).toString('base64url');
 }
@@ -101,6 +117,10 @@ export class Api {
               yesterday: parseList(rec.yesterday), today: parseList(rec.today),
               blockers: parseList(rec.blockers), topics_for_meeting: parseList(rec.topics),
             } : null,
+            // draft resume: the conversation so far, so the page doesn't
+            // open looking like a cold start (submitted shows the summary
+            // card instead — no transcript payload needed)
+            messages: rec.status === 'draft' ? transcriptMessages(rec.transcript, ts.member.name) : undefined,
           };
         }
       } else {
@@ -112,6 +132,7 @@ export class Api {
             summary: rec.status === 'submitted'
               ? { summary: parseList(rec.summary), highlights: parseList(rec.highlights) }
               : null,
+            messages: rec.status === 'draft' ? transcriptMessages(rec.transcript, ts.member.name) : undefined,
           };
         }
       }
@@ -124,6 +145,26 @@ export class Api {
         },
         date, prior,
       }), true;
+    }
+
+    // member self-service reset: wipe their own record for the current cycle
+    // so a fresh conversation starts from zero. Double-confirmed client-side;
+    // scoped to the link's own (task, member) — a member can only ever clear
+    // their own current-cycle data, never history or anyone else's.
+    if (p === '/api/talk/reset' && req.method === 'POST') {
+      const token = url.searchParams.get('token') || '';
+      const ts = this.store.getTaskSessionByToken(token);
+      if (!ts) return sendJson(res, 404, { error: 'invalid_token' }), true;
+      const date = todayLocal(this.settings.resolveTimeZone());
+      let cleared = false;
+      if (ts.task.is_builtin) {
+        cleared = this.store.deleteReport(ts.member.id, date);
+      } else {
+        const cycleKey = ts.task.type === 'oneshot' ? ONESHOT_CYCLE : currentCycleKey(ts.task, date);
+        if (cycleKey) cleared = this.store.deleteCycleRecord(ts.task.id, ts.member.id, cycleKey);
+      }
+      console.log(`[rounds] member reset ${ts.member.name} (task #${ts.task.id} ${ts.task.title}, cleared=${cleared})`);
+      return sendJson(res, 200, { ok: true, cleared }), true;
     }
 
     if (!p.startsWith('/api/')) return false;

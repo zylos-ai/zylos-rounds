@@ -758,6 +758,11 @@ export class Store {
     return this.db.prepare('SELECT * FROM reports WHERE member_id=? AND report_date=?').get(memberId, date);
   }
 
+  /** Member self-service reset: drop the member's own report for one date. */
+  deleteReport(memberId, date) {
+    return this.db.prepare('DELETE FROM reports WHERE member_id=? AND report_date=?').run(memberId, date).changes > 0;
+  }
+
   /**
    * A member's own recent submitted reports (most recent first, excluding a
    * given date — usually today). Powers the recall_member_history tool so the
@@ -1062,6 +1067,12 @@ export class Store {
     return this.db.prepare(`
       SELECT * FROM cycle_records WHERE task_id=? AND member_id=? AND cycle_key=?
     `).get(taskId, memberId, cycleKey);
+  }
+
+  /** Member self-service reset: drop the member's own record for one cycle. */
+  deleteCycleRecord(taskId, memberId, cycleKey) {
+    return this.db.prepare('DELETE FROM cycle_records WHERE task_id=? AND member_id=? AND cycle_key=?')
+      .run(taskId, memberId, cycleKey).changes > 0;
   }
 
   /** Distinct cycle keys a task has data or a digest for (newest first). */
