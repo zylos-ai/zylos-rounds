@@ -72,15 +72,13 @@ export class TalkEngine {
     this.watchdog = null;
   }
 
-  /** Acquire mic + audio graph, then open the relay WS. Throws if mic denied. */
-  async start() {
-    // Device-native sample rate — never force 24k (see header comment).
+  /** Build a fresh AudioContext + worklet + analyser at the device's native rate. */
+  async initAudioGraph() {
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     await this.ctx.resume();
     const SRC_RATE = this.ctx.sampleRate;
     await this.ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: 'text/javascript' })));
 
-    // Visualization tap (parallel branch, does not touch the capture path).
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 256;
     this.analyser.smoothingTimeConstant = 0.75;
@@ -88,7 +86,7 @@ export class TalkEngine {
     this.workletNode = new AudioWorkletNode(this.ctx, 'cap');
 
     let buf = [];
-    const CHUNK_SRC = Math.round(SRC_RATE / 10); // ship a packet every ~100ms
+    const CHUNK_SRC = Math.round(SRC_RATE / 10);
     this.workletNode.port.onmessage = (e) => {
       buf.push(e.data);
       if (buf.reduce((n, a) => n + a.length, 0) >= CHUNK_SRC) {
@@ -110,6 +108,11 @@ export class TalkEngine {
         }
       }
     };
+  }
+
+  /** Acquire mic + audio graph, then open the relay WS. Throws if mic denied. */
+  async start() {
+    await this.initAudioGraph();
     await this.acquireMic();
     this.connect();
   }
@@ -325,13 +328,13 @@ export class TalkEngine {
     return true;
   }
 
-  reconnect() {
+  async reconnect() {
     if (this.done) return;
     // this.muted survives reconnect on purpose: the user muted for privacy;
     // a network blip must never silently hot-mic them again.
     try {
       if (this.ws) {
-        this.ws.onclose = null; // silence the stale socket — closed() belongs to the new one
+        this.ws.onclose = null;
         this.ws.close();
       }
     } catch {
@@ -339,11 +342,10 @@ export class TalkEngine {
     }
     this.flushPlayback();
     this.curItemId = null;
-    // If destroy() closed the AudioContext (pause flow or timeout), playDelta
-    // would silently discard all audio on the new connection. Recreate it so
-    // the reconnected session can actually play sound.
     if (!this.ctx || this.ctx.state === 'closed') {
-      this.ctx = new AudioContext({ sampleRate: 24000 });
+      this.releaseMic();
+      await this.initAudioGraph();
+      if (!this.textMode) await this.acquireMic();
     }
     this.connect();
   }
