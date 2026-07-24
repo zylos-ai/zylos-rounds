@@ -213,7 +213,7 @@ export class Relay {
         audio: {
           input: {
             format: { type: 'audio/pcm', rate: 24000 },
-            turn_detection: { type: 'semantic_vad', eagerness: 'low' },
+            turn_detection: { type: 'semantic_vad', eagerness: 'low', silence_duration_ms: 1200 },
             transcription: { model: cfg.transcriptionModel ?? 'gpt-realtime-whisper', language: lang },
           },
           output: { voice: this.settings.resolveVoice(), format: { type: 'audio/pcm', rate: 24000 } },

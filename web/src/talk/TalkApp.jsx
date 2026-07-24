@@ -257,7 +257,12 @@ export default function TalkApp() {
             r.attempts++;
             setPhase('reconnecting');
             say(tRef.current.reconnectingN(r.attempts, RETRY_DELAYS.length), true);
-            r.timer = setTimeout(() => engineRef.current?.reconnect(), delay);
+            r.timer = setTimeout(() => {
+              engineRef.current?.reconnect().catch(() => {
+                setPhase('disconnected');
+                say(tRef.current.reconnectFailed, true);
+              });
+            }, delay);
           } else {
             setPhase('disconnected');
             say(tRef.current.reconnectFailed, true);
@@ -354,7 +359,10 @@ export default function TalkApp() {
     reconnectRef.current.attempts = 0;
     setPhase('reconnecting');
     say(tRef.current.reconnecting);
-    engineRef.current?.reconnect();
+    engineRef.current?.reconnect().catch(() => {
+      setPhase('disconnected');
+      say(tRef.current.reconnectFailed, true);
+    });
   }, [say]);
 
   const [submitting, setSubmitting] = useState(false);
