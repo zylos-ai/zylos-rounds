@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.31.0] - 2026-07-24
+
+### Added
+- **Proactive plan recall opening** — daily standup agent now opens by recalling yesterday's `today` plan items (e.g. "yesterday you said you'd do X and Y — how did that go?") instead of a generic "what did you do yesterday?". Falls back to the generic opening when no prior report exists. Both zh and en instruction templates updated (`context.js` flowDaily + lastReport)
+- **Section-transition confirmation gates** — hard rule: the agent must explicitly ask "anything else on this topic?" and receive a clear negative before advancing to the next section (yesterday → today → blockers → meeting topics). Prevents the agent from rushing through sections when the member pauses or gives a partial answer. Also prevents bundling the plan recall question with "anything beyond the plan?" in the same message
+
+### Fixed
+- **VAD Chinese long-sentence interruption** — added explicit `silence_duration_ms: 1200` to `semantic_vad` turn detection config (`relay.js`), increasing the silence threshold from the provider default (~500ms) to 1.2s. Reduces mid-sentence interruptions for Chinese speakers who naturally pause longer between clauses
+- **WS reconnect silent audio after destroy()** — `reconnect()` in `engine.js` now recreates the `AudioContext` if it was previously closed by `destroy()` (from the v0.29.0 pause flow or the 15s idle timeout). Without this, a reconnected session would silently discard all incoming audio because `playDelta()` guards on `ctx.state === 'closed'`
+
 ## [0.30.0] - 2026-07-23
 
 ### Added

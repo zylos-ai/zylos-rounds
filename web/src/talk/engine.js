@@ -339,6 +339,12 @@ export class TalkEngine {
     }
     this.flushPlayback();
     this.curItemId = null;
+    // If destroy() closed the AudioContext (pause flow or timeout), playDelta
+    // would silently discard all audio on the new connection. Recreate it so
+    // the reconnected session can actually play sound.
+    if (!this.ctx || this.ctx.state === 'closed') {
+      this.ctx = new AudioContext({ sampleRate: 24000 });
+    }
     this.connect();
   }
 
